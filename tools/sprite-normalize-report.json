@@ -1,0 +1,225 @@
+{
+  "generatedAt": "2026-05-24T02:42:16.316Z",
+  "report": [
+    {
+      "id": "player_citizen",
+      "source": "public\\assets\\ao\\armors\\armor_citizenClothes_std.png",
+      "referenceId": "player_base",
+      "averageShiftX": -0.25,
+      "averageShiftY": 0.95,
+      "frameShifts": [
+        {
+          "frameIndex": 0,
+          "shiftX": -1,
+          "shiftY": 1
+        },
+        {
+          "frameIndex": 1,
+          "shiftX": 0,
+          "shiftY": 1
+        },
+        {
+          "frameIndex": 2,
+          "shiftX": 0,
+          "shiftY": 1
+        },
+        {
+          "frameIndex": 3,
+          "shiftX": -1,
+          "shiftY": 1
+        },
+        {
+          "frameIndex": 4,
+          "shiftX": 0,
+          "shiftY": 1
+        },
+        {
+          "frameIndex": 5,
+          "shiftX": 0,
+          "shiftY": 1
+        },
+        {
+          "frameIndex": 6,
+          "shiftX": -1,
+          "shiftY": 1
+        },
+        {
+          "frameIndex": 7,
+          "shiftX": 0,
+          "shiftY": 1
+        },
+        {
+          "frameIndex": 8,
+          "shiftX": 0,
+          "shiftY": 1
+        },
+        {
+          "frameIndex": 9,
+          "shiftX": -1,
+          "shiftY": 1
+        },
+        {
+          "frameIndex": 10,
+          "shiftX": 0,
+          "shiftY": 1
+        },
+        {
+          "frameIndex": 11,
+          "shiftX": 0,
+          "shiftY": 1
+        },
+        {
+          "frameIndex": 12,
+          "shiftX": 0,
+          "shiftY": 1
+        },
+        {
+          "frameIndex": 13,
+          "shiftX": 0,
+          "shiftY": 1
+        },
+        {
+          "frameIndex": 14,
+          "shiftX": -1,
+          "shiftY": 1
+        },
+        {
+          "frameIndex": 15,
+          "shiftX": 0,
+          "shiftY": 1
+        },
+        {
+          "frameIndex": 16,
+          "shiftX": 0,
+          "shiftY": 1
+        },
+        {
+          "frameIndex": 17,
+          "shiftX": 0,
+          "shiftY": 0
+        },
+        {
+          "frameIndex": 18,
+          "shiftX": 0,
+          "shiftY": 1
+        },
+        {
+          "frameIndex": 19,
+          "shiftX": 0,
+          "shiftY": 1
+        }
+      ],
+      "output": "public\\assets\\ao\\_normalized\\player_citizen.png"
+    },
+    {
+      "id": "player_cuero",
+      "source": "public\\assets\\ao\\armors\\armor_cuero_std.png",
+      "referenceId": "player_base",
+      "averageShiftX": 0.05,
+      "averageShiftY": 0,
+      "frameShifts": [
+        {
+          "frameIndex": 0,
+          "shiftX": 0,
+          "shiftY": 0
+        },
+        {
+          "frameIndex": 1,
+          "shiftX": 0,
+          "shiftY": 0
+        },
+        {
+          "frameIndex": 2,
+          "shiftX": 0,
+          "shiftY": 0
+        },
+        {
+          "frameIndex": 3,
+          "shiftX": 0,
+          "shiftY": 0
+        },
+        {
+          "frameIndex": 4,
+          "shiftX": 0,
+          "shiftY": 0
+        },
+        {
+          "frameIndex": 5,
+          "shiftX": 0,
+          "shiftY": 0
+        },
+        {
+          "frameIndex": 6,
+          "shiftX": 0,
+          "shiftY": 0
+        },
+        {
+          "frameIndex": 7,
+          "shiftX": 0,
+          "shiftY": 0
+        },
+        {
+          "frameIndex": 8,
+          "shiftX": 0,
+          "shiftY": 0
+        },
+        {
+          "frameIndex": 9,
+          "shiftX": 0,
+          "shiftY": 0
+        },
+        {
+          "frameIndex": 10,
+          "shiftX": 0,
+          "shiftY": 0
+        },
+        {
+          "frameIndex": 11,
+          "shiftX": 0,
+          "shiftY": 0
+        },
+        {
+          "frameIndex": 12,
+          "shiftX": 0,
+          "shiftY": 0
+        },
+        {
+          "frameIndex": 13,
+          "shiftX": 0,
+          "shiftY": 0
+        },
+        {
+          "frameIndex": 14,
+          "shiftX": 0,
+          "shiftY": 0
+        },
+        {
+          "frameIndex": 15,
+          "shiftX": 0,
+          "shiftY": 0
+        },
+        {
+          "frameIndex": 16,
+          "shiftX": 0,
+          "shiftY": 0
+        },
+        {
+          "frameIndex": 17,
+          "shiftX": 0,
+          "shiftY": 0
+        },
+        {
+          "frameIndex": 18,
+          "shiftX": 0,
+          "shiftY": 0
+        },
+        {
+          "frameIndex": 19,
+          "shiftX": 1,
+          "shiftY": 0
+        }
+      ],
+      "output": "public\\assets\\ao\\_normalized\\player_cuero.png"
+    }
+  ]
+}

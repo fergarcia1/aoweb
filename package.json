@@ -1,0 +1,23 @@
+{
+  "name": "aoweb",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "audit:sprites": "node tools/audit-sprites.mjs",
+    "normalize:sprites": "node tools/normalize-sprites.mjs",
+    "rebuild:cuero": "node tools/rebuild-cuero-from-base.mjs",
+    "pipeline-std1": "node tools/ao-export/pipeline-armor-std1.mjs"
+  },
+  "devDependencies": {
+    "pngjs": "^7.0.0",
+    "typescript": "^5.8.3",
+    "vite": "^6.3.5"
+  },
+  "dependencies": {
+    "phaser": "^3.88.2"
+  }
+}

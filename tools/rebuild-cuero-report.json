@@ -1,0 +1,136 @@
+{
+  "generatedAt": "2026-05-24T02:59:47.736Z",
+  "sourceBase": "public\\assets\\ao\\razes\\human_male_base.png",
+  "sourceArmor": "public\\assets\\ao\\armors\\armor_cuero_std.png",
+  "frameWidth": 32,
+  "frameHeight": 48,
+  "innerMargin": 1,
+  "stats": [
+    {
+      "frameIndex": 0,
+      "shiftX": 0,
+      "shiftY": 0
+    },
+    {
+      "frameIndex": 1,
+      "shiftX": 0,
+      "shiftY": 0
+    },
+    {
+      "frameIndex": 2,
+      "shiftX": 0,
+      "shiftY": 0
+    },
+    {
+      "frameIndex": 3,
+      "shiftX": 0,
+      "shiftY": 0
+    },
+    {
+      "frameIndex": 4,
+      "shiftX": 0,
+      "shiftY": 0
+    },
+    {
+      "frameIndex": 5,
+      "shiftX": 0,
+      "shiftY": 0,
+      "note": "empty armor frame"
+    },
+    {
+      "frameIndex": 6,
+      "shiftX": 0,
+      "shiftY": 0
+    },
+    {
+      "frameIndex": 7,
+      "shiftX": 0,
+      "shiftY": 0
+    },
+    {
+      "frameIndex": 8,
+      "shiftX": 0,
+      "shiftY": 0
+    },
+    {
+      "frameIndex": 9,
+      "shiftX": 0,
+      "shiftY": 0
+    },
+    {
+      "frameIndex": 10,
+      "shiftX": 0,
+      "shiftY": 0
+    },
+    {
+      "frameIndex": 11,
+      "shiftX": 0,
+      "shiftY": 0,
+      "note": "empty armor frame"
+    },
+    {
+      "frameIndex": 12,
+      "shiftX": 0,
+      "shiftY": 0
+    },
+    {
+      "frameIndex": 13,
+      "shiftX": 0,
+      "shiftY": 0
+    },
+    {
+      "frameIndex": 14,
+      "shiftX": 0,
+      "shiftY": 0
+    },
+    {
+      "frameIndex": 15,
+      "shiftX": 0,
+      "shiftY": 0
+    },
+    {
+      "frameIndex": 16,
+      "shiftX": 0,
+      "shiftY": 0,
+      "note": "empty armor frame"
+    },
+    {
+      "frameIndex": 17,
+      "shiftX": 0,
+      "shiftY": 0,
+      "note": "empty armor frame"
+    },
+    {
+      "frameIndex": 18,
+      "shiftX": 0,
+      "shiftY": 0
+    },
+    {
+      "frameIndex": 19,
+      "shiftX": 1,
+      "shiftY": 0
+    },
+    {
+      "frameIndex": 20,
+      "shiftX": 0,
+      "shiftY": 0
+    },
+    {
+      "frameIndex": 21,
+      "shiftX": 0,
+      "shiftY": 0
+    },
+    {
+      "frameIndex": 22,
+      "shiftX": 0,
+      "shiftY": 0,
+      "note": "empty armor frame"
+    },
+    {
+      "frameIndex": 23,
+      "shiftX": 0,
+      "shiftY": 0,
+      "note": "empty armor frame"
+    }
+  ]
+}

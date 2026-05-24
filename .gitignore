@@ -1,0 +1,34 @@
+# Dependencies
+node_modules/
+tools/ao-export/node_modules/
+
+# Build
+dist/
+
+# Logs & caches
+*.log
+npm-debug.log*
+.cache/
+.vite/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+.cursor/
+
+# Local env & secrets
+.env
+.env.*
+
+# Heavy reference / extracted game assets (clone locally)
+tools/external/
+tools/imperium-clasico-ref/
+
+# Pipeline temp output
+tools/ao-export/_tmp*/
+**/pipeline-armor-std1-report.json
+
+# User-local export folders (optional)
+RecursosAO/

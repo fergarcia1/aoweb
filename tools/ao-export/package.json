@@ -1,0 +1,14 @@
+{
+  "name": "ao-export",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "bmp2png": "node export-bmp-to-png.mjs",
+    "grh": "node export-grh.mjs",
+    "pipeline-std1": "node pipeline-armor-std1.mjs"
+  },
+  "dependencies": {
+    "bmp-js": "^0.1.0",
+    "pngjs": "^7.0.0"
+  }
+}

@@ -1,0 +1,132 @@
+{
+  "generatedAt": "2026-05-23T23:18:33.839Z",
+  "configPath": "tools\\sprite-sheet-standards.json",
+  "outputPath": "tools\\sprite-audit-report.json",
+  "results": [
+    {
+      "id": "player_base",
+      "path": "public/assets/ao/razes/human_male_base.png",
+      "imageWidth": 192,
+      "imageHeight": 192,
+      "frameWidth": 32,
+      "frameHeight": 48,
+      "grid": {
+        "cols": 6,
+        "rows": 4
+      },
+      "framesAnalyzed": 20,
+      "emptyFrames": 1,
+      "averageOpaqueCenterX": 15.18,
+      "averageOpaqueBottomY": 47,
+      "warnings": [
+        "contains 1 empty frames"
+      ],
+      "recommendedOffsetFromReference": null
+    },
+    {
+      "id": "player_citizen",
+      "path": "public/assets/ao/armors/armor_citizenClothes_std.png",
+      "imageWidth": 192,
+      "imageHeight": 192,
+      "frameWidth": 32,
+      "frameHeight": 48,
+      "grid": {
+        "cols": 6,
+        "rows": 4
+      },
+      "framesAnalyzed": 20,
+      "emptyFrames": 1,
+      "averageOpaqueCenterX": 15.68,
+      "averageOpaqueBottomY": 46,
+      "warnings": [
+        "contains 1 empty frames"
+      ],
+      "recommendedOffsetFromReference": {
+        "referenceId": "player_base",
+        "offsetX": -0.5,
+        "offsetY": 1
+      }
+    },
+    {
+      "id": "player_cuero",
+      "path": "public/assets/ao/armors/armor_cuero_std.png",
+      "imageWidth": 192,
+      "imageHeight": 192,
+      "frameWidth": 32,
+      "frameHeight": 48,
+      "grid": {
+        "cols": 6,
+        "rows": 4
+      },
+      "framesAnalyzed": 20,
+      "emptyFrames": 4,
+      "averageOpaqueCenterX": 15.34,
+      "averageOpaqueBottomY": 47,
+      "warnings": [
+        "contains 4 empty frames"
+      ],
+      "recommendedOffsetFromReference": {
+        "referenceId": "player_base",
+        "offsetX": -0.16,
+        "offsetY": 0
+      }
+    },
+    {
+      "id": "meditation_low_lvl",
+      "path": "public/assets/ao/meditations/lowLvlMed.png",
+      "imageWidth": 150,
+      "imageHeight": 80,
+      "frameWidth": 30,
+      "frameHeight": 40,
+      "grid": {
+        "cols": 5,
+        "rows": 2
+      },
+      "framesAnalyzed": 10,
+      "emptyFrames": 0,
+      "averageOpaqueCenterX": 14.5,
+      "averageOpaqueBottomY": 39,
+      "warnings": [],
+      "recommendedOffsetFromReference": null
+    },
+    {
+      "id": "mob_momia",
+      "path": "public/assets/ao/imperium/mobs/npc_bodies/momia4.png",
+      "imageWidth": 512,
+      "imageHeight": 512,
+      "frameWidth": 170,
+      "frameHeight": 170,
+      "grid": {
+        "cols": 3,
+        "rows": 3
+      },
+      "framesAnalyzed": 8,
+      "emptyFrames": 0,
+      "averageOpaqueCenterX": 66.94,
+      "averageOpaqueBottomY": 158.38,
+      "warnings": [
+        "image width 512 is not divisible by frame width 170",
+        "image height 512 is not divisible by frame height 170"
+      ],
+      "recommendedOffsetFromReference": null
+    },
+    {
+      "id": "mob_gallina",
+      "path": "public/assets/ao/imperium/mobs/npc_bodies/gallina.png",
+      "imageWidth": 256,
+      "imageHeight": 256,
+      "frameWidth": 32,
+      "frameHeight": 32,
+      "grid": {
+        "cols": 8,
+        "rows": 8
+      },
+      "framesAnalyzed": 4,
+      "emptyFrames": 0,
+      "averageOpaqueCenterX": 15.63,
+      "averageOpaqueBottomY": 29,
+      "warnings": [],
+      "recommendedOffsetFromReference": null
+    }
+  ]
+}

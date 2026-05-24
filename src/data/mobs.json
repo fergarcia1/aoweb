@@ -1,0 +1,35 @@
+{
+  "mobs": [
+    {
+      "mobId": "gallina",
+      "name": "Gallina",
+      "hitboxOffsetY": 0,
+      "sizeTiles": 1,
+      "modelId": "gallina",
+      "maxHp": 180,
+      "detectionRangeTiles": 5,
+      "leashRangeTiles": 20,
+      "attackDamage": 0,
+      "attackCooldownMs": 1000,
+      "respawnMs": 5000,
+      "expReward": 45,
+      "drops": [
+        {
+          "itemId": "potion_hp",
+          "chancePercent": 20
+        },
+        {
+          "itemId": "scroll_implosion",
+          "chancePercent": 3
+        }
+      ]
+    }
+  ],
+  "mapSpawns": [
+    {
+      "mapId": "pueblo",
+      "mobId": "gallina",
+      "count": 15
+    }
+  ]
+}
