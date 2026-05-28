@@ -3,7 +3,8 @@ import {
   CHARACTER_SLOT_COUNT,
   CLASS_LABELS,
   loadCharacterSlots,
-  RACE_LABELS,
+  formatRaceGenderLabel,
+  getFactionNameColors,
   setActiveCharacterSlotIndex,
   type CharacterSlot,
   type SavedCharacter,
@@ -135,7 +136,7 @@ export class CharacterSelectScene extends Phaser.Scene {
         .text(0, -24, character.name, {
           fontFamily: "Segoe UI, Tahoma, sans-serif",
           fontSize: "22px",
-          color: MENU_COLORS.text,
+          color: getFactionNameColors(character.factionId).fill,
           fontStyle: "bold",
         })
         .setOrigin(0.5);
@@ -145,7 +146,7 @@ export class CharacterSelectScene extends Phaser.Scene {
         .text(
           0,
           12,
-          `${CLASS_LABELS[character.classId]}\n${RACE_LABELS[character.raceId]} · Nv. ${character.level}`,
+          `${CLASS_LABELS[character.classId]}\n${formatRaceGenderLabel(character.raceId, character.genderId)} · Nv. ${character.level}`,
           {
             fontFamily: "Segoe UI, Tahoma, sans-serif",
             fontSize: "14px",
@@ -179,7 +180,10 @@ export class CharacterSelectScene extends Phaser.Scene {
         this.selectCharacter(index, character);
         return;
       }
-      this.setStatus("La creación de personaje estará disponible pronto.");
+      this.scene.start("CharacterCreationScene", {
+        slotIndex: index,
+        returnMode: this.returnMode,
+      });
     });
   }
 

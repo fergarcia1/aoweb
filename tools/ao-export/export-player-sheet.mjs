@@ -5,7 +5,7 @@
  * Fuentes STD1 partidas (ej. 1105.png): compone torso+piernas en "down" y copia el resto.
  *
  * Uso:
- *   node export-player-sheet.mjs --src 1004.png --out armor_cuero_std.png
+ *   node export-player-sheet.mjs --src 1004.png --out cuero_std.png
  *   node export-player-sheet.mjs --src 1105.png --out human_from_1105.png --mode std1
  */
 

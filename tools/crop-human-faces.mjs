@@ -1,5 +1,5 @@
 /**
- * Recorta human_faces.png a las primeras N columnas (4 filas × frame 20×32).
+ * Recorta human_male_faces.png a las primeras N columnas (4 filas × frame 20×32).
  * Layout: columna = cara (c1…cN), filas f1=S f2=W f3=A f4=D (igual que el cuerpo).
  * Uso: node tools/crop-human-faces.mjs [columnas]
  */
@@ -14,7 +14,7 @@ const ROWS = 4;
 const KEEP_COLS = Number.parseInt(process.argv[2] ?? "11", 10);
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const targetPath = path.join(root, "public/assets/ao/razes/human_faces.png");
+const targetPath = path.join(root, "public/assets/ao/razes/human_male_faces.png");
 
 const source = PNG.sync.read(fs.readFileSync(targetPath));
 const dstW = KEEP_COLS * FRAME_W;
@@ -41,4 +41,4 @@ for (let row = 0; row < ROWS; row += 1) {
 }
 
 fs.writeFileSync(targetPath, PNG.sync.write(output));
-console.log(`human_faces.png -> ${dstW}x${dstH} (${KEEP_COLS} caras × ${ROWS} direcciones)`);
+console.log(`human_male_faces.png -> ${dstW}x${dstH} (${KEEP_COLS} caras × ${ROWS} direcciones)`);

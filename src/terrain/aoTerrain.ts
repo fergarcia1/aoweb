@@ -4,6 +4,11 @@ import { TILE_SIZE } from "../config";
 /** Spritesheet de terreno AO (renombrado desde 20.png). */
 export const AO_TERRAIN_TEXTURE_KEY = "ao_terrain_20";
 
+/** Textura grande de pasto (512x512, se recorta en frames de TILE_SIZE). */
+export const AO_GRASS_TEXTURE_KEY = "ao_grass_pasto1";
+const AO_GRASS_IMAGE_PATH = "/assets/ao/terrain/pasto1.png";
+const GRASS_SHEET_COLS = 16;
+
 const TERRAIN_IMAGE_PATH = "/assets/ao/terrain/terrain.png";
 const SHEET_COLS = 16;
 
@@ -39,6 +44,10 @@ const insetFrameAliases = new Map<number, string>();
 
 export function registerAoTerrain(scene: Phaser.Scene): void {
   scene.load.spritesheet(AO_TERRAIN_TEXTURE_KEY, TERRAIN_IMAGE_PATH, {
+    frameWidth: TILE_SIZE,
+    frameHeight: TILE_SIZE,
+  });
+  scene.load.spritesheet(AO_GRASS_TEXTURE_KEY, AO_GRASS_IMAGE_PATH, {
     frameWidth: TILE_SIZE,
     frameHeight: TILE_SIZE,
   });
@@ -84,6 +93,11 @@ export function setupAoTerrainTexture(scene: Phaser.Scene): void {
   for (const frame of AO_WATER_FRAMES) {
     registerInsetFrame(texture, frame);
   }
+
+  const grassTex = scene.textures.get(AO_GRASS_TEXTURE_KEY);
+  if (grassTex.key !== "__MISSING") {
+    grassTex.setFilter(Phaser.Textures.FilterMode.NEAREST);
+  }
 }
 
 export function pickGrassFrame(tileX: number, tileY: number): number {
@@ -105,6 +119,23 @@ export function createTerrainTile(
   const texture = scene.textures.get(AO_TERRAIN_TEXTURE_KEY);
   const frameName = registerInsetFrame(texture, frameIndex);
   const tile = scene.add.image(x, y, AO_TERRAIN_TEXTURE_KEY, frameName);
+  tile.setOrigin(0, 0);
+  tile.setDisplaySize(TILE_SIZE, TILE_SIZE);
+  return tile;
+}
+
+export function createGrassTile(
+  scene: Phaser.Scene,
+  x: number,
+  y: number,
+  tileX: number,
+  tileY: number
+): Phaser.GameObjects.Image {
+  const col = tileX % GRASS_SHEET_COLS;
+  const row = tileY % GRASS_SHEET_COLS;
+  const frame = row * GRASS_SHEET_COLS + col;
+
+  const tile = scene.add.image(x, y, AO_GRASS_TEXTURE_KEY, frame);
   tile.setOrigin(0, 0);
   tile.setDisplaySize(TILE_SIZE, TILE_SIZE);
   return tile;

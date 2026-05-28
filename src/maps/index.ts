@@ -4,7 +4,26 @@ import { MAP_MONTANA } from "./montana";
 import { MAP_PUEBLO } from "./pueblo";
 import type { GameMap, MapTransition } from "./types";
 
-export type { GameMap, MapTransition, TileType } from "./types";
+export type { GameMap, GroundOverlay, MapObjectPlacement, MapTransition, TileType } from "./types";
+export { getMapObjectDefinition, type MapObjectId } from "./mapObjectDefinitions";
+export { MAP_TILE_SIZE, MAP_SCALE, MAP_BASE_TILES } from "./constants";
+export {
+  BIOME_MAP_TEMPLATES,
+  buildBiomeTemplateTiles,
+  createMapFromBiomeTemplate,
+  getAllBiomeTemplateIds,
+  getBiomeTemplate,
+} from "./biomeTemplates";
+export type { BiomeMapTemplate, BiomeTemplateId, CreateMapFromTemplateConfig } from "./biomeTemplates";
+export {
+  WORLD_MAP_ART_PATH,
+  WORLD_MAP_CELLS,
+  getWorldMapBiomeColor,
+  getWorldMapCell,
+  getWorldMapGridBounds,
+  getWorldMapMarkerPosition,
+} from "./worldMapLayout";
+export type { WorldMapBiome, WorldMapCellConfig } from "./worldMapLayout";
 export const EDGE_TRANSITION_TRIGGER_DISTANCE = 10;
 const EDGE_TRANSITION_TARGET_INSET = 10;
 

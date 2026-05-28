@@ -1,7 +1,10 @@
 import Phaser from "phaser";
+import { MeditationSystem } from "../systems/MeditationSystem";
+import { DeathSystem, type DeathPhase } from "../systems/DeathSystem";
+import { ShopBankSystem } from "../systems/ShopBankSystem";
+import { MobAiSystem, PEACEFUL_WANDER_MIN_MS, PEACEFUL_WANDER_MAX_MS } from "../systems/MobAiSystem";
 import { STEP_DURATION_MS, TILE_SIZE } from "../config";
 import {
-  EDGE_TRANSITION_TRIGGER_DISTANCE,
   findTransition,
   getAllMaps,
   getMap,
@@ -10,27 +13,68 @@ import {
 } from "../maps";
 import { getTileDefinition, TILE } from "../maps/tileDefinitions";
 import {
+  isTileBlockedByMapObject,
+  registerMapObjectAssets,
+  spawnMapObjectImage,
+} from "../maps/mapObjects";
+import {
   applyPlayerOrigin,
   feetOffsetForOutfit,
   Facing,
   Outfit,
   playerAnimationKey,
+  raceBodyTextureKey,
   registerPlayerAnimations,
+  registerArmorSpritesheet,
   registerPlayerSprites,
   setupPlayerTexture,
+  stepDurationMsForBodyTexture,
   tileToFeetWorld,
-  textureKeyForOutfit,
+  textureKeyFromAssetPath,
+  textureKeyForPlayer,
+  getDefaultArmorVisualForOutfit,
+  type PlayerArmorVisualOptions,
 } from "../player/playerSprites";
 import {
-  getHumanFaceFrame,
-  HUMAN_FACE_TEXTURE_KEY,
-  registerHumanFaces,
-  setupHumanFacesTexture,
-} from "../player/humanFaces";
+  canRaceEquipArmor,
+  inferBajosSpritesheetPath,
+  isShortRace,
+} from "../game/armorUtils";
 import {
-  createTerrainTile,
-  pickGrassFrame,
-  pickWaterFrame,
+  createEquippedOverlaySprite,
+  getPlayerHeadWalkSway,
+  syncEquippedHelmetVisual as applyEquippedHelmetVisual,
+  syncEquippedHeldItemVisuals as applyEquippedHeldItemVisuals,
+  type EquippedGearSyncContext,
+} from "../game/equippedGear";
+import {
+  buildHitboxFrameRect,
+  containsWorldPointInHitArea,
+  getInteractiveHitAreaWorldBounds,
+  tileToWorldRect,
+  type BodyHitboxConfig,
+} from "../game/hitboxUtils";
+import {
+  faceTextureKey,
+  getFaceFrame,
+  registerRaceFaces,
+  setupRaceFacesTextures,
+} from "../player/raceFaces";
+import { getRaceFaceLayout } from "../player/raceFaceLayout";
+import {
+  formatRaceGenderLabel,
+  type CharacterGenderId,
+  GHOST_RACE_ID,
+  type CharacterRaceId,
+} from "../data/characters";
+import {
+  buildSkillDisplayEntries,
+  createInitialSkillLevels,
+  getSkillCapGainBetweenLevels,
+  tryImproveSkill,
+  type SkillId,
+} from "../game/skills";
+import {
   registerAoTerrain,
   setupAoTerrainTexture,
 } from "../terrain/aoTerrain";
@@ -45,325 +89,221 @@ import {
   registerInventoryPanelAssets,
   setupInventoryPanelTextures,
 } from "../ui/inventoryPanel";
-import { getActiveCharacter, type SavedCharacter } from "../data/characters";
-import { getGameViewport } from "../ui/layout";
 import {
+  getActiveCharacter,
+  getActiveCharacterSlotIndex,
+  getPlayerNameColors,
+  isAdminCharacterName,
+  type PlayerRole,
+  loadCharacterSlots,
+  patchSavedCharacterMeta,
+  saveCharacterSlots,
+  type CharacterFactionId,
+  type SavedCharacter,
+} from "../data/characters";
+import { DEFAULT_HOME_MAP_ID, getPriestSpawnForHome, PRIEST_REVIVE_MAX_TILE_DISTANCE } from "../game/deathConfig";
+import {
+  ATTRIBUTE_POTION_GAIN_MAX,
+  ATTRIBUTE_POTION_GAIN_MIN,
+  STAT_MIN,
+} from "../../game-data/constants";
+import {
+  applyStatsWithPotionBuffs,
+  ATTRIBUTE_POTION_BUFF_DURATION_MS,
+  ATTRIBUTE_POTION_BUFF_MAX,
+  resolveCoreStats,
+  STAT_MAX,
+  type CoreStats,
+} from "../game/characterStats";
+import { DeathOverlay } from "../ui/deathOverlay";
+import { BankOverlay } from "../ui/bankOverlay";
+import { ShopOverlay } from "../ui/shopOverlay";
+import {
+  type BankState,
+  createEmptyBankState,
+  deleteBankState,
+  loadBankState,
+  saveBankState,
+} from "../game/bankStorage";
+import {
+  INVENTORY_SLOT_COUNT,
+  type SavedCharacterProgress,
+} from "../game/characterProgressStorage";
+import { ProgressService } from "../game/ProgressService";
+import { registerNpcAssets } from "../npcs/npcAssets";
+import { NpcManager } from "../npcs/NpcManager";
+import {
+  BANKER_INTERACT_MAX_TILE_DISTANCE,
+  getNpcOccupiedTiles,
+  MERCHANT_INTERACT_MAX_TILE_DISTANCE,
+} from "../npcs/npcDefinitions";
+import {
+  getBuyPrice,
+  getMerchantDisplayTitle,
+  getSellPrice,
+  getShopCatalogForRole,
+  isMerchantRole,
+  type MerchantRole,
+} from "../data/shopCatalogs";
+import type { StaticNpcDefinition } from "../npcs/types";
+import {
+  GAME_FONT,
+  GAME_TEXT_RESOLUTION,
+  WORLD_NAME_FONT_SIZE,
+  WORLD_NAME_STROKE,
+} from "../ui/fonts";
+import { WEAPONS } from "../data/items";
+import {
+  ALL_ITEM_IDS,
   getItemDefinition,
+  itemDropsOnDeath,
   ITEM_DEFINITIONS,
   type EquipmentSlot,
   type ItemId,
 } from "../items/itemDefinitions";
+import { canUseItem } from "../game/itemUsability";
+import type { PlayerKillStats } from "../ui/gameUi";
 import {
   addToInventory,
   formatStackLabel,
+  moveStackAmount,
   type InventorySlot,
 } from "../items/inventoryStack";
-import { SPELL_DEFINITIONS, type SpellDefinition } from "../data/spells";
+import {
+  SPELL_DEFINITIONS,
+  type SpellDefinition,
+} from "../data/spells";
+import {
+  ALL_FX_SHEETS,
+  getSpellEffectConfig,
+  getSpellEffectFirstFrame,
+  SPAWN_FX_CONFIG,
+  SPAWN_FX_ID,
+  spellEffectAnimKey,
+  SPELL_EFFECTS,
+} from "../spells/spellEffects";
+import type { NetInventorySlotState, ServerUseItemAckMessage } from "../../shared/protocol";
+import type {
+  GameEvent,
+  NetMobState,
+  NetPlayerEquipment,
+  NetPlayerState,
+  NetWorldItemState,
+  WorldSnapshot,
+} from "../../shared/types";
+import { isMultiplayerEnabled } from "../network/multiplayerConfig";
+import type { MultiplayerBridge } from "../network/MultiplayerBridge";
+import { getMobFootprintTiles } from "../../shared/mobFootprint";
+import {
+  buildAllInitialMobPlacements,
+  pickRandomMobSpawnTile as pickSharedMobSpawnTile,
+  TRAINING_DUMMY_HP,
+  TRAINING_DUMMY_ID,
+} from "../../shared/mobSpawns";
 import {
   MOB_MODELS,
   MOB_SPAWNS,
+  type MobBehavior,
   type MobDropConfig,
   type MobModelId,
   type MobSpawnConfig,
 } from "../data/mobs";
-
-
-
-type MoveDirection = {
-  dx: number;
-  dy: number;
-  facing: Facing;
-};
-
-type DummyState = {
-  spawnConfig: MobSpawnConfig;
-  id: string;
-  modelId: MobModelId;
-  name: string;
-  mapId: string;
-  tileX: number;
-  tileY: number;
-  hitboxOffsetY: number;
-  sizeTiles: number;
-  hp: number;
-  maxHp: number;
-  detectionRangeTiles: number;
-  leashRangeTiles: number;
-  attackDamage: number;
-  attackCooldownMs: number;
-  respawnMs: number;
-  expReward: number;
-  drops: MobDropConfig[];
-  aiMoveCooldownMs: number;
-  nextAiMoveAt: number;
-  nextAttackAt: number;
-  immobilizedUntilMs: number;
-  isAggroed: boolean;
-  isStatic: boolean;
-  fixedSpawnTile?: { x: number; y: number };
-  facing: Facing;
-  isMoving: boolean;
-  sprite: Phaser.GameObjects.Sprite;
-  hpLabel: Phaser.GameObjects.Text;
-  alive: boolean;
-};
-
-type PlayerProgressState = {
-  level: number;
-  exp: number;
-  expToNext: number;
-  hp: number;
-  hpMax: number;
-  mp: number;
-  mpMax: number;
-  gold: number;
-};
-type PlayerCombatSnapshot = {
-  attackMin: number;
-  attackMax: number;
-  damageReductionPercent: number;
-};
-type MacroBinding = {
-  keyCode: string | null;
-  action: MacroActionType;
-  itemId: ItemId | null;
-  spellId: number | null;
-};
-type SpellCastRequest = {
-  idSpell: number;
-  nombre: string;
-  descripcion: string;
-  valor: number;
-  usableBy: string[];
-  nivelMagiaRequerido: number;
-  manaCost: number;
-  danioMin: number;
-  danioMax: number;
-  healMin: number;
-  healMax: number;
-  puedeUsarseEnAliados: boolean;
-  remueveDebuff: string | null;
-};
-type CoreStats = {
-  strength: number;
-  constitution: number;
-  agility: number;
-  intelligence: number;
-};
-type RaceId = "human" | "drow";
-type ClassId = "paladin" | "mago" | "druida" | "guerrero" | "cazador" | "asesino";
-type PlayerAffiliation = "ciudadano" | "criminal";
-
-const DEFAULT_PLAYER_NAME = "Lonler";
-const PLAYER_NAME_COLOR = "#4da6ff";
-
-const PLAYER_FACE_SCALE = 0.75;
-const ATTACK_COOLDOWN_MS = 800;
-const ATTACK_MIN_DAMAGE = 8;
-const ATTACK_MAX_DAMAGE = 16;
-/** Velocidad de movimiento de mobs respecto al jugador (0.45 = 45%). */
-const MOB_MOVE_SPEED_RATIO = 0.45;
-const MOB_STEP_DURATION_MS = Math.ceil(STEP_DURATION_MS / MOB_MOVE_SPEED_RATIO);
-const MOB_AI_MOVE_COOLDOWN_MS = MOB_STEP_DURATION_MS;
-const EXP_BASE = 100;
-const EXP_GROWTH = 1.35;
-const TREE_TEXTURE_KEY = "ao_tree_arbol1";
-const TREE_TEXTURE_PATH = "/assets/ao/imperium/trees/arbol1.png";
-const TREE_SCALE = 0.75;
-const TREE_FRONT_DEPTH = 11.4;
-const TREE_OCCLUDED_ALPHA = 0.48;
-const CAMERA_BOUNDS_PADDING_TILES = 9999;
-const STAT_MIN = 10;
-const STAT_MAX = 25;
-const BASELINE_STRENGTH = 19;
-const BASE_MISS_CHANCE = 0.18;
-const MISS_REDUCTION_PER_AGILITY = 0.007;
-const MIN_MISS_CHANCE = 0.03;
-const MAX_MISS_CHANCE = 0.25;
-/** Vitales iniciales para probar pociones (humano da hpMax 100 por atributos). */
-const TEST_START_HP = 20;
-const TEST_START_HP_MAX = 100;
-const TEST_START_MP = 5_000;
-const TEST_START_MP_MAX = 10_000;
-const TEST_HEALTH_POTION_STACK = 20;
-const DEFAULT_MACRO_ACTION: MacroActionType = "use_item";
-const IMPLOSION_SPELL_ID = 7;
-const INMOVILIZAR_SPELL_ID = 8;
-const HERIDAS_GRAVES_SPELL_ID = 9;
-const IMPLOSION_ANIM_TEXTURE_KEY = "spell_implosion_fx";
-const IMPLOSION_ANIM_KEY = "spell_implosion_anim";
-const IMPLOSION_FRAME_WIDTH = 128;
-const IMPLOSION_FRAME_HEIGHT = 128;
-const IMPLOSION_FRAME_SEQUENCE = [0, 1, 2, 3, 5, 6, 7, 9, 10, 11, 13, 14, 15];
-const INMOVILIZAR_ANIM_TEXTURE_KEY = "spell_inmovilizar_fx";
-const INMOVILIZAR_ANIM_KEY = "spell_inmovilizar_anim";
-const INMOVILIZAR_FRAME_WIDTH = 128;
-const INMOVILIZAR_FRAME_HEIGHT = 128;
-const INMOVILIZAR_FRAME_SEQUENCE = [
-  0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14,
-];
-const INMOVILIZAR_FX_OFFSET_Y = 25;
-const HERIDAS_GRAVES_ANIM_TEXTURE_KEY = "spell_heridas_graves_fx";
-const HERIDAS_GRAVES_ANIM_KEY = "spell_heridas_graves_anim";
-const HERIDAS_GRAVES_FRAME_WIDTH = 102;
-const HERIDAS_GRAVES_FRAME_HEIGHT = 128;
-const HERIDAS_GRAVES_FRAME_SEQUENCE = [0, 1, 2, 3, 4];
-const MEDITATION_TEXTURE_KEY = "spell_meditation_fx";
-const MEDITATION_ANIM_KEY = "spell_meditation_anim";
-const MEDITATION_FRAME_WIDTH = 60;
-const MEDITATION_FRAME_HEIGHT = 60;
-const MEDITATION_FRAME_SEQUENCE = [0, 2, 4, 6, 8, 10];
-const MEDITATION_FX_OFFSET_Y = -6;
-const MEDITATION_MP_REGEN_INTERVAL_MS = 1000;
-const MEDITATION_MP_REGEN_PERCENT_PER_TICK = 0.12;
-const INMOVILIZADO_MOB_DURATION_MS = 60_000;
-const INMOVILIZADO_PLAYER_DURATION_MS = 20_000;
-const TRAINING_DUMMY_ID = "training_dummy_spawn";
-const TRAINING_DUMMY_NAME = "Dummy";
-const TRAINING_DUMMY_HP = 10_000;
-const WORLD_DEPTH_BASE = 9;
-const WORLD_DEPTH_SCALE = 1000;
-
-function macroSpellTextureKey(spellId: number): string {
-  return `macro_spell_${spellId}`;
-}
-
-function formatImmobilizeDuration(durationMs: number): string {
-  if (durationMs >= 60_000) {
-    const minutes = Math.round(durationMs / 60_000);
-    return minutes === 1 ? "1 minuto" : `${minutes} minutos`;
-  }
-  return `${Math.ceil(durationMs / 1000)} segundos`;
-}
-
-function formatImmobilizeRemaining(remainingMs: number): string {
-  if (remainingMs >= 60_000) {
-    const minutes = Math.ceil(remainingMs / 60_000);
-    return minutes === 1 ? "1 min" : `${minutes} min`;
-  }
-  return `${Math.ceil(remainingMs / 1000)}s`;
-}
-
-function formatCharacterInspectLine(
-  name: string,
-  affiliation: PlayerAffiliation,
-  classId: ClassId,
-  raceId: RaceId,
-  level: number
-): string {
-  const affiliationLabel = affiliation === "ciudadano" ? "Ciudadano" : "Criminal";
-  const classLabelById: Record<ClassId, string> = {
-    paladin: "Paladín",
-    mago: "Mago",
-    druida: "Druida",
-    guerrero: "Guerrero",
-    cazador: "Cazador",
-    asesino: "Asesino",
-  };
-  const classLabel = classLabelById[classId];
-  const raceLabel = raceId === "human" ? "Humano" : "Drow";
-  return `${name} - ${affiliationLabel} - ${classLabel} ${raceLabel} Nivel ${level}`;
-}
-
-const RACE_BASE_STATS: Record<RaceId, CoreStats> = {
-  human: { strength: 19, constitution: 19, agility: 19, intelligence: 19 },
-  drow: { strength: 18, constitution: 18, agility: 20, intelligence: 20 },
-};
-const CLASS_STAT_MODIFIERS: Record<ClassId, CoreStats> = {
-  paladin: { strength: 2, constitution: 2, agility: -1, intelligence: -2 },
-  mago: { strength: -3, constitution: -2, agility: -3, intelligence: 6 },
-  druida: { strength: -1, constitution: -1, agility: 1, intelligence: 3 },
-  guerrero: { strength: 4, constitution: 4, agility: 2, intelligence: -10 },
-  cazador: { strength: 3, constitution: 3, agility: 2, intelligence: -10 },
-  asesino: { strength: 1, constitution: 2, agility: 4, intelligence: 1 },
-};
-const CLASS_USES_MANA: Record<ClassId, boolean> = {
-  paladin: true,
-  mago: true,
-  druida: true,
-  guerrero: false,
-  cazador: false,
-  asesino: true,
-};
-
-function expRequiredForLevel(level: number): number {
-  return Math.max(1, Math.floor(EXP_BASE * Math.pow(EXP_GROWTH, level - 1)));
-}
-
-function clampStat(value: number): number {
-  return Phaser.Math.Clamp(Math.floor(value), STAT_MIN, STAT_MAX);
-}
-
-function resolveCoreStats(race: RaceId, classId: ClassId): CoreStats {
-  const base = RACE_BASE_STATS[race];
-  const mod = CLASS_STAT_MODIFIERS[classId];
-  return {
-    strength: clampStat(base.strength + mod.strength),
-    constitution: clampStat(base.constitution + mod.constitution),
-    agility: clampStat(base.agility + mod.agility),
-    intelligence: clampStat(base.intelligence + mod.intelligence),
-  };
-}
-
-function getBaseVitalsFromStats(stats: CoreStats): { hpMax: number; mpMax: number } {
-  return {
-    hpMax: 62 + stats.constitution * 2,
-    mpMax: 12 + stats.intelligence * 2,
-  };
-}
-
-function getLevelUpBonusesFromStats(stats: CoreStats): { hpBonus: number; mpBonus: number } {
-  return {
-    hpBonus: Math.max(1, Math.round(stats.constitution * 0.6)),
-    mpBonus: Math.max(1, Math.round(stats.intelligence * 0.5)),
-  };
-}
-
-function getStrengthDamageBonus(strength: number): { minBonus: number; maxBonus: number } {
-  const delta = strength - BASELINE_STRENGTH;
-  return {
-    minBonus: delta,
-    maxBonus: delta * 2,
-  };
-}
-
-function getMissChanceFromAgility(agility: number): number {
-  const missChance = BASE_MISS_CHANCE - (agility - STAT_MIN) * MISS_REDUCTION_PER_AGILITY;
-  return Phaser.Math.Clamp(missChance, MIN_MISS_CHANCE, MAX_MISS_CHANCE);
-}
-
-const PLAYER_FACE_OFFSET: Record<Facing, { x: number; y: number }> = {
-  down: { x: -0.5, y: 36 },
-  up: { x: -0.5, y: 36 },
-
-  // Ajuste lateral
-  left: { x: 2, y: 35 },
-  right: { x: -2, y: 35 },
-};  
-
-const WEAPON_ROW_BY_FACING: Record<Facing, number> = {
-  down: 0, // S (f1)
-  up: 1, // W (f2)
-  left: 2, // A (f3)
-  right: 3, // D (f4)
-};
-const WEAPON_SHEET_COLS = 6;
-type GameSceneInitData = {
-  character?: SavedCharacter;
-  slotIndex?: number;
-};
+import { MOB_DEFAULT_MOVE_SPEED_RATIO, MOB_VISUAL_CONFIGS } from "../game/mobs/mobVisualConfig";
+import {
+  createMobFaceSpriteIfNeeded,
+  createMobSprite,
+  loadMobVisualAssets,
+  mobHasFaceOverlay,
+  playMobIdleFrame,
+  playMobWalkAnimation,
+  registerMobWalkAnimations,
+  syncMobFaceSprite,
+} from "../game/mobs/mobVisualRuntime";
+import {
+  getMobShowcaseAnchorTile,
+  MOB_SHOWCASE_CONFIG,
+  MOB_SHOWCASE_MODEL_ORDER,
+} from "../data/mobShowcase";
+import {
+  WorldItemManager,
+  GameSceneChatCommands,
+  GameSceneMultiplayerController,
+  GameSceneMobController,
+  GameSceneMapController,
+  GameSceneInventoryController,
+  GameSceneCombatController,
+  applyMobHitboxOverrideToDummy,
+  clearMobHitboxOverrides,
+  getMobHitboxOverrides,
+  saveMobHitboxOverridesFromDummies,
+  formatCharacterInspectLine,
+  formatImmobilizeDuration,
+  formatImmobilizeRemaining,
+  formatInspectLineWithDebuffs,
+  getDummyActiveDebuffsForInspect,
+  expRequiredForLevel,
+  getBaseVitalsFromStats,
+  getLevelUpBonusesFromStats,
+  macroSpellTextureKey,
+  BUILDING_OCCLUDED_ALPHA,
+  CLASS_USES_MANA,
+  DEFAULT_MACRO_ACTION,
+  DEFAULT_MOB_HITBOX_HEIGHT_TILES,
+  DEFAULT_MOB_HITBOX_OFFSET_Y,
+  DEFAULT_MOB_HITBOX_WIDTH_TILES,
+  DEFAULT_PLAYER_NAME,
+  HUD_AGILITY_POTION_TEXTURE_KEY,
+  HUD_STRENGTH_POTION_TEXTURE_KEY,
+  INMOVILIZADO_PLAYER_DURATION_MS,
+  MEDITATION_ANIM_KEY,
+  MEDITATION_FRAME_HEIGHT,
+  MEDITATION_FRAME_SEQUENCE,
+  MEDITATION_FRAME_WIDTH,
+  MEDITATION_TEXTURE_KEY,
+  MOB_HITBOX_HEIGHT_RATIO,
+  PLAYER_HITBOX_HEIGHT_PX,
+  PLAYER_HITBOX_OFFSET_X,
+  PLAYER_HITBOX_OFFSET_Y,
+  PLAYER_HITBOX_PROFILE_WIDTH_PX,
+  PLAYER_HITBOX_WIDTH_PX,
+  TEST_HEALTH_POTION_STACK,
+  TEST_MANA_POTION_STACK,
+  TEST_PLAYER_LEVEL,
+  TEST_START_GOLD,
+  TEST_START_HP,
+  TEST_START_HP_MAX,
+  TEST_START_MP,
+  TEST_START_MP_MAX,
+  TREE_OCCLUDED_ALPHA,
+  TREE_TEXTURE_KEY,
+  TREE_TEXTURE_PATH,
+  TRAINING_DUMMY_NAME,
+  WORLD_DEPTH_BASE,
+  WORLD_DEPTH_SCALE,
+  type ClassId,
+  type DummyState,
+  type GameSceneInitData,
+  type MacroBinding,
+  type MoveDirection,
+  type PlayerAffiliation,
+  type PlayerProgressState,
+  type RaceId,
+  type SpellCastRequest,
+  type WorldItemEntry,
+} from "./gameSceneModules/index";
 
 export class GameScene extends Phaser.Scene {
   private player!: Phaser.GameObjects.Sprite;
   private playerFace!: Phaser.GameObjects.Sprite;
   private playerNameLabel!: Phaser.GameObjects.Text;
   private equippedWeaponSprite?: Phaser.GameObjects.Sprite;
+  private equippedShieldSprite?: Phaser.GameObjects.Sprite;
+  private equippedHelmetSprite?: Phaser.GameObjects.Sprite;
 
-  private mapTiles!: Phaser.GameObjects.Container;
-  private mapOverlay!: Phaser.GameObjects.Graphics;
-  private mapTrees: Phaser.GameObjects.Image[] = [];
   private gameUi!: GameUi;
-  private uiCamera!: Phaser.Cameras.Scene2D.Camera;
+  private mapController!: GameSceneMapController;
+  private inventoryController!: GameSceneInventoryController;
+  private combatController!: GameSceneCombatController;
 
   private currentMap!: GameMap;
   private currentMapId = START_MAP_ID;
@@ -372,6 +312,7 @@ export class GameScene extends Phaser.Scene {
   private playerTileY = 4;
 
   private isMoving = false;
+  /** Evita encolar varios pasos en MP antes de la confirmación del servidor. */
   private desiredFacing: Facing | null = null;
   private isChangingMap = false;
   private facing: Facing = "down";
@@ -380,27 +321,19 @@ export class GameScene extends Phaser.Scene {
   private cancelSpellTargetingKey!: Phaser.Input.Keyboard.Key;
   private meditateKey!: Phaser.Input.Keyboard.Key;
   private worldMapToggleKey!: Phaser.Input.Keyboard.Key;
-  private worldMapOverlay?: Phaser.GameObjects.Container;
-  private worldMapCurrentMarker?: Phaser.GameObjects.Arc;
-  private worldMapMapCenters = new Map<string, { x: number; y: number }>();
-  private isWorldMapOpen = false;
+  private inventory: InventorySlot[] = Array(INVENTORY_SLOT_COUNT).fill(null);
 
-private inventory: InventorySlot[] = Array(20).fill(null);
-
-private worldItems: {
-  id: ItemId;
-  tileX: number;
-  tileY: number;
-  count: number;
-  sprite: Phaser.GameObjects.Sprite;
-}[] = [];
+  private worldItemManager!: WorldItemManager;
+  private chatCommands!: GameSceneChatCommands;
+  private mpController!: GameSceneMultiplayerController;
+  private mobController!: GameSceneMobController;
 
   /**
    * Cara elegida.
    * Por ahora usamos la primera. Más adelante esto puede venir
    * desde la pantalla de creación de personaje.
    */
-  /** Columna del spritesheet human_faces (0 = cara 1 / c1). */
+  /** Columna del spritesheet {raza}_{genero}_faces (0 = cara 1 / c1). */
   private selectedFaceIndex = 0;
 
   private cursors!: Phaser.Types.Input.Keyboard.CursorKeys;
@@ -413,12 +346,18 @@ private worldItems: {
   private attackKey!: Phaser.Input.Keyboard.Key;
   private equipSelectedSlotKey!: Phaser.Input.Keyboard.Key;
   private dropSelectedSlotKey!: Phaser.Input.Keyboard.Key;
-  private nextAttackAt = 0;
-  private dummies: DummyState[] = [];
   private equippedOutfit: Outfit = "base";
+  private equippedArmorVisual?: PlayerArmorVisualOptions;
   private playerName = DEFAULT_PLAYER_NAME;
+  private playerRole: PlayerRole = "player";
   private selectedRace: RaceId = "human";
+  private selectedGender: CharacterGenderId = "male";
+  private selectedBodyTextureKey = raceBodyTextureKey("human", "male");
   private selectedClass: ClassId = "paladin";
+  private attributeBuffs = { strength: 0, agility: 0 };
+  /** Expira el bono de pociones verde/amarilla (timer compartido). 0 = sin efecto activo. */
+  private attributeBuffExpiresAt = 0;
+  private selectedFaction: CharacterFactionId = "imperial";
   private readonly playerAffiliation: PlayerAffiliation = "ciudadano";
   private playerProgress: PlayerProgressState = {
     level: 1,
@@ -431,28 +370,382 @@ private worldItems: {
     gold: 0,
   };
   private readonly learnedSpellIds = new Set<number>();
-  private playerMagicLevel = 0;
-  private pendingSpellCast: SpellCastRequest | null = null;
+  private skillLevels: Record<SkillId, number> = createInitialSkillLevels();
+  private killStats: PlayerKillStats = {
+    creaturesKilled: 0,
+    criminalsKilled: 0,
+    usersKilled: 0,
+  };
+  /** Evita FX duplicado si el servidor reenvía spell_fx tras un cast local. */
+  private suppressServerSpellFxUntil = 0;
+  private inspectedDummyId: string | null = null;
   private playerImmobilizedUntilMs = 0;
   private wasPlayerImmobilizedLastFrame = false;
   private nextImmobilizedMoveFeedbackAt = 0;
-  private isMeditating = false;
-  private meditationRegenTimerMs = 0;
-  private meditationFx?: Phaser.GameObjects.Sprite;
-  private activePlayerDamageText?: Phaser.GameObjects.Text;
-  private activePlayerDamageTween?: Phaser.Tweens.Tween;
+  private meditationSystem!: MeditationSystem;
+  private mobAiSystem!: MobAiSystem;
+  private hitboxDebugEnabled = false;
+  private hitboxDebugGraphics?: Phaser.GameObjects.Graphics;
+  private deathSystem!: DeathSystem;
+  private _homeMapIdBackup = DEFAULT_HOME_MAP_ID;
+  private _bankStateBackup: BankState = { slots: Array(20).fill(null), gold: 0 };
+  private characterSlotIndex: number | null = null;
+  private deathOverlay?: DeathOverlay;
+  private bankOverlay?: BankOverlay;
+  private shopOverlay?: ShopOverlay;
+  private shopBankSystem!: ShopBankSystem;
+  private characterId = "demo-lonler";
+  private npcManager?: NpcManager;
   private macroBindings: MacroBinding[] = Array.from({ length: 10 }, () => ({
     keyCode: null,
     action: DEFAULT_MACRO_ACTION,
     itemId: null,
     spellId: null,
   }));
+  private hasLoadedCharacterProgress = false;
+  private progressService: ProgressService | null = null;
 
   constructor() {
     super("GameScene");
   }
 
+  private get dummies(): DummyState[] {
+    return this.mobController.getDummies();
+  }
+
+  private get multiplayer(): MultiplayerBridge | null {
+    return this.mpController?.getBridge() ?? null;
+  }
+
+  private get uiCamera(): Phaser.Cameras.Scene2D.Camera | undefined {
+    return this.mapController?.getUiCamera();
+  }
+
+  private get mapTiles(): Phaser.GameObjects.Container {
+    return this.mapController.mapTiles;
+  }
+
+  private get mapOverlay(): Phaser.GameObjects.Graphics {
+    return this.mapController.mapOverlay;
+  }
+
+  /** init() puede llamar applyActiveCharacter antes de create(). */
+  private ensureProgressService(): ProgressService {
+    if (!this.progressService) {
+      this.progressService = new ProgressService(this);
+    }
+    return this.progressService;
+  }
+
+  private initMapController(): void {
+    this.mapController = new GameSceneMapController({
+      scene: this,
+      getGameUi: () => this.gameUi,
+      getPlayer: () => this.player,
+      getPlayerFace: () => this.playerFace,
+      getPlayerNameLabel: () => this.playerNameLabel,
+      getEquippedSprites: () =>
+        [
+          this.equippedWeaponSprite,
+          this.equippedShieldSprite,
+          this.equippedHelmetSprite,
+        ].filter((s): s is Phaser.GameObjects.Sprite => s != null),
+      getWorldItemSprites: () => this.worldItemManager?.getSprites() ?? [],
+      getDummyRenderObjects: () =>
+        this.dummies.flatMap((dummy) =>
+          dummy.face
+            ? [dummy.sprite, dummy.face, dummy.hpLabel]
+            : [dummy.sprite, dummy.hpLabel]
+        ),
+      depthFromFeetY: (feetY) => this.depthFromFeetY(feetY),
+      getCurrentMap: () => this.currentMap,
+      getCurrentMapId: () => this.currentMapId,
+      getPlayerTile: () => ({ x: this.playerTileX, y: this.playerTileY }),
+      refreshMinimap: () => this.refreshMinimap(),
+      onViewportLayout: () => {
+        if (this.deathPhase !== "alive") {
+          this.deathOverlay?.layout(this.mapController.getGameViewportRect());
+        }
+        this.shopBankSystem?.layoutOnResize(this.mapController.getGameViewportRect());
+      },
+    });
+  }
+
+  private initInventoryController(): void {
+    this.inventoryController = new GameSceneInventoryController({
+      getGameUi: () => this.gameUi,
+      getInventory: () => this.inventory,
+      getEquipment: () => this.equipment,
+      getPlayerProgress: () => this.playerProgress,
+      getSelectedClass: () => this.selectedClass,
+      getSelectedRace: () => this.selectedRace,
+      getPlayerTile: () => ({ x: this.playerTileX, y: this.playerTileY }),
+      getWorldItemManager: () => this.worldItemManager,
+      isMultiplayerActive: () => this.isMultiplayerActive(),
+      sendEquipToServer: (action, payload) => {
+        if (action === "equip" && "inventorySlot" in payload) {
+          this.multiplayer!.sendEquipItem("equip", payload);
+        } else if (action === "unequip" && "equipSlot" in payload) {
+          this.multiplayer!.sendEquipItem("unequip", payload);
+        }
+      },
+      syncServerInventory: () => this.syncServerInventoryIfMultiplayer(),
+      sendDropItemToServer: (slot, amount) =>
+        this.mpController.sendDropItem(slot, amount),
+      sendDropGoldToServer: (amount) => this.mpController.sendDropGold(amount),
+      sendPickupWorldItemToServer: () => this.mpController.sendPickupWorldItem(),
+      createWorldItem: (itemId, tx, ty, count) =>
+        this.createWorldItem(itemId, tx, ty, count),
+      createWorldGold: (tx, ty, count) => this.createWorldGold(tx, ty, count),
+      addChatLine: (text) => this.gameUi.addChatLine(text),
+      refreshHud: () => this.refreshHud(),
+      refreshInventoryUi: () => this.refreshInventoryUi(),
+      scheduleSave: () => this.scheduleCharacterProgressSave(),
+      useConsumableFromSlot: (slotIndex) => this.useConsumableFromSlot(slotIndex),
+      syncEquippedArmorOutfit: () => this.syncEquippedArmorOutfit(),
+      syncEquippedHeldItemVisuals: () => this.syncEquippedHeldItemVisuals(),
+      getCombatSnapshot: () => this.combatController.getCombatSnapshot(),
+    });
+  }
+
+  private initCombatController(): void {
+    this.combatController = new GameSceneCombatController({
+      scene: this,
+      input: this.input,
+      time: this.time,
+      tweens: this.tweens,
+      getUiCamera: () => this.uiCamera,
+      getGameUi: () => this.gameUi,
+      getPlayerProgress: () => this.playerProgress,
+      getEquipment: () => this.equipment,
+      getCoreStats: () => this.getCoreStats(),
+      getFacing: () => this.facing,
+      getPlayerTile: () => ({ x: this.playerTileX, y: this.playerTileY }),
+      getCurrentMapId: () => this.currentMapId,
+      hasLearnedSpell: (spellId) => this.learnedSpellIds.has(spellId),
+      getMagicSkillLevel: () => this.getMagicSkillLevel(),
+      hasAnilloEspectralInInventory: () => this.hasAnilloEspectralInInventory(),
+      isPlayerDeadOrGhost: () => this.isPlayerDeadOrGhost(),
+      isMultiplayerActive: () => this.isMultiplayerActive(),
+      stopMeditation: () => this.stopMeditation(),
+      refreshHud: () => this.refreshHud(),
+      tryImproveMagicOnSpellCast: () => this.tryImproveMagicOnSpellCast(),
+      onPlayerHpDepleted: () => {
+        if (this.deathPhase === "alive") {
+          this.handlePlayerDeath();
+        }
+      },
+      sendAttackToServer: (facing) => this.multiplayer!.sendAttack(facing),
+      sendCastSpellToServer: (spellId, tileX, tileY) =>
+        this.multiplayer!.sendCastSpell(spellId, tileX, tileY),
+      getDummyInAttackRange: () => this.getDummyInAttackRange(),
+      getDummyHitTile: (dummy) => this.getDummyHitTile(dummy),
+      killDummy: (dummy) => this.killDummy(dummy),
+      refreshInspectedDummyLabel: () => this.refreshInspectedDummyLabel(),
+      getInspectedDummyId: () => this.inspectedDummyId,
+      playSpellEffect: (spellId, tx, ty) => this.playSpellEffect(spellId, tx, ty),
+      setSuppressServerSpellFxUntil: (until) => {
+        this.suppressServerSpellFxUntil = until;
+      },
+      onMeleeImpact: () => {
+        this.cameras.main.shake(45, 0.0016, true);
+        this.playHitSound();
+      },
+    });
+  }
+
+  private initWorldItemManager(): void {
+    this.worldItemManager = new WorldItemManager({
+      scene: this,
+      uiCamera: this.uiCamera!,
+      getCurrentMap: () => this.currentMap,
+      getCurrentMapId: () => this.currentMapId,
+      depthFromFeetY: (feetY) => this.depthFromFeetY(feetY),
+      isMapTileWalkable: (tileX, tileY) => this.isMapTileWalkable(tileX, tileY),
+      isServerAuthoritative: () => this.isMultiplayerActive(),
+      onPersist: () => this.scheduleCharacterProgressSave(),
+      onInspect: (entry) => this.inspectWorldItem(entry),
+    });
+  }
+
+  private initChatCommands(): void {
+    this.chatCommands = new GameSceneChatCommands({
+      gameUi: this.gameUi,
+      addChatLine: (text) => this.gameUi.addChatLine(text),
+      isMultiplayerConnected: () => Boolean(this.multiplayer?.isConnected()),
+      sendChat: (message) => this.multiplayer!.sendChat(message),
+      meditationToggle: () => this.meditationSystem.toggle("command"),
+      goToHomePriest: () => this.goToHomePriestViaCommand(),
+      markHomeCity: () => this.markHomeCity(),
+      isAlive: () => this.deathPhase === "alive",
+      killPlayer: () => {
+        this.playerProgress.hp = 0;
+        this.handlePlayerDeath();
+      },
+      resetProgress: () => this.resetCurrentCharacterProgress(),
+      handleHitboxCommand: (normalized) => this.handleHitboxCommand(normalized),
+      handleMobEditCommand: (normalized) => this.handleMobEditCommand(normalized),
+      handleUiCommand: (normalized) => this.chatCommands.handleUiCommand(normalized),
+      handleGiveCommand: (raw) => this.chatCommands.handleGiveCommand(raw),
+      addGold: (amount) => {
+        this.playerProgress.gold += amount;
+      },
+      refreshHud: () => this.refreshHud(),
+      scheduleSave: () => this.scheduleCharacterProgressSave(),
+      tryAdminCommand: (message) => this.tryAdminCommand(message),
+      isPlayerAdmin: () => this.isPlayerAdmin(),
+      getPlayerName: () => this.playerName,
+      getInventory: () => this.inventory,
+      refreshInventoryUi: () => this.refreshInventoryUi(),
+    });
+  }
+
+  private initMobController(): void {
+    this.mobController = new GameSceneMobController({
+      scene: this,
+      getUiCamera: () => this.uiCamera,
+      time: this.time,
+      tweens: this.tweens,
+      getCurrentMapId: () => this.currentMapId,
+      getPlayerTile: () => ({ x: this.playerTileX, y: this.playerTileY }),
+      getInspectedDummyId: () => this.inspectedDummyId,
+      setInspectedDummyId: (id) => {
+        this.inspectedDummyId = id;
+      },
+      isMultiplayerActive: () => this.isMultiplayerActive(),
+      isHitboxDebugEnabled: () => this.hitboxDebugEnabled,
+      setHitboxDebugEnabled: (enabled) => this.setHitboxDebugEnabled(enabled),
+      addChatLine: (text) => this.gameUi.addChatLine(text),
+      refreshInspectedDummyLabel: () => this.refreshInspectedDummyLabel(),
+      killDummy: (dummy) => this.killDummy(dummy),
+      getMobFeetWorld: (modelId, tileX, tileY) =>
+        this.getMobFeetWorld(modelId, tileX, tileY),
+      getMobStepDurationMs: (modelId) => this.getMobStepDurationMs(modelId),
+      depthFromFeetY: (feetY) => this.depthFromFeetY(feetY),
+      setupMobHitboxInteraction: (sprite, h, w, oy) =>
+        this.setupMobHitboxInteraction(sprite, h, w, oy),
+      syncDummyWorldPosition: (dummy) => this.syncDummyWorldPosition(dummy),
+      attachMobFaceIfNeeded: (dummy, facing) =>
+        this.attachMobFaceIfNeeded(dummy, facing),
+      setMobAnimationState: (dummy, state) => this.setMobAnimationState(dummy, state),
+      syncMobFaceForDummy: (dummy) => this.syncMobFaceForDummy(dummy),
+      rebuildMobHitbox: (dummy) => this.mobController.rebuildHitbox(dummy),
+      startDummyStep: (dummy, tx, ty, facing) =>
+        this.startDummyStep(dummy, tx, ty, facing),
+      isTileWalkableForMob: (tx, ty, source) =>
+        this.isTileWalkableForMob(tx, ty, source),
+      isTileOccupiedByStaticNpc: (tx, ty, mapId) =>
+        this.isTileOccupiedByStaticNpc(tx, ty, mapId),
+      pickRandomMobSpawnTile: (spawn) => this.pickRandomMobSpawnTile(spawn),
+    });
+  }
+
+  private initMpController(): void {
+    this.mpController = new GameSceneMultiplayerController({
+      scene: this,
+      uiCamera: this.uiCamera!,
+      depthFromFeetY: (feetY) => this.depthFromFeetY(feetY),
+      getCurrentMapId: () => this.currentMapId,
+      getPlayerName: () => this.playerName,
+      getCharacterId: () => this.characterId,
+      getPlayerTile: () => ({ x: this.playerTileX, y: this.playerTileY }),
+      setPlayerTile: (tileX, tileY) => {
+        this.playerTileX = tileX;
+        this.playerTileY = tileY;
+      },
+      getFacing: () => this.facing,
+      setFacing: (facing) => {
+        this.facing = facing;
+      },
+      isMoving: () => this.isMoving,
+      setIsMoving: (moving) => {
+        this.isMoving = moving;
+      },
+      getSelectedRace: () => this.selectedRace,
+      getSelectedGender: () => this.selectedGender,
+      getSelectedClass: () => this.selectedClass,
+      getSelectedFaction: () => this.selectedFaction,
+      getSelectedFaceIndex: () => this.selectedFaceIndex,
+      getPlayerProgress: () => this.playerProgress,
+      getEquipment: () => this.equipment,
+      getEquippedOutfit: () => this.equippedOutfit,
+      getInventory: () => this.inventory,
+      setMultiplayerStatus: (message) => this.setMultiplayerStatus(message),
+      addChatLine: (text) => this.gameUi.addChatLine(text),
+      addCombatLine: (text) => this.gameUi.addCombatLine(text),
+      syncLocalVitalsFromServer: (state) => this.syncLocalVitalsFromServer(state),
+      syncLocalEquipmentFromServer: (state) => this.syncLocalEquipmentFromServer(state),
+      syncLocalInventoryFromServer: (slots) => this.syncLocalInventoryFromServer(slots),
+      syncLocalGoldFromServer: (gold) => this.syncLocalGoldFromServer(gold),
+      syncWorldItemsFromServer: (items) => this.syncWorldItemsFromServer(items),
+      applyWorldItemSpawned: (mapId, item) => this.applyWorldItemSpawned(mapId, item),
+      applyWorldItemUpdated: (mapId, item) => this.applyWorldItemUpdated(mapId, item),
+      applyWorldItemRemoved: (mapId, worldItemId) =>
+        this.applyWorldItemRemoved(mapId, worldItemId),
+      syncMobsFromServer: (mobs) => this.mobController.syncFromServer(mobs),
+      applyNetMobState: (mob) => this.mobController.applyNetState(mob),
+      applyNetMobLeft: (mobId) => this.mobController.applyNetLeft(mobId),
+      handleServerPlayerDied: (playerId, killerName) =>
+        this.handleServerPlayerDied(playerId, killerName),
+      handleServerUseItemAck: (ack) => this.handleServerUseItemAck(ack),
+      handleServerPlayerUpdated: (state) => this.handleServerPlayerUpdated(state),
+      applyServerPlayerRole: (role) => {
+        this.playerRole = this.resolvePlayerRole(role);
+        this.syncPlayerNameLabelStyle();
+      },
+      isAdminCharacterName,
+      snapLocalPlayerToTile: (state) => this.mpController.snapLocalPlayerToTile(state),
+      playFacingAnim: (state) => this.playFacingAnim(state),
+      isTileWalkable: (tx, ty) => this.isTileWalkable(tx, ty),
+      isTileOccupiedByRemotePlayer: (tx, ty) =>
+        this.isTileOccupiedByRemotePlayer(tx, ty),
+      getLocalPlayerStepDurationMs: () => this.getLocalPlayerStepDurationMs(),
+      getPlayerFeetWorldForTile: (tx, ty) => this.getPlayerFeetWorldForTile(tx, ty),
+      killAllLocalMobs: () => this.mobController.destroyAll(),
+      applyIncomingDamage: (amount, type) =>
+        this.combatController.applyIncomingDamage(amount, type),
+      showDamageNumber: (x, y, amount, source) =>
+        this.combatController.showDamageNumber(x, y, amount, source),
+      playSpellEffect: (spellId, tx, ty) => this.playSpellEffect(spellId, tx, ty),
+      getSuppressServerSpellFxUntil: () => this.suppressServerSpellFxUntil,
+      getPlayerSprite: () => this.player,
+      applyMapTransition: (transition, options) =>
+        this.applyMapTransition(transition, options),
+      tweenPlayerTo: (target, duration, onUpdate, onComplete) => {
+        this.tweens.add({
+          targets: this.player,
+          x: target.x,
+          y: target.y,
+          duration,
+          ease: "Linear",
+          onUpdate,
+          onComplete,
+        });
+      },
+      killPlayerTweens: () => this.tweens.killTweensOf(this.player),
+      setPlayerPosition: (x, y) => this.player.setPosition(x, y),
+      syncPlayerFacePosition: () => this.syncPlayerFacePosition(),
+      syncEquippedHeldItemVisuals: () => this.syncEquippedHeldItemVisuals(),
+      syncPlayerNameLabelPosition: () => this.syncPlayerNameLabelPosition(),
+      refreshMapLocationLabel: () => this.refreshMapLocationLabel(),
+      refreshMinimap: () => this.refreshMinimap(),
+      findDummyById: (id) => {
+        const dummy = this.mobController.findById(id);
+        return dummy ? { alive: dummy.alive, sprite: dummy.sprite } : null;
+      },
+      tintDummySprite: (dummy, tint) => dummy.sprite.setTint(tint),
+      clearDummyTint: (dummy) => {
+        if (dummy.alive) dummy.sprite.clearTint();
+      },
+      setPlayerHpZero: () => {
+        this.playerProgress.hp = 0;
+      },
+      handlePlayerDeath: () => this.handlePlayerDeath(),
+    });
+  }
+
   init(data: GameSceneInitData = {}) {
+    this.characterSlotIndex = data.slotIndex ?? getActiveCharacterSlotIndex();
     const character = data.character ?? getActiveCharacter();
     if (character) {
       this.applyActiveCharacter(character);
@@ -461,39 +754,17 @@ private worldItems: {
 
   preload() {
     registerPlayerSprites(this);
+    registerNpcAssets(this);
     registerAoTerrain(this);
-    registerHumanFaces(this);
+    registerRaceFaces(this);
     registerInventoryPanelAssets(this);
-    Object.values(MOB_MODELS).forEach((model) => {
-      this.load.spritesheet(model.textureKey, model.texturePath, {
-        frameWidth: model.frameWidth,
-        frameHeight: model.frameHeight,
+    loadMobVisualAssets(this);
+    ALL_FX_SHEETS.forEach((fx) => {
+      this.load.spritesheet(fx.sheetKey, fx.path, {
+        frameWidth: fx.frameWidth,
+        frameHeight: fx.frameHeight,
       });
     });
-    this.load.spritesheet(
-      IMPLOSION_ANIM_TEXTURE_KEY,
-      "/assets/ao/spells/imploAnimation.png",
-      {
-        frameWidth: IMPLOSION_FRAME_WIDTH,
-        frameHeight: IMPLOSION_FRAME_HEIGHT,
-      }
-    );
-    this.load.spritesheet(
-      INMOVILIZAR_ANIM_TEXTURE_KEY,
-      "/assets/ao/spells/inmovilizarAnimation.png",
-      {
-        frameWidth: INMOVILIZAR_FRAME_WIDTH,
-        frameHeight: INMOVILIZAR_FRAME_HEIGHT,
-      }
-    );
-    this.load.spritesheet(
-      HERIDAS_GRAVES_ANIM_TEXTURE_KEY,
-      "/assets/ao/spells/heridasGravesAnimation.png",
-      {
-        frameWidth: HERIDAS_GRAVES_FRAME_WIDTH,
-        frameHeight: HERIDAS_GRAVES_FRAME_HEIGHT,
-      }
-    );
     this.load.spritesheet(
       MEDITATION_TEXTURE_KEY,
       "/assets/ao/meditations/lowLvlMed.png",
@@ -503,6 +774,7 @@ private worldItems: {
       }
     );
     this.load.image(TREE_TEXTURE_KEY, TREE_TEXTURE_PATH);
+    registerMapObjectAssets(this);
     SPELL_DEFINITIONS.forEach((spell) => {
       if (!spell.iconAssetPath) return;
       this.load.image(macroSpellTextureKey(spell.idSpell), spell.iconAssetPath);
@@ -521,99 +793,556 @@ private worldItems: {
         }
       }
     });
+    Object.values(ITEM_DEFINITIONS).forEach((item) => {
+      if (item.type !== "armor") return;
+      const armorSheets = [item.spritesheetStdPath, item.spritesheetBajosPath].filter(
+        (path): path is string => Boolean(path)
+      );
+      armorSheets.forEach((sheetPath) => {
+        registerArmorSpritesheet(this, textureKeyFromAssetPath(sheetPath), sheetPath);
+      });
+    });
+
+    this.load.image("world_gold", "assets/ao/otherItems/oro.png");
+    this.load.image(HUD_STRENGTH_POTION_TEXTURE_KEY, "assets/ao/otherItems/pocionVerde.png");
+    this.load.image(HUD_AGILITY_POTION_TEXTURE_KEY, "assets/ao/otherItems/pocionAmarilla.png");
+
+    for (const map of getAllMaps()) {
+      for (const overlay of map.groundOverlays ?? []) {
+        this.load.image(overlay.textureKey, overlay.texturePath);
+      }
+    }
   }
 
   create() {
+    this.initShopBankSystem();
+    this.initCombatController();
+    this.initDeathSystem();
+    this.initMeditationSystem();
+    this.initMobAiSystem();
     setupPlayerTexture(this);
     registerPlayerAnimations(this);
     this.registerSpellAnimations();
     this.registerMeditationAnimation();
     setupAoTerrainTexture(this);
-    setupHumanFacesTexture(this);
+    setupRaceFacesTextures(this);
     setupInventoryPanelTextures(this);
-    this.registerMobAnimations();
+    registerMobWalkAnimations(this);
     const treeTexture = this.textures.get(TREE_TEXTURE_KEY);
     if (treeTexture.key !== "__MISSING") {
       treeTexture.setFilter(Phaser.Textures.FilterMode.NEAREST);
     }
 
+    const progress = this.ensureProgressService();
+    progress.setCharacterId(this.characterId);
+    const savedProgress = progress.load();
+    if (savedProgress) {
+      this.applyCharacterProgress(savedProgress);
+      this.hasLoadedCharacterProgress = true;
+    }
+
     this.currentMap = getMap(this.currentMapId);
-    this.updateWorldBackgroundColor();
+    this.initMapController();
+    this.mapController.updateWorldBackgroundColor();
     const centerTileX = Math.floor(this.currentMap.width / 2);
     const centerTileY = Math.floor(this.currentMap.height / 2);
-    this.playerTileX = centerTileX;
-    this.playerTileY = centerTileY;
+    if (!this.hasLoadedCharacterProgress) {
+      this.playerTileX = centerTileX;
+      this.playerTileY = centerTileY;
+    }
 
-    this.mapTiles = this.add.container(0, 0).setDepth(0);
-    this.mapOverlay = this.add.graphics().setDepth(1);
-
-    this.drawMap(this.currentMap);
+    this.mapController.drawMap(this.currentMap);
     this.createPlayer();
-    this.createWorldItem("weapon_saramiana", centerTileX + 1, centerTileY);
-    this.createWorldItem("armor_cuero", centerTileX + 2, centerTileY);
-    this.createWorldItem("scroll_implosion", centerTileX + 3, centerTileY);
-    this.createDummyIfNeeded();
+    if (!this.hasLoadedCharacterProgress) {
+      this.spawnAllItemsNearSpawn(centerTileX, centerTileY);
+    }
+    this.initMobController();
+    this.mobController.createAllIfNeeded();
+    this.time.delayedCall(200, () => this.playSpawnEffect());
 
     this.gameUi = new GameUi(this);
-    this.gameUi.setChatSubmitHandler((message) => this.handleChatCommand(message));
-    this.gameUi.setInventorySlotDoubleClickHandler((slotIndex) => {
-      this.handleInventorySlotDoubleClick(slotIndex);
-    });
+    this.gameUi.setMinimapRedrawHandler(() => this.refreshMinimap());
+    this.initChatCommands();
+    this.gameUi.setChatSubmitHandler((message) => this.chatCommands.handleSubmit(message));
+    this.gameUi.setInventoryHoverHandler((slotIndex) => this.buildInventoryHoverHint(slotIndex));
     this.gameUi.setMacroSlotClickHandler((slotIndex) => {
       this.openMacroEditor(slotIndex);
     });
     this.initializeStarterSpells();
     this.refreshKnownSpellsUi();
+    this.refreshSkillsUi();
     this.gameUi.setSpellInfoRequestHandler((spell) => {
       const debuffText = spell.remueveDebuff ? ` | Quita: ${spell.remueveDebuff}` : "";
       const classesText = spell.usableBy.join(", ");
       this.gameUi.addChatLine(
-        `${spell.nombre} [#${spell.idSpell}] MP:${spell.manaCost} Danio:${spell.danioMin}-${spell.danioMax} Cura:${spell.healMin}-${spell.healMax} Aliados:${spell.puedeUsarseEnAliados ? "si" : "no"} Valor:${spell.valor} MagiaReq:${spell.nivelMagiaRequerido} Clases:${classesText}${debuffText} | ${spell.descripcion}`
+        `${spell.nombre} [#${spell.idSpell}] MP:${spell.manaCost} Danio:${spell.danioMin}-${spell.danioMax} Cura:${spell.healMin}-${spell.healMax} AoE:${spell.aoe ? `si (${spell.aoeRadiusTiles} tiles)` : "no"} Aliados:${spell.puedeUsarseEnAliados ? "si" : "no"} Valor:${spell.valor} MagiaReq:${spell.nivelMagiaRequerido} Clases:${classesText}${debuffText} | ${spell.descripcion}`
       );
     });
     this.gameUi.setSpellCastRequestHandler((spell) => {
-      this.beginSpellTargeting(spell);
+      this.combatController.beginSpellTargeting(spell);
     });
-    this.gameUi.setMapName(this.currentMap.name);
+    this.refreshMapLocationLabel();
     this.refreshMacroVisuals();
-    this.createWorldMapOverlay();
+    this.mapController.createWorldMapOverlay();
 
-    this.applyBaseVitalsFromAttributes();
-    this.applyTestStartingVitals();
-    this.spawnTestHealthPotionsInInventory();
-    this.refreshHud();
-    this.setupCameras();
+    if (this.hasLoadedCharacterProgress) {
+      this.refreshKnownSpellsUi();
+      this.refreshSkillsUi();
+      this.refreshInventoryUi();
+      if (this.deathPhase !== "alive") {
+        this.applyGhostVisual();
+      } else {
+        this.syncEquippedArmorOutfit();
+      }
+      this.validateEquippedArmorForRace();
+      this.refreshHud();
+    } else {
+      this.spawnStarterInventory();
+      this.syncCharacterVitalsAndSpells();
+      this.validateEquippedArmorForRace();
+      this.syncEquippedArmorOutfit();
+    }
+    this.mapController.setupCameras();
+    this.initWorldItemManager();
+    this.initInventoryController();
+    this.gameUi.setGoldClickHandler(() => this.tryDropGold());
+    this.gameUi.setInventorySlotDoubleClickHandler((slotIndex) => {
+      this.inventoryController.handleSlotDoubleClick(slotIndex);
+    });
+    this.gameUi.setInventorySlotMoveHandler((fromSlotIndex, toSlotIndex) => {
+      this.inventoryController.handleSlotMove(fromSlotIndex, toSlotIndex);
+    });
+    this.worldItemManager.loadSharedStorage();
+    this.npcManager = new NpcManager(
+      this,
+      (feetY) => this.depthFromFeetY(feetY),
+      this.uiCamera
+    );
+    this.syncNpcsForCurrentMap();
+    this.setupDeathOverlay();
+    if (this.hasLoadedCharacterProgress && this.deathPhase !== "alive") {
+      this.deathOverlay?.show(this.getGameViewportRect());
+    }
+    this.setupBankOverlay();
+    this.setupShopOverlay();
     this.setupInput();
+    this.setupWorldPointerHandlers();
+    this.restoreWorldItemsForCurrentMap();
 
     this.scale.on("resize", this.applyCameraLayout, this);
+    this.events.on("ui-viewport-changed", this.applyCameraLayout, this);
     this.events.on(Phaser.Scenes.Events.RESUME, this.handleSceneResume, this);
+    this.events.on(Phaser.Scenes.Events.PAUSE, this.handleScenePause, this);
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      this.persistCharacterProgress();
+      this.progressService?.cancelScheduledPersist();
       this.scale.off("resize", this.applyCameraLayout, this);
+      this.events.off("ui-viewport-changed", this.applyCameraLayout, this);
       this.events.off(Phaser.Scenes.Events.RESUME, this.handleSceneResume, this);
+      this.events.off(Phaser.Scenes.Events.PAUSE, this.handleScenePause, this);
+      this.deathOverlay?.destroy();
+      this.deathOverlay = undefined;
+      this.bankOverlay?.destroy();
+      this.bankOverlay = undefined;
+      this.shopOverlay?.destroy();
+      this.shopOverlay = undefined;
+      this.npcManager?.clear();
+      this.npcManager = undefined;
+      this.mpController?.disconnect();
     });
+
+    this.initMpController();
+    this.mpController.connect();
   }
+
+  private isWorldSceneLive(): boolean {
+    return Boolean(this.sys && this.player?.scene === this);
+  }
+
+  private handleScenePause = () => {
+    this.progressService?.cancelScheduledPersist();
+    this.persistCharacterProgress();
+  };
 
   private handleSceneResume() {
     const character = this.game.registry.get("activeCharacter") as SavedCharacter | undefined;
     if (!character) {
       return;
     }
+    if (!this.isWorldSceneLive()) {
+      return;
+    }
     this.applyActiveCharacter(character);
     this.game.registry.remove("activeCharacter");
     this.game.registry.remove("activeCharacterSlotIndex");
+
+    this.ensureProgressService().setCharacterId(character.id);
+    const savedProgress = this.ensureProgressService().load(character.id);
+    if (savedProgress) {
+      this.applyCharacterProgress(savedProgress);
+      this.hasLoadedCharacterProgress = true;
+      this.applyWorldStateFromProgress();
+    } else {
+      this.syncCharacterVitalsAndSpells();
+    }
+
+    this.validateEquippedArmorForRace();
+    this.refreshInventoryUsability();
+    this.refreshKnownSpellsUi();
+    this.refreshSkillsUi();
+    this.refreshMacroVisuals();
     this.refreshHud();
     if (this.playerNameLabel) {
       this.playerNameLabel.setText(this.playerName);
+      this.syncPlayerNameLabelStyle();
     }
-    this.gameUi.addChatLine(`Entraste al juego con ${this.playerName}.`);
+    this.gameUi.addChatLine(`Volviste con ${this.playerName}.`);
+    if (this.isWorldSceneLive()) {
+      this.playSpawnEffect();
+    }
+
+    if (isMultiplayerEnabled()) {
+      if (!this.mpController) {
+        this.initMpController();
+      }
+      this.mpController.disconnect();
+      this.mpController.connect();
+    }
+  }
+
+  private syncCharacterVitalsAndSpells() {
+    this.applyBaseVitalsFromAttributes();
+    this.playerProgress.level = TEST_PLAYER_LEVEL;
+    this.playerProgress.exp = 0;
+    this.playerProgress.expToNext = expRequiredForLevel(TEST_PLAYER_LEVEL);
+    this.applyTestStartingVitals();
+    this.refreshKnownSpellsUi();
+    this.refreshSkillsUi();
+    this.refreshInventoryUsability();
+    this.refreshMacroVisuals();
+    this.refreshHud();
+  }
+
+  private getMagicSkillLevel(): number {
+    return this.skillLevels.magia ?? 0;
+  }
+
+  private refreshSkillsUi() {
+    const natural = resolveCoreStats(this.selectedRace, this.selectedClass);
+    const coreStats = this.getCoreStats();
+    this.gameUi.setCharacterAttributes({
+      strength: coreStats.strength,
+      agility: coreStats.agility,
+      intelligence: coreStats.intelligence,
+      constitution: coreStats.constitution,
+      strengthCeiling: natural.strength + ATTRIBUTE_POTION_BUFF_MAX,
+      agilityCeiling: natural.agility + ATTRIBUTE_POTION_BUFF_MAX,
+    });
+    this.gameUi.setSkillEntries(
+      buildSkillDisplayEntries(this.skillLevels, this.playerProgress.level)
+    );
+    this.gameUi.setKillStats(this.killStats);
+  }
+
+  private buildInventoryHoverHint(slotIndex: number): string | null {
+    const stack = this.inventory[slotIndex];
+    if (!stack) {
+      return null;
+    }
+    const item = getItemDefinition(stack.itemId);
+
+    if (item.type === "armor" || item.type === "shield" || item.type === "helmet") {
+      const defensePercent = Math.round(
+        (item.combatModifiers?.damageReductionPercent ?? 0) * 100
+      );
+      const magicPercent = Math.round(
+        (item.combatModifiers?.magicResistancePercent ?? 0) * 100
+      );
+      const label =
+        item.type === "shield" ? "escudo" : item.type === "helmet" ? "casco" : "defensa";
+      let hint = `${item.name} - (${defensePercent}% ${label})`;
+      if (magicPercent > 0) {
+        hint += ` | ${magicPercent}% res. mágica`;
+      }
+      return hint;
+    }
+
+    if (item.type === "consumable" && item.consumableEffects?.attributeBuff) {
+      const stat =
+        item.consumableEffects.attributeBuff === "strength" ? "Fuerza" : "Agilidad";
+      return `${item.name} - (+${ATTRIBUTE_POTION_GAIN_MIN} a +${ATTRIBUTE_POTION_GAIN_MAX} ${stat}, 90 s, hasta ${STAT_MAX + ATTRIBUTE_POTION_BUFF_MAX} total)`;
+    }
+
+    if (item.type === "weapon") {
+      const min = item.damageMin ?? 0;
+      const max = item.damageMax ?? 0;
+      const magicPercent = Math.round(
+        (item.combatModifiers?.magicDamageBonusPercent ?? 0) * 100
+      );
+      let hint = `${item.name} - (${min}-${max} daño)`;
+      if (magicPercent > 0) {
+        hint += ` (+${magicPercent}% mágico)`;
+      }
+      if (item.canCrit) {
+        const critChance = Math.round((item.critChance ?? 0) * 100);
+        const critDamage = Math.round((item.critDamage ?? 1) * 100);
+        hint += ` | ${critChance}% crít (${critDamage}% daño)`;
+      }
+      return hint;
+    }
+
+    return null;
+  }
+
+  private refreshInventoryUsability() {
+    this.inventory.forEach((stack, slotIndex) => {
+      if (!stack) {
+        this.gameUi.setInventorySlotInvalid(slotIndex, false);
+        return;
+      }
+      const item = getItemDefinition(stack.itemId);
+      const usability = canUseItem(
+        this.selectedClass,
+        this.selectedRace,
+        this.playerProgress.level,
+        item
+      );
+      this.gameUi.setInventorySlotInvalid(slotIndex, !usability.allowed);
+    });
+  }
+
+  private spawnAllItemsNearSpawn(centerTileX: number, centerTileY: number) {
+    const cols = 6;
+    ALL_ITEM_IDS.forEach((itemId, index) => {
+      const col = index % cols;
+      const row = Math.floor(index / cols);
+      this.createWorldItem(itemId, centerTileX + 1 + col, centerTileY + row);
+    });
+  }
+
+  private tryImproveMagicOnSpellCast() {
+    if (!CLASS_USES_MANA[this.selectedClass]) {
+      return;
+    }
+    const result = tryImproveSkill("magia", this.skillLevels, this.playerProgress.level);
+    if (!result.improved) {
+      return;
+    }
+    this.gameUi.addCombatLine(`Subiste Magia a ${result.newValue}.`);
+    this.refreshKnownSpellsUi();
+    this.refreshSkillsUi();
   }
 
   private applyActiveCharacter(character: SavedCharacter) {
     this.playerName = character.name;
+    this.playerRole = isAdminCharacterName(character.name) ? "admin" : "player";
     this.selectedClass = character.classId;
     this.selectedRace = character.raceId;
+    this.selectedGender = character.genderId;
+    this.selectedFaction = character.factionId;
+    this.selectedBodyTextureKey = raceBodyTextureKey(character.raceId, character.genderId);
     this.selectedFaceIndex = character.faceIndex;
+    this.homeMapId = character.homeMapId ?? DEFAULT_HOME_MAP_ID;
+    this.characterId = character.id;
+    this.ensureProgressService().setCharacterId(character.id);
+    this.bankState = loadBankState(character.id);
+    this.syncPlayerBodyAndFace();
+    this.syncPlayerNameLabelStyle();
+  }
+
+  private buildCharacterProgressSnapshot(): SavedCharacterProgress {
+    this.cacheCurrentMapWorldItems();
+    return {
+      version: 1,
+      mapId: this.currentMapId,
+      tileX: this.playerTileX,
+      tileY: this.playerTileY,
+      facing: this.facing,
+      inventory: this.inventory.map((slot) =>
+        slot ? { itemId: slot.itemId, count: slot.count } : null
+      ),
+      equipment: { ...this.equipment },
+      equippedOutfit: this.equippedOutfit,
+      playerProgress: { ...this.playerProgress },
+      skillLevels: { ...this.skillLevels },
+      learnedSpellIds: [...this.learnedSpellIds],
+      macroBindings: this.macroBindings.map((binding) => ({ ...binding })),
+      killStats: { ...this.killStats },
+      deathPhase: this.deathPhase,
+      useGhostAppearance: this.useGhostAppearance,
+      worldItemsByMap: Object.fromEntries(
+        Object.entries(this.worldItemManager.getItemsByMap()).map(([mapId, items]) => [
+          mapId,
+          items.map((entry) => ({ ...entry })),
+        ])
+      ),
+    };
+  }
+
+  private applyCharacterProgress(progress: SavedCharacterProgress) {
+    this.currentMapId = progress.mapId;
+    this.playerTileX = progress.tileX;
+    this.playerTileY = progress.tileY;
+    this.facing = progress.facing;
+    this.inventory = progress.inventory.map((slot) =>
+      slot ? { itemId: slot.itemId, count: slot.count } : null
+    );
+    this.equipment = { ...progress.equipment };
+    // El outfit se deriva del slot armor en syncEquippedArmorOutfit (evita desync con el sprite).
+    this.equippedOutfit = "base";
+    this.equippedArmorVisual = undefined;
+    this.playerProgress = { ...progress.playerProgress };
+    this.skillLevels = { ...progress.skillLevels };
+    this.learnedSpellIds.clear();
+    progress.learnedSpellIds.forEach((spellId) => {
+      this.learnedSpellIds.add(spellId);
+    });
+    this.macroBindings = progress.macroBindings.map((binding) => ({
+      keyCode: binding.keyCode,
+      action: binding.action,
+      itemId: binding.itemId,
+      spellId: binding.spellId,
+    }));
+    this.killStats = { ...progress.killStats };
+    this.deathPhase = progress.deathPhase;
+    this.useGhostAppearance =
+      progress.deathPhase === "alive" ? false : progress.useGhostAppearance;
+    // Estado global por mapa compartido entre personajes en este cliente.
+    if (this.worldItemManager) {
+      this.worldItemManager.loadSharedStorage();
+    }
+  }
+
+  private cacheCurrentMapWorldItems() {
+    this.worldItemManager.cacheCurrentMap();
+  }
+
+  private restoreWorldItemsForCurrentMap() {
+    if (!this.isWorldSceneLive()) {
+      return;
+    }
+    this.worldItemManager.restoreForCurrentMap();
+  }
+
+  private applyWorldStateFromProgress() {
+    if (!this.isWorldSceneLive()) {
+      return;
+    }
+
+    const map = getMap(this.currentMapId);
+    const mapChanged = this.currentMap?.id !== map.id;
+    if (mapChanged) {
+      this.currentMap = map;
+      this.mapController.updateWorldBackgroundColor();
+      this.mapController.drawMap(this.currentMap);
+      this.syncNpcsForCurrentMap();
+      this.syncDummyVisibilityForCurrentMap();
+      this.mapController.updateCameraBounds();
+    }
+
+    const pos = this.getPlayerFeetWorldForTile(this.playerTileX, this.playerTileY);
+    this.player.setPosition(pos.x, pos.y);
+    this.syncPlayerFacePosition();
     this.updatePlayerFaceFrame();
+    if (!this.isMultiplayerActive()) {
+      this.restoreWorldItemsForCurrentMap();
+    }
+    if (this.deathPhase !== "alive") {
+      this.applyGhostVisual();
+    } else {
+      this.syncEquippedArmorOutfit();
+      this.syncEquippedHeldItemVisuals();
+      this.playFacingAnim("idle");
+    }
+    this.refreshMapLocationLabel();
+    this.refreshMinimap();
+    this.refreshHud();
+    this.refreshInventoryUi();
+  }
+
+  persistCharacterProgress = () => {
+    this.ensureProgressService().persistNow(
+      () => this.buildCharacterProgressSnapshot(),
+      { homeMapId: this.homeMapId }
+    );
+  };
+
+  private scheduleCharacterProgressSave() {
+    this.ensureProgressService().schedulePersist(
+      () => this.buildCharacterProgressSnapshot(),
+      { homeMapId: this.homeMapId }
+    );
+  }
+
+  private syncPlayerNameLabelStyle() {
+    if (!this.playerNameLabel) return;
+    const colors = getPlayerNameColors(this.selectedFaction, this.playerRole);
+    this.playerNameLabel.setColor(colors.fill);
+    this.playerNameLabel.setStroke(colors.stroke, WORLD_NAME_STROKE);
+  }
+
+  private getLocalPlayerStepDurationMs(): number {
+    if (this.useGhostAppearance || this.isPlayerDeadOrGhost()) {
+      return stepDurationMsForBodyTexture(this.getVisualBodyTextureKey());
+    }
+    return STEP_DURATION_MS;
+  }
+
+  private getVisualRace(): CharacterRaceId {
+    return this.useGhostAppearance ? GHOST_RACE_ID : this.selectedRace;
+  }
+
+  private getVisualGender(): CharacterGenderId {
+    return this.useGhostAppearance ? "male" : this.selectedGender;
+  }
+
+  private getVisualBodyTextureKey(): string {
+    return raceBodyTextureKey(this.getVisualRace(), this.getVisualGender());
+  }
+
+  private getActiveFaceLayout() {
+    return getRaceFaceLayout(this.getVisualRace(), this.getVisualGender());
+  }
+
+  private syncPlayerBodyAndFace() {
+    if (!this.isWorldSceneLive()) {
+      return;
+    }
+    this.applyLocalPlayerBodyVisual();
+    if (this.playerFace) {
+      const faceLayout = this.getActiveFaceLayout();
+      this.playerFace.clearTint();
+      this.playerFace.setAlpha(1);
+      this.playerFace.setTexture(
+        faceTextureKey(this.getVisualRace(), this.getVisualGender())
+      );
+      this.playerFace.setScale(faceLayout.scale);
+      this.updatePlayerFaceFrame();
+      this.syncPlayerFacePosition();
+    }
+  }
+
+  /** Alinea textura y animación del cuerpo con raza + armadura (evita cuerpo humano con cara de gnomo). */
+  private applyLocalPlayerBodyVisual() {
+    if (!this.player) {
+      return;
+    }
+
+    const visualOutfit = this.useGhostAppearance ? "base" : this.equippedOutfit;
+    const bodyKey = textureKeyForPlayer(
+      visualOutfit,
+      this.getVisualBodyTextureKey(),
+      this.useGhostAppearance ? undefined : this.equippedArmorVisual,
+      this.getVisualRace()
+    );
+
+    this.player.clearTint();
+    this.player.setAlpha(1);
+    this.player.setTexture(bodyKey);
+    applyPlayerOrigin(this.player);
+    this.player.setScale(1);
+    this.player.anims.stop();
+    this.playFacingAnim(this.isMoving ? "walk" : "idle");
   }
 
   private equipment: Record<EquipmentSlot, ItemId | null> = {
@@ -623,102 +1352,68 @@ private worldItems: {
     armor: null,
   };
 
-  private drawMap(map: GameMap) {
-    this.mapTiles.removeAll(true);
-    this.mapOverlay.clear();
-    this.mapTrees.forEach((tree) => tree.destroy());
-    this.mapTrees = [];
-
-    for (let y = 0; y < map.height; y++) {
-      for (let x = 0; x < map.width; x++) {
-        const tile = map.tiles[y][x];
-        const tileDefinition = getTileDefinition(tile);
-        const px = x * TILE_SIZE;
-        const py = y * TILE_SIZE;
-
-        if (tileDefinition.renderAs === "ao_grass") {
-          this.mapTiles.add(createTerrainTile(this, px, py, pickGrassFrame(x, y)));
-        } else if (tileDefinition.renderAs === "ao_water") {
-          this.mapTiles.add(createTerrainTile(this, px, py, pickWaterFrame(x, y)));
-        } else {
-          this.mapOverlay.fillStyle(tileDefinition.color, 1);
-          this.mapOverlay.fillRect(px, py, TILE_SIZE, TILE_SIZE);
-        }
-
-        if (tileDefinition.decoration === "tree") {
-          this.drawTreeTile(px, py);
-        }
-      }
-    }
-
-    if (this.uiCamera && this.mapTrees.length > 0) {
-      this.uiCamera.ignore(this.mapTrees);
-    }
-  }
-
-  private drawTreeTile(px: number, py: number) {
-    if (this.textures.exists(TREE_TEXTURE_KEY)) {
-      const tree = this.add
-        .image(px + TILE_SIZE / 2, py + TILE_SIZE + 2, TREE_TEXTURE_KEY)
-        .setOrigin(0.5, 1)
-        .setScale(TREE_SCALE)
-        .setDepth(TREE_FRONT_DEPTH);
-      this.mapTrees.push(tree);
-      return;
-    }
-
-    // Fallback por si falta el asset.
-    const g = this.mapOverlay;
-    g.fillStyle(0x6b3f1d, 1);
-    g.fillRect(px + 14, py + 15, 4, 12);
-    g.fillStyle(0x1f6f2e, 1);
-    g.fillRect(px + 7, py + 8, 18, 10);
-  }
-
   private createPlayer() {
     if (this.player) return;
 
     const { x, y } = this.getPlayerFeetWorldForTile(this.playerTileX, this.playerTileY);
 
-    this.player = this.add.sprite(x, y, textureKeyForOutfit(this.equippedOutfit), 0);
+    this.player = this.add.sprite(
+      x,
+      y,
+      this.useGhostAppearance && this.deathPhase !== "alive"
+        ? textureKeyForPlayer(
+            "base",
+            raceBodyTextureKey(GHOST_RACE_ID, "male"),
+            undefined
+          )
+        : textureKeyForPlayer(
+            this.equippedOutfit,
+            this.getVisualBodyTextureKey(),
+            this.equippedArmorVisual,
+            this.selectedRace
+          ),
+      0
+    );
     applyPlayerOrigin(this.player);
     this.player.setDepth(this.depthFromFeetY(y));
 
-    const faceOffset = PLAYER_FACE_OFFSET[this.facing];
+    const faceLayout = this.getActiveFaceLayout();
 
     this.playerFace = this.add.sprite(
-      x + faceOffset.x,
-      y + faceOffset.y,
-     HUMAN_FACE_TEXTURE_KEY,
-     getHumanFaceFrame(this.selectedFaceIndex, this.facing)
+      x,
+      y,
+      faceTextureKey(this.selectedRace, this.selectedGender),
+      getFaceFrame(this.selectedRace, this.selectedGender, this.selectedFaceIndex, this.facing)
     );
 
   this.playerFace.setOrigin(0.5, 1);
-  this.playerFace.setScale(PLAYER_FACE_SCALE);
+  this.playerFace.setScale(faceLayout.scale);
   this.playerFace.setDepth(this.player.depth + 0.02);
   this.syncPlayerFacePosition();
 
-  this.equippedWeaponSprite = this.add.sprite(x, y, "__MISSING");
-  this.equippedWeaponSprite.setOrigin(0.5, 1);
-  this.equippedWeaponSprite.setVisible(false);
-  this.syncEquippedWeaponVisual();
+  this.equippedWeaponSprite = createEquippedOverlaySprite(this, x, y);
+  this.equippedShieldSprite = createEquippedOverlaySprite(this, x, y);
+  this.equippedHelmetSprite = createEquippedOverlaySprite(this, x, y);
+  this.syncEquippedHeldItemVisuals();
 
+  const nameColors = getPlayerNameColors(this.selectedFaction, this.playerRole);
   this.playerNameLabel = this.add
     .text(x, y + 2, this.playerName, {
-      fontFamily: "Segoe UI, Tahoma, sans-serif",
-      fontSize: "11px",
-      color: PLAYER_NAME_COLOR,
+      fontFamily: GAME_FONT,
+      fontSize: `${WORLD_NAME_FONT_SIZE}px`,
+      color: nameColors.fill,
       fontStyle: "bold",
-      stroke: "#001a33",
-      strokeThickness: 2,
+      stroke: nameColors.stroke,
+      strokeThickness: WORLD_NAME_STROKE,
+      resolution: GAME_TEXT_RESOLUTION,
     })
     .setOrigin(0.5, 0)
     .setDepth(this.player.depth + 2);
 
-  this.player.setInteractive({ useHandCursor: true, pixelPerfect: true });
+  this.setupPlayerHitboxInteraction();
   this.player.on("pointerdown", () => {
-    if (this.pendingSpellCast) {
-      this.tryCastSpellOnPlayer();
+    if (this.combatController.hasPendingSpellCast()) {
+      this.combatController.tryCastSpellOnPlayer();
       return;
     }
     this.inspectPlayerCharacter();
@@ -728,29 +1423,143 @@ private worldItems: {
   }
 
   private inspectPlayerCharacter() {
+    const baseText = formatCharacterInspectLine(
+      this.playerName,
+      this.playerAffiliation,
+      this.selectedClass,
+      this.selectedRace,
+      this.selectedGender,
+      this.playerProgress.level,
+      this.resolvePlayerRole(this.playerRole)
+    );
+    const debuffs: string[] = [];
+    if (this.isPlayerImmobilized(this.time.now)) {
+      debuffs.push("Inmovilizado");
+    }
+    this.gameUi.addChatLine(formatInspectLineWithDebuffs(baseText, debuffs));
+  }
+
+  private inspectDummy(dummy: DummyState) {
+    this.inspectedDummyId = dummy.id;
+    this.refreshInspectedDummyLabel();
+    const baseText = `${dummy.name} - Vida ${dummy.hp}/${dummy.maxHp}`;
     this.gameUi.addChatLine(
-      formatCharacterInspectLine(
-        this.playerName,
-        this.playerAffiliation,
-        this.selectedClass,
-        this.selectedRace,
-        this.playerProgress.level
+      formatInspectLineWithDebuffs(
+        baseText,
+        getDummyActiveDebuffsForInspect(dummy, this.time.now)
       )
     );
   }
 
-  private spawnTestHealthPotionsInInventory() {
+  private clearInspectedDummy() {
+    this.inspectedDummyId = null;
+    this.dummies.forEach((dummy) => dummy.hpLabel.setVisible(false));
+  }
+
+  private refreshInspectedDummyLabel() {
+    this.dummies.forEach((dummy) => {
+      const show =
+        dummy.id === this.inspectedDummyId &&
+        dummy.alive &&
+        dummy.mapId === this.currentMapId;
+      dummy.hpLabel.setText(`${dummy.name} ${dummy.hp}/${dummy.maxHp}`);
+      dummy.hpLabel.setVisible(show);
+      if (show) {
+        this.syncDummyWorldPosition(dummy);
+      }
+    });
+  }
+
+  private syncServerInventoryIfMultiplayer() {
+    this.mpController.syncServerInventoryIfActive();
+  }
+
+  private handleServerPlayerUpdated(state: NetPlayerState) {
+    const localId = this.mpController.getPlayerId();
+    if (!localId) return;
+    if (state.id === localId) {
+      this.syncLocalVitalsFromServer(state);
+      this.syncLocalEquipmentFromServer(state);
+      return;
+    }
+    this.multiplayer?.updateRemote(state, this.currentMapId);
+  }
+
+  private syncLocalVitalsFromServer(state: NetPlayerState | null | undefined) {
+    if (!state) {
+      return;
+    }
+    this.playerProgress.hp = state.hp;
+    this.playerProgress.hpMax = state.hpMax;
+    this.playerProgress.mp = state.mp;
+    this.playerProgress.mpMax = state.mpMax;
+    this.playerProgress.level = state.level;
+    this.refreshHud();
+  }
+
+  private syncLocalEquipmentFromServer(state: NetPlayerState | null | undefined) {
+    if (!state?.equipment) {
+      return;
+    }
+    this.equipment.weapon = (state.equipment.weaponId as ItemId | null) ?? null;
+    this.equipment.shield = (state.equipment.shieldId as ItemId | null) ?? null;
+    this.equipment.helmet = (state.equipment.helmetId as ItemId | null) ?? null;
+    this.equipment.armor = (state.equipment.armorId as ItemId | null) ?? null;
+    this.syncEquippedArmorOutfit();
+    this.syncEquippedHeldItemVisuals();
+    this.gameUi.setEquippedItemIds(
+      Object.values(this.equipment).filter((id): id is ItemId => id != null)
+    );
+    this.refreshInventoryUi();
+  }
+
+  private handleServerPlayerDied(playerId: string, killerName: string) {
+    if (playerId === this.mpController.getPlayerId()) {
+      this.playerProgress.hp = 0;
+      this.handlePlayerDeath();
+      this.gameUi.addCombatLine(`Has sido asesinado por ${killerName}.`);
+    } else {
+      this.multiplayer?.getRemotePlayers()?.setPlayerGhost(playerId);
+    }
+  }
+
+  private isMultiplayerActive() {
+    return this.mpController.isActive();
+  }
+
+  private tryNetworkStep(dir: MoveDirection) {
+    this.mpController.tryNetworkStep(dir);
+  }
+
+  private setMultiplayerStatus(message: string) {
+    const status = document.getElementById("nav-status");
+    if (status) {
+      status.textContent = message;
+    }
+  }
+
+  private spawnStarterInventory() {
+    WEAPONS.forEach((weapon) => {
+      addToInventory(this.inventory, weapon.itemId, 1);
+    });
     addToInventory(this.inventory, "potion_hp", TEST_HEALTH_POTION_STACK);
-    addToInventory(this.inventory, "armor_placas_rojas", 1);
+    addToInventory(this.inventory, "potion_mp", TEST_MANA_POTION_STACK);
+    addToInventory(this.inventory, "potion_strength", 5);
+    addToInventory(this.inventory, "potion_agility", 5);
+    addToInventory(this.inventory, "anillo_espectral", 1);
     addToInventory(this.inventory, "armor_cuero", 1);
+    addToInventory(this.inventory, "armor_placas", 1);
+    addToInventory(this.inventory, "armor_placas_rojas", 1);
     addToInventory(this.inventory, "armor_placas_azules", 1);
+    addToInventory(this.inventory, "armor_tunica_nigro", 1);
+    addToInventory(this.inventory, "armor_tunica_azul", 1);
+    addToInventory(this.inventory, "armor_dragon_negro", 1);
+    addToInventory(this.inventory, "armor_dragon_negro_bajos", 1);
     this.refreshInventoryUi();
   }
 
   private initializeStarterSpells() {
     SPELL_DEFINITIONS.forEach((spell) => {
-      if (!spell.isStarter) return;
-      if (!spell.usableBy.includes(this.selectedClass)) return;
       this.learnedSpellIds.add(spell.idSpell);
     });
   }
@@ -760,279 +1569,234 @@ private worldItems: {
       (spell) =>
         this.learnedSpellIds.has(spell.idSpell) &&
         spell.usableBy.includes(this.selectedClass) &&
-        spell.nivelMagiaRequerido <= this.playerMagicLevel
+        spell.nivelMagiaRequerido <= this.getMagicSkillLevel()
     );
     this.gameUi.setSpells(knownSpells);
   }
 
-  private handleChatCommand(message: string): boolean {
-    if (!message.startsWith("/")) {
-      return false;
+  private resolvePlayerRole(serverRole?: PlayerRole): PlayerRole {
+    if (isAdminCharacterName(this.playerName) || serverRole === "admin") {
+      return "admin";
     }
+    return "player";
+  }
 
-    const normalized = message.trim().toLowerCase();
-    if (normalized === "/meditar") {
-      this.toggleMeditation("command");
+  private isPlayerAdmin(): boolean {
+    return this.resolvePlayerRole(this.playerRole) === "admin";
+  }
+
+  private handleHitboxCommand(normalized: string): boolean {
+    if (!this.isPlayerAdmin()) {
+      this.gameUi.addChatLine("Comando solo para admins.");
       return true;
     }
 
-    this.gameUi.addChatLine(`Comando desconocido: ${message}`);
+    const args = normalized.slice("/hitbox".length).trim().split(/\s+/).filter(Boolean);
+    const mode = args[0]?.toLowerCase();
+    if (mode === "on" || mode === "1" || mode === "true") {
+      this.setHitboxDebugEnabled(true);
+    } else if (mode === "off" || mode === "0" || mode === "false") {
+      this.setHitboxDebugEnabled(false);
+    } else {
+      this.setHitboxDebugEnabled(!this.hitboxDebugEnabled);
+    }
     return true;
   }
 
-  private toggleMeditation(source: "command" | "hotkey") {
-    if (this.isMeditating) {
-      this.stopMeditation("Dejaste de meditar.");
-      return;
+  private tryAdminCommand(message: string): boolean {
+    if (!this.isPlayerAdmin()) return false;
+
+    const parts = message.slice(1).split(/\s+/);
+    const command = parts[0].toLowerCase();
+    const args = parts.slice(1);
+
+    if (command === "tp") {
+      if (!this.multiplayer?.isConnected()) {
+        this.gameUi.addChatLine("No estás conectado al servidor.");
+        return true;
+      }
+      this.multiplayer.sendAdminCommand(command, args);
+      return true;
     }
-    this.startMeditation(source);
+
+    return false;
   }
 
-  private startMeditation(source: "command" | "hotkey") {
-    if (this.playerProgress.mp >= this.playerProgress.mpMax) {
-      this.gameUi.addChatLine("Ya tenés el maná al máximo.");
-      return;
+  private setHitboxDebugEnabled(enabled: boolean) {
+    this.hitboxDebugEnabled = enabled;
+    if (!enabled) {
+      this.hitboxDebugGraphics?.clear().setVisible(false);
     }
+    this.gameUi.addChatLine(`Debug hitbox: ${enabled ? "ON" : "OFF"}`);
+  }
 
-    this.cancelSpellTargeting();
-    this.isMeditating = true;
-    this.meditationRegenTimerMs = 0;
-    this.ensureMeditationFx();
-    this.syncMeditationFxPosition();
-    this.gameUi.addChatLine(
-      source === "command"
-        ? "Comenzaste a meditar."
-        : "Comenzaste a meditar (N para cancelar)."
+  private handleMobEditCommand(normalized: string): boolean {
+    if (!this.isPlayerAdmin()) {
+      this.gameUi.addChatLine("Comando solo para admins.");
+      return true;
+    }
+    return this.mobController.handleMobEditCommand(normalized);
+  }
+
+  private initMobAiSystem() {
+    this.mobAiSystem = new MobAiSystem({
+      getPlayerTile: () => ({ x: this.playerTileX, y: this.playerTileY }),
+      isMultiplayerActive: () => this.isMultiplayerActive(),
+      isChangingMap: () => this.isChangingMap,
+      getCurrentMapId: () => this.currentMapId,
+      isTileWalkableForMob: (x, y, source) => this.isTileWalkableForMob(x, y, source as DummyState),
+      getMobFeetWorld: (modelId, x, y) => this.getMobFeetWorld(modelId as any, x, y),
+      getMobStepDurationMs: (modelId) => this.getMobStepDurationMs(modelId as any),
+      applyIncomingDamage: (amount, type) =>
+        this.combatController.applyIncomingDamage(amount, type),
+      getScene: () => this,
+      setMobAnimationState: (dummy, state) => this.setMobAnimationState(dummy as DummyState, state),
+      syncDummyWorldPosition: (dummy) => this.syncDummyWorldPosition(dummy as DummyState),
+      depthFromFeetY: (feetY) => this.depthFromFeetY(feetY),
+      syncMobFaceForDummy: (dummy) => this.syncMobFaceForDummy(dummy as DummyState),
+      showDamageNumber: (x, y, dmg, src) =>
+        this.combatController.showDamageNumber(x, y, dmg, src as "player" | "mob"),
+      playAttackFeedback: (tx, ty) => this.combatController.playAttackFeedback(tx, ty),
+      addCombatLine: (msg) => this.gameUi.addCombatLine(msg),
+      getPlayerSprite: () => this.player,
+    });
+  }
+
+  private initDeathSystem() {
+    this.deathSystem = new DeathSystem(
+      {
+        getPlayerProgress: () => this.playerProgress,
+        setPlayerHp: (v) => { this.playerProgress.hp = v; },
+        getInventory: () => this.inventory,
+        clearInventorySlot: (i) => { this.inventory[i] = null; },
+        getEquipment: () => this.equipment,
+        clearEquipmentSlot: (slot) => { this.equipment[slot] = null; },
+        createWorldItem: (itemId, tx, ty, count) => this.createWorldItem(itemId, tx, ty, count),
+        refreshInventoryUi: () => this.refreshInventoryUi(),
+        refreshHud: () => this.refreshHud(),
+        stopMeditation: (msg) => this.stopMeditation(msg),
+        cancelSpellTargeting: () => this.combatController.cancelSpellTargeting(),
+        addChatLine: (msg) => this.gameUi.addChatLine(msg),
+        addCombatLine: (msg) => this.gameUi.addCombatLine(msg),
+        scheduleProgressSave: () => this.scheduleCharacterProgressSave(),
+        persistCharacterProgress: () => this.persistCharacterProgress(),
+        getPlayerTile: () => ({ x: this.playerTileX, y: this.playerTileY }),
+        getCurrentMapId: () => this.currentMapId,
+        setEquippedOutfit: (o) => { this.equippedOutfit = o; },
+        setEquippedArmorVisual: (v) => { this.equippedArmorVisual = v; },
+        getDeathOverlay: () => this.deathOverlay,
+        getGameViewportRect: () => this.getGameViewportRect(),
+        syncPlayerBodyAndFace: () => this.syncPlayerBodyAndFace(),
+        syncEquippedHeldItemVisuals: () => this.syncEquippedHeldItemVisuals(),
+        playFacingAnim: (state) => this.playFacingAnim(state as any),
+        playSpawnEffect: () => this.playSpawnEffect(),
+        getPlayerSprite: () => this.player,
+        getPlayerFaceSprite: () => this.playerFace,
+        getEquippedWeaponSprite: () => this.equippedWeaponSprite,
+        getEquippedShieldSprite: () => this.equippedShieldSprite,
+        getEquippedHelmetSprite: () => this.equippedHelmetSprite,
+        changeMap: (t) => this.changeMap(t as any),
+        teleportPlayerLocal: (tx, ty) => {
+          this.tweens.killTweensOf(this.player);
+          this.isMoving = false;
+          this.playerTileX = tx;
+          this.playerTileY = ty;
+          const pos = this.getPlayerFeetWorldForTile(tx, ty);
+          this.player.setPosition(pos.x, pos.y);
+          this.syncPlayerFacePosition();
+          this.syncEquippedHeldItemVisuals();
+          this.syncPlayerNameLabelPosition();
+          this.refreshMapLocationLabel();
+          this.refreshMinimap();
+        },
+        isTileWalkable: (x, y) => this.isTileWalkable(x, y),
+        getScene: () => this,
+        getCharacterSlotIndex: () => this.characterSlotIndex,
+        refreshMapLocationLabel: () => this.refreshMapLocationLabel(),
+        refreshMinimap: () => this.refreshMinimap(),
+      },
+      this._homeMapIdBackup
     );
+  }
+
+  private initMeditationSystem() {
+    this.meditationSystem = new MeditationSystem({
+      isPlayerDeadOrGhost: () => this.isPlayerDeadOrGhost(),
+      getPlayerMp: () => this.playerProgress.mp,
+      getPlayerMpMax: () => this.playerProgress.mpMax,
+      setPlayerMp: (v) => { this.playerProgress.mp = v; },
+      refreshHud: () => this.refreshHud(),
+      addChatLine: (msg) => this.gameUi.addChatLine(msg),
+      cancelSpellTargeting: () => this.combatController.cancelSpellTargeting(),
+      getPlayerFeetWorld: () => this.getPlayerFeetWorldForTile(this.playerTileX, this.playerTileY),
+      getPlayerDepth: () => this.player.depth,
+      getScene: () => this,
+      getUiCamera: () => this.uiCamera,
+    });
   }
 
   private stopMeditation(message?: string) {
-    if (!this.isMeditating) return;
-    this.isMeditating = false;
-    this.meditationRegenTimerMs = 0;
-    if (this.meditationFx) {
-      this.meditationFx.setVisible(false);
-      this.meditationFx.stop();
-    }
-    if (message) {
-      this.gameUi.addChatLine(message);
-    }
+    this.meditationSystem.stop(message);
   }
 
-  private updateMeditation(deltaMs: number) {
-    if (!this.isMeditating) return;
-
-    this.meditationRegenTimerMs += deltaMs;
-    const manaPerTick = this.playerProgress.mpMax * MEDITATION_MP_REGEN_PERCENT_PER_TICK;
-    while (this.meditationRegenTimerMs >= MEDITATION_MP_REGEN_INTERVAL_MS) {
-      this.meditationRegenTimerMs -= MEDITATION_MP_REGEN_INTERVAL_MS;
-      this.playerProgress.mp = Math.min(this.playerProgress.mpMax, this.playerProgress.mp + manaPerTick);
-      this.refreshHud();
-    }
-    if (this.playerProgress.mp >= this.playerProgress.mpMax) {
-      this.playerProgress.mp = this.playerProgress.mpMax;
-      this.refreshHud();
-      this.stopMeditation("Tu maná está completo.");
-    }
+  private hasAnilloEspectralInInventory(): boolean {
+    return this.inventory.some((slot) => slot?.itemId === "anillo_espectral");
   }
 
-  private ensureMeditationFx() {
-    const feet = this.getPlayerFeetWorldForTile(this.playerTileX, this.playerTileY);
-    if (!this.meditationFx) {
-      this.meditationFx = this.add
-        .sprite(
-          Math.round(feet.x),
-          Math.round(feet.y + MEDITATION_FX_OFFSET_Y),
-          MEDITATION_TEXTURE_KEY,
-          MEDITATION_FRAME_SEQUENCE[0]
-        )
-        .setOrigin(0.5, 1)
-        .setDepth(this.player.depth + 0.06)
-        .setScale(1);
-      if (this.uiCamera) {
-        this.uiCamera.ignore(this.meditationFx);
-      }
-    }
-    this.meditationFx.setVisible(true);
-    this.meditationFx.play(MEDITATION_ANIM_KEY, true);
-  }
-
-  private syncMeditationFxPosition() {
-    if (!this.player || !this.meditationFx || !this.isMeditating) return;
-    const feet = this.getPlayerFeetWorldForTile(this.playerTileX, this.playerTileY);
-    this.meditationFx.setPosition(Math.round(feet.x), Math.round(feet.y + MEDITATION_FX_OFFSET_Y));
-    this.meditationFx.setDepth(this.player.depth + 0.06);
-  }
-
-  private beginSpellTargeting(spell: SpellCastRequest) {
-    this.stopMeditation();
-    if (!this.learnedSpellIds.has(spell.idSpell)) {
-      this.gameUi.addChatLine(`No conocés ${spell.nombre}.`);
+  private inspectWorldItem(worldItem: WorldItemEntry) {
+    if (worldItem.id === "gold") {
+      this.gameUi.addChatLine(`Oro - (${worldItem.count.toLocaleString("es-AR")})`);
       return;
     }
-    if (spell.nivelMagiaRequerido > this.playerMagicLevel) {
-      this.gameUi.addChatLine(
-        `${spell.nombre} requiere nivel de magia ${spell.nivelMagiaRequerido}.`
-      );
-      return;
-    }
-
-    if (this.pendingSpellCast?.idSpell === spell.idSpell) {
-      this.cancelSpellTargeting(`Cancelaste ${spell.nombre}.`);
-      return;
-    }
-
-    this.pendingSpellCast = spell;
-    this.input.setDefaultCursor("crosshair");
-    this.gameUi.addChatLine(
-      `Objetivo de ${spell.nombre}: hacé click en ${this.getSpellTargetHint(spell)} (ESC para cancelar).`
-    );
-  }
-
-  private cancelSpellTargeting(message?: string) {
-    this.pendingSpellCast = null;
-    this.input.setDefaultCursor("default");
-    if (message) {
-      this.gameUi.addChatLine(message);
-    }
-  }
-
-  private getSpellTargetHint(spell: SpellCastRequest): string {
-    if (this.spellCanTargetDummy(spell) && this.spellCanTargetPlayer(spell)) {
-      return "enemigo o aliado";
-    }
-    if (this.spellCanTargetDummy(spell)) {
-      return "enemigo";
-    }
-    return "aliado";
-  }
-
-  private spellCanTargetDummy(spell: SpellCastRequest): boolean {
-    return spell.danioMax > 0 || spell.danioMin > 0 || spell.idSpell === INMOVILIZAR_SPELL_ID;
-  }
-
-  private spellCanTargetPlayer(spell: SpellCastRequest): boolean {
-    return spell.puedeUsarseEnAliados || spell.healMax > 0 || Boolean(spell.remueveDebuff);
-  }
-
-  private spendManaForSpell(spell: SpellCastRequest): boolean {
-    if (this.playerProgress.mp < spell.manaCost) {
-      this.gameUi.addCombatLine(
-        `No tenés suficiente maná para ${spell.nombre} (${this.playerProgress.mp}/${spell.manaCost}).`
-      );
-      return false;
-    }
-    this.playerProgress.mp -= spell.manaCost;
-    this.refreshHud();
-    return true;
-  }
-
-  private tryCastSpellOnPlayer() {
-    const spell = this.pendingSpellCast;
-    if (!spell) return;
-
-    if (!this.spellCanTargetPlayer(spell)) {
-      this.gameUi.addCombatLine(`${spell.nombre} no puede lanzarse sobre aliados.`);
-      return;
-    }
-    if (!this.spendManaForSpell(spell)) {
-      return;
-    }
-
-    let anyEffect = false;
-    if (spell.healMax > 0 || spell.healMin > 0) {
-      const min = Math.max(0, Math.floor(spell.healMin));
-      const max = Math.max(min, Math.floor(spell.healMax));
-      const healAmount = Phaser.Math.Between(min, max);
-      const before = this.playerProgress.hp;
-      this.playerProgress.hp = Math.min(this.playerProgress.hpMax, this.playerProgress.hp + healAmount);
-      const restored = this.playerProgress.hp - before;
-      this.gameUi.addCombatLine(`${spell.nombre} te cura ${restored} HP.`);
-      if (spell.idSpell === HERIDAS_GRAVES_SPELL_ID) {
-        this.playHeridasGravesAnimation(this.playerTileX, this.playerTileY);
-      }
-      anyEffect = true;
-    }
-
-    if (spell.remueveDebuff) {
-      this.gameUi.addCombatLine(`${spell.nombre} remueve ${spell.remueveDebuff}.`);
-      anyEffect = true;
-    }
-
-    if (!anyEffect) {
-      this.gameUi.addCombatLine(`${spell.nombre} no tuvo efecto sobre ese objetivo.`);
-    }
-
-    this.refreshHud();
-    this.cancelSpellTargeting(`${spell.nombre} lanzado.`);
-  }
-
-  private tryCastSpellOnDummy(dummy: DummyState) {
-    const spell = this.pendingSpellCast;
-    if (!spell) return;
-
-    if (!dummy.alive || dummy.mapId !== this.currentMapId) {
-      this.gameUi.addCombatLine("Ese objetivo no está disponible.");
-      return;
-    }
-    if (!this.spellCanTargetDummy(spell)) {
-      this.gameUi.addCombatLine(`${spell.nombre} no puede lanzarse sobre enemigos.`);
-      return;
-    }
-    if (!this.spendManaForSpell(spell)) {
-      return;
-    }
-
-    const hitTile = this.getDummyHitTile(dummy);
-
-    if (spell.idSpell === INMOVILIZAR_SPELL_ID) {
-      this.applyInmovilizadoDebuffToDummy(dummy, spell.nombre);
-      this.playInmovilizarAnimation(hitTile.x, hitTile.y);
-      this.cancelSpellTargeting(`${spell.nombre} lanzado.`);
-      return;
-    }
-
-    const min = Math.max(0, Math.floor(spell.danioMin));
-    const max = Math.max(min, Math.floor(spell.danioMax));
-    const damage = Phaser.Math.Between(min, max);
-    const result = this.dealDamageToDummy(dummy, damage);
-
-    if (spell.idSpell === IMPLOSION_SPELL_ID) {
-      this.playImplosionAnimation(hitTile.x, hitTile.y);
-    } else {
-      this.playAttackFeedback(hitTile.x, hitTile.y);
-    }
-    dummy.sprite.setTint(0x9b4dff);
-    this.time.delayedCall(90, () => {
-      if (dummy.alive) dummy.sprite.clearTint();
-    });
-
-    this.gameUi.addCombatLine(`${spell.nombre} golpea a ${dummy.name} por ${result.damageApplied}.`);
-
-    this.cancelSpellTargeting(`${spell.nombre} lanzado.`);
-  }
-
-  private inspectWorldItem(worldItem: (typeof this.worldItems)[number]) {
     this.gameUi.addChatLine(formatStackLabel(worldItem.id, worldItem.count));
   }
 
-  private inspectDummy(dummy: DummyState) {
-    this.gameUi.addChatLine(`${dummy.name} - Vida ${dummy.hp}/${dummy.maxHp}`);
-  }
-
-  private useConsumableFromSlot(slotIndex: number) {
+  private useConsumableFromSlot(
+    slotIndex: number,
+    options?: { skipMultiplayer?: boolean }
+  ) {
     const stack = this.inventory[slotIndex];
     if (!stack) {
       return;
     }
 
     const item = getItemDefinition(stack.itemId);
+    const usability = canUseItem(
+      this.selectedClass,
+      this.selectedRace,
+      this.playerProgress.level,
+      item
+    );
+    if (!usability.allowed) {
+      this.gameUi.addChatLine(usability.reason ?? "No podés usar ese objeto.");
+      return;
+    }
+
     if (item.type !== "consumable" || !item.consumableEffects) {
       this.gameUi.addChatLine(`${item.name} no se puede usar.`);
       return;
     }
 
-    const { healHpPercent, learnSpellId } = item.consumableEffects;
+    const { healHpPercent, restoreMpPercent, learnSpellId, attributeBuff } =
+      item.consumableEffects;
+
+    if (
+      !options?.skipMultiplayer &&
+      this.multiplayer?.isConnected() &&
+      !learnSpellId &&
+      (healHpPercent || restoreMpPercent || attributeBuff)
+    ) {
+      if (!this.isMultiplayerActive()) {
+        this.gameUi.addChatLine("Conectando con el servidor...");
+        return;
+      }
+      if (!this.multiplayer!.getSpawnSynced()) {
+        this.gameUi.addChatLine("Esperá a que termine la conexión con el servidor.");
+        return;
+      }
+      this.multiplayer!.sendUseItem(stack.itemId, slotIndex);
+      return;
+    }
     if (learnSpellId) {
       const learned = this.tryLearnSpellFromScroll(learnSpellId, item.name);
       if (!learned) {
@@ -1041,6 +1805,59 @@ private worldItems: {
 
       this.consumeOneFromSlot(slotIndex, item.textureKey);
       this.refreshKnownSpellsUi();
+      return;
+    }
+
+    if (attributeBuff === "strength" || attributeBuff === "agility") {
+      this.expireAttributePotionBuffsIfNeeded();
+      const statLabel = attributeBuff === "strength" ? "Fuerza" : "Agilidad";
+      const result = this.tryApplyAttributeBuffFromPotion(attributeBuff);
+      this.resetAttributePotionTimer();
+
+      this.consumeOneFromSlot(slotIndex, item.textureKey);
+      this.refreshSkillsUi();
+      this.refreshHud();
+
+      if (result.atCap && result.gained <= 0) {
+        this.gameUi.addChatLine(
+          `Usaste ${item.name}. Renovaste el efecto por 90 s (ya tenés el máximo de ${statLabel}).`
+        );
+        return;
+      }
+
+      const totalBonus = Math.floor(this.attributeBuffs[attributeBuff]);
+      this.gameUi.addChatLine(
+        `Usaste ${item.name} y ganaste +${result.gained} ${statLabel} (bono +${totalBonus}, stat ${result.newStatValue}/${STAT_MAX + ATTRIBUTE_POTION_BUFF_MAX}, 90 s).`
+      );
+      return;
+    }
+
+    if (restoreMpPercent && restoreMpPercent > 0) {
+      if (!CLASS_USES_MANA[this.selectedClass] || this.playerProgress.mpMax <= 0) {
+        this.gameUi.addChatLine("Tu clase no usa maná.");
+        return;
+      }
+      if (this.playerProgress.mp >= this.playerProgress.mpMax) {
+        this.gameUi.addChatLine("Ya tenés el maná al máximo.");
+        return;
+      }
+
+      const manaAmount = Math.max(
+        1,
+        Math.floor(this.playerProgress.mpMax * restoreMpPercent)
+      );
+      const before = this.playerProgress.mp;
+      this.playerProgress.mp = Math.min(
+        this.playerProgress.mpMax,
+        this.playerProgress.mp + manaAmount
+      );
+      const restored = this.playerProgress.mp - before;
+
+      this.consumeOneFromSlot(slotIndex, item.textureKey);
+      this.refreshHud();
+      this.gameUi.addChatLine(
+        `Usaste ${item.name} y recuperaste ${restored} MP (${Math.round(restoreMpPercent * 100)}%).`
+      );
       return;
     }
 
@@ -1073,6 +1890,177 @@ private worldItems: {
     );
   }
 
+  private resetAttributePotionTimer() {
+    this.attributeBuffExpiresAt = this.time.now + ATTRIBUTE_POTION_BUFF_DURATION_MS;
+  }
+
+  private clearAttributePotionBuffs(notify = false) {
+    const hadBuff =
+      this.attributeBuffs.strength > 0 ||
+      this.attributeBuffs.agility > 0 ||
+      this.attributeBuffExpiresAt > 0;
+    this.attributeBuffs = { strength: 0, agility: 0 };
+    this.attributeBuffExpiresAt = 0;
+    if (notify && hadBuff) {
+      this.gameUi.addChatLine(
+        "El efecto de las pociones de fuerza y agilidad terminó."
+      );
+      this.refreshSkillsUi();
+    }
+  }
+
+  /** @returns true si se limpiaron buffs por expiración */
+  private expireAttributePotionBuffsIfNeeded(): boolean {
+    if (this.attributeBuffExpiresAt <= 0) {
+      return false;
+    }
+    if (this.time.now < this.attributeBuffExpiresAt) {
+      return false;
+    }
+    this.clearAttributePotionBuffs(true);
+    return true;
+  }
+
+  private handleServerUseItemAck(ack: ServerUseItemAckMessage) {
+    if (typeof ack.hp === "number") {
+      this.playerProgress.hp = ack.hp;
+    }
+    if (typeof ack.mp === "number") {
+      this.playerProgress.mp = ack.mp;
+    }
+    if (ack.attributeBuffs) {
+      this.attributeBuffs = {
+        strength: ack.attributeBuffs.strength,
+        agility: ack.attributeBuffs.agility,
+      };
+      this.attributeBuffExpiresAt = ack.buffExpiresAtMs ?? 0;
+      this.refreshSkillsUi();
+    }
+    this.refreshHud();
+    this.gameUi.addChatLine(ack.message);
+
+    if (ack.clientOnly && typeof ack.inventorySlot === "number") {
+      this.useConsumableFromSlot(ack.inventorySlot, { skipMultiplayer: true });
+      this.persistCharacterProgress();
+      return;
+    }
+
+    const slotIndex = this.resolveInventorySlotForItemAck(ack);
+    if (slotIndex >= 0) {
+      const item = getItemDefinition(ack.itemId as ItemId);
+      this.consumeOneFromSlot(slotIndex, item.textureKey);
+    }
+    this.persistCharacterProgress();
+  }
+
+  private syncLocalGoldFromServer(gold: number | undefined) {
+    if (typeof gold !== "number" || !Number.isFinite(gold)) {
+      return;
+    }
+    this.playerProgress.gold = Math.max(0, Math.floor(gold));
+    this.refreshHud();
+  }
+
+  private syncWorldItemsFromServer(items: NetWorldItemState[] | null | undefined) {
+    if (!this.isMultiplayerActive()) {
+      return;
+    }
+    this.worldItemManager.syncFromNetStates(items);
+  }
+
+  private applyWorldItemSpawned(mapId: string, item: NetWorldItemState) {
+    if (!this.isMultiplayerActive() || mapId !== this.currentMapId) {
+      return;
+    }
+    this.worldItemManager.applyNetSpawned(mapId, item);
+  }
+
+  private applyWorldItemUpdated(
+    mapId: string,
+    item: import("../../shared/types").NetWorldItemState
+  ) {
+    if (!this.isMultiplayerActive() || mapId !== this.currentMapId) {
+      return;
+    }
+    this.worldItemManager.applyNetUpdated(mapId, item);
+  }
+
+  private applyWorldItemRemoved(mapId: string, worldItemId: string) {
+    if (!this.isMultiplayerActive() || mapId !== this.currentMapId) {
+      return;
+    }
+    this.worldItemManager.applyNetRemoved(mapId, worldItemId);
+  }
+
+  private syncLocalInventoryFromServer(slots: NetInventorySlotState[] | undefined) {
+    if (!Array.isArray(slots)) {
+      return;
+    }
+    this.inventory = Array(INVENTORY_SLOT_COUNT).fill(null);
+    for (const slot of slots) {
+      const slotIndex =
+        typeof slot.slotIndex === "number" && Number.isFinite(slot.slotIndex)
+          ? Math.floor(slot.slotIndex)
+          : -1;
+      if (slotIndex < 0 || slotIndex >= INVENTORY_SLOT_COUNT) {
+        continue;
+      }
+      const amount =
+        typeof slot.amount === "number" && Number.isFinite(slot.amount)
+          ? Math.max(0, Math.floor(slot.amount))
+          : 0;
+      const itemId =
+        typeof slot.itemId === "string" && slot.itemId.trim() ? slot.itemId.trim() : null;
+      if (!itemId || amount <= 0) {
+        continue;
+      }
+      try {
+        const definition = getItemDefinition(itemId as ItemId);
+        this.inventory[slotIndex] = { itemId: definition.id, count: amount };
+      } catch {
+        continue;
+      }
+    }
+    this.refreshInventoryUi();
+    this.gameUi.setEquippedItemIds(
+      Object.values(this.equipment).filter((id): id is ItemId => id != null)
+    );
+  }
+
+  private resolveInventorySlotForItemAck(ack: ServerUseItemAckMessage): number {
+    if (typeof ack.inventorySlot === "number" && ack.inventorySlot >= 0) {
+      const preferred = this.inventory[ack.inventorySlot];
+      if (preferred?.itemId === ack.itemId && preferred.count > 0) {
+        return ack.inventorySlot;
+      }
+    }
+    return this.inventory.findIndex(
+      (stack) => stack?.itemId === ack.itemId && stack.count > 0
+    );
+  }
+
+  private tryApplyAttributeBuffFromPotion(stat: "strength" | "agility"): {
+    gained: number;
+    atCap: boolean;
+    newStatValue: number;
+  } {
+    const current = Math.floor(this.attributeBuffs[stat]);
+    if (current >= ATTRIBUTE_POTION_BUFF_MAX) {
+      const natural = resolveCoreStats(this.selectedRace, this.selectedClass);
+      return {
+        gained: 0,
+        atCap: true,
+        newStatValue: natural[stat] + current,
+      };
+    }
+
+    const roll = Phaser.Math.Between(ATTRIBUTE_POTION_GAIN_MIN, ATTRIBUTE_POTION_GAIN_MAX);
+    const gained = Math.min(roll, ATTRIBUTE_POTION_BUFF_MAX - current);
+    this.attributeBuffs[stat] = current + gained;
+    const core = this.getCoreStats();
+    return { gained, atCap: false, newStatValue: core[stat] };
+  }
+
   private tryLearnSpellFromScroll(spellId: number, itemName: string): boolean {
     const spell = SPELL_DEFINITIONS.find((entry) => entry.idSpell === spellId);
     if (!spell) {
@@ -1083,9 +2071,9 @@ private worldItems: {
       this.gameUi.addChatLine(`Tu clase no puede aprender ${spell.nombre}.`);
       return false;
     }
-    if (spell.nivelMagiaRequerido > this.playerMagicLevel) {
+    if (spell.nivelMagiaRequerido > this.getMagicSkillLevel()) {
       this.gameUi.addChatLine(
-        `Necesitás nivel de magia ${spell.nivelMagiaRequerido} para aprender ${spell.nombre}.`
+        `Necesitás ${spell.nivelMagiaRequerido} puntos de Magia para aprender ${spell.nombre}.`
       );
       return false;
     }
@@ -1112,167 +2100,197 @@ private worldItems: {
       return;
     }
 
-    this.gameUi.setInventorySlot(slotIndex, textureKey, stack.count);
+    this.gameUi.setInventorySlot(slotIndex, textureKey, stack.count, stack.itemId);
   }
 
   private createWorldItem(
     itemId: ItemId,
     tileX: number,
     tileY: number,
-    count = 1
+    count = 1,
+    options?: { exactTile?: boolean }
   ) {
-    if (count <= 0) {
-      return;
-    }
-
-    const existing = this.worldItems.find(
-      (entry) =>
-        entry.id === itemId && entry.tileX === tileX && entry.tileY === tileY
-    );
-    if (existing) {
-      existing.count += count;
-      return;
-    }
-
-    const dropTile = this.findNearestAvailableDropTile(tileX, tileY);
-    if (!dropTile) {
-      return;
-    }
-
-    const item = getItemDefinition(itemId);
-    const pos = tileToFeetWorld(dropTile.x, dropTile.y, TILE_SIZE);
-  
-    const sprite = this.add.sprite(pos.x, pos.y - 8, item.textureKey);
-    sprite.setOrigin(0.5, 1);
-    sprite.setY(pos.y + 2);
-    sprite.setDepth(this.depthFromFeetY(pos.y + 2) - 0.2);
-    sprite.setScale(0.80);
-    sprite.setInteractive({ useHandCursor: true, pixelPerfect: true });
-
-    const worldItem = {
-      id: itemId,
-      tileX: dropTile.x,
-      tileY: dropTile.y,
-      count,
-      sprite,
-    };
-
-    sprite.on("pointerdown", () => {
-      this.inspectWorldItem(worldItem);
-    });
-
-    if (this.uiCamera) {
-      this.uiCamera.ignore(sprite);
-    }
-  
-    this.worldItems.push(worldItem);
+    this.worldItemManager.createItem(itemId, tileX, tileY, count, options);
   }
 
-  private findNearestAvailableDropTile(
-    targetTileX: number,
-    targetTileY: number
-  ): { x: number; y: number } | null {
-    if (
-      this.isMapTileWalkable(targetTileX, targetTileY) &&
-      !this.isWorldItemTileOccupied(targetTileX, targetTileY)
-    ) {
-      return { x: targetTileX, y: targetTileY };
-    }
-
-    const maxDistance = this.currentMap.width + this.currentMap.height;
-    for (let distance = 1; distance <= maxDistance; distance += 1) {
-      for (let dy = -distance; dy <= distance; dy += 1) {
-        for (let dx = -distance; dx <= distance; dx += 1) {
-          if (Math.abs(dx) + Math.abs(dy) !== distance) continue;
-          const x = targetTileX + dx;
-          const y = targetTileY + dy;
-          if (!this.isMapTileWalkable(x, y)) continue;
-          if (this.isWorldItemTileOccupied(x, y)) continue;
-          return { x, y };
-        }
-      }
-    }
-
-    return null;
-  }
-
-  private isWorldItemTileOccupied(tileX: number, tileY: number): boolean {
-    return this.worldItems.some((item) => item.tileX === tileX && item.tileY === tileY);
-  }
-  
-
-  private setupCameras() {
-    const w = this.scale.width;
-    const h = this.scale.height;
-
-    this.uiCamera = this.cameras.add(0, 0, w, h);
-    this.uiCamera.setScroll(0, 0).setZoom(1);
-
-    const worldCam = this.cameras.main;
-    this.updateCameraBounds();
-    worldCam.roundPixels = true;
-    worldCam.startFollow(this.player, true, 1, 1);
-
-    /** Zoom del mundo (antes 1.5). */
-    worldCam.setZoom(1);
-
-    worldCam.ignore(this.gameUi.getContainer());
-    if (this.worldMapOverlay) {
-      worldCam.ignore(this.worldMapOverlay);
-    }
-    this.uiCamera.ignore([
-      this.mapTiles,
-      this.mapOverlay,
-      ...this.mapTrees,
-      this.player,
-      this.playerFace,
-      this.playerNameLabel,
-      ...(this.equippedWeaponSprite ? [this.equippedWeaponSprite] : []),
-      ...this.worldItems.map((item) => item.sprite),
-    ]);
-    if (this.dummies.length > 0) {
-      this.uiCamera.ignore(this.dummies.flatMap((dummy) => [dummy.sprite, dummy.hpLabel]));
-    }
-
-    this.applyCameraLayout();
+  private createWorldGold(
+    tileX: number,
+    tileY: number,
+    count: number,
+    options?: { exactTile?: boolean }
+  ) {
+    this.worldItemManager.createGold(tileX, tileY, count, options);
   }
 
   private applyCameraLayout() {
-    const w = this.scale.width;
-    const h = this.scale.height;
-    const view = getGameViewport(w, h);
-
-    this.uiCamera.setViewport(0, 0, w, h);
-    this.uiCamera.setSize(w, h);
-
-    const worldCam = this.cameras.main;
-    worldCam.setViewport(view.x, view.y, view.width, view.height);
-    this.rebuildWorldMapOverlay();
+    this.mapController.applyCameraLayout();
   }
 
-  private updateCameraBounds() {
-    const worldWidth = this.currentMap.width * TILE_SIZE;
-    const worldHeight = this.currentMap.height * TILE_SIZE;
-    const cameraPadding = CAMERA_BOUNDS_PADDING_TILES * TILE_SIZE;
-    this.cameras.main.setBounds(
-      -cameraPadding,
-      -cameraPadding,
-      worldWidth + cameraPadding * 2,
-      worldHeight + cameraPadding * 2
+  private getGameViewportRect() {
+    return this.mapController.getGameViewportRect();
+  }
+
+  private setupDeathOverlay() {
+    this.deathOverlay = new DeathOverlay(this, {
+      onAcceptPriest: () => this.acceptPriestRevival(),
+      onStayGhost: () => this.stayAsGhost(),
+    });
+    this.cameras.main.ignore(this.deathOverlay.getContainer());
+  }
+
+  private get bankState(): BankState {
+    if (!this.shopBankSystem) return this._bankStateBackup;
+    return this.shopBankSystem.getBankState();
+  }
+
+  private set bankState(state: BankState) {
+    this._bankStateBackup = state;
+    if (this.shopBankSystem) this.shopBankSystem.setBankState(state);
+  }
+
+  private get activeShopRole(): MerchantRole | null {
+    return this.shopBankSystem.getActiveShopRole();
+  }
+
+  private initShopBankSystem() {
+    this.shopBankSystem = new ShopBankSystem(
+      {
+        getInventory: () => this.inventory,
+        setInventorySlot: (i, v) => { this.inventory[i] = v; },
+        getPlayerGold: () => this.playerProgress.gold,
+        setPlayerGold: (v) => { this.playerProgress.gold = v; },
+        refreshInventoryUi: () => this.refreshInventoryUi(),
+        refreshHud: () => this.refreshHud(),
+        addChatLine: (msg) => this.gameUi.addChatLine(msg),
+        isPlayerDeadOrGhost: () => this.isPlayerDeadOrGhost(),
+        getPlayerTile: () => ({ x: this.playerTileX, y: this.playerTileY }),
+        getCharacterId: () => this.characterId,
+        getGameViewportRect: () => this.getGameViewportRect(),
+        scheduleProgressSave: () => this.scheduleCharacterProgressSave(),
+        clearInventorySlotUi: (i) => this.gameUi.clearInventorySlot(i),
+        setInventorySlotUi: (i, tex, count) => this.gameUi.setInventorySlot(i, tex, count),
+        getEquipment: () => this.equipment,
+        onInventoryChanged: () => this.syncServerInventoryIfMultiplayer(),
+      },
+      this._bankStateBackup
     );
   }
 
-  private updateWorldBackgroundColor() {
-    const outsideTile = this.currentMap.outsideTile ?? TILE.GRASS;
-    const outsideColor = getTileDefinition(outsideTile).color;
-    this.cameras.main.setBackgroundColor(outsideColor);
+  private setupBankOverlay() {
+    this.bankOverlay = new BankOverlay(this, {
+      onClose: () => this.shopBankSystem.closeBank(),
+      onDepositInventorySlot: (slotIndex, amount) =>
+        this.shopBankSystem.depositInventorySlotToBank(slotIndex, amount),
+      onWithdrawBankSlot: (slotIndex, amount) =>
+        this.shopBankSystem.withdrawBankSlotToInventory(slotIndex, amount),
+      onDepositGold: (amount) => this.shopBankSystem.depositGoldToBank(amount),
+      onWithdrawGold: (amount) => this.shopBankSystem.withdrawGoldFromBank(amount),
+    });
+    this.cameras.main.ignore(this.bankOverlay.getContainer());
+    this.cameras.main.ignore(this.bankOverlay.getDomObjects());
+    this.shopBankSystem.setBankOverlay(this.bankOverlay);
   }
 
-  /** Evita scroll sub-pixel que genera líneas entre tiles al moverse. */
-  private snapCameraScroll() {
-    const cam = this.cameras.main;
-    cam.scrollX = Math.round(cam.scrollX);
-    cam.scrollY = Math.round(cam.scrollY);
+  private setupShopOverlay() {
+    this.shopOverlay = new ShopOverlay(this, {
+      onClose: () => this.shopBankSystem.closeShop(),
+      onBuy: (itemId, amount) => this.shopBankSystem.buyFromShop(itemId, amount),
+      onSell: (slotIndex, amount) => this.shopBankSystem.sellToShop(slotIndex, amount),
+    });
+    this.cameras.main.ignore(this.shopOverlay.getContainer());
+    this.cameras.main.ignore(this.shopOverlay.getDomObjects());
+    this.shopBankSystem.setShopOverlay(this.shopOverlay);
+  }
+
+  private tryOpenShopNpc(npc: StaticNpcDefinition) {
+    this.shopBankSystem.tryOpenShopNpc(npc);
+  }
+
+  private tryOpenBankNpc(npc: StaticNpcDefinition) {
+    this.shopBankSystem.tryOpenBankNpc(npc);
+  }
+
+  private refreshBankOverlay() {
+    this.shopBankSystem.refreshBankOverlay();
+  }
+
+  private refreshShopOverlay() {
+    this.shopBankSystem.refreshShopOverlay();
+  }
+
+  private isPlayerDeadOrGhost() {
+    return this.deathSystem.isPlayerDeadOrGhost();
+  }
+
+  private get deathPhase(): DeathPhase {
+    return this.deathSystem.phase;
+  }
+
+  private set deathPhase(value: DeathPhase) {
+    this.deathSystem.phase = value;
+  }
+
+  private get useGhostAppearance(): boolean {
+    return this.deathSystem.useGhostAppearance;
+  }
+
+  private set useGhostAppearance(value: boolean) {
+    this.deathSystem.useGhostAppearance = value;
+  }
+
+  private get homeMapId(): string {
+    if (!this.deathSystem) return this._homeMapIdBackup;
+    return this.deathSystem.getHomeMapId();
+  }
+
+  private set homeMapId(value: string) {
+    this._homeMapIdBackup = value;
+    if (this.deathSystem) this.deathSystem.setHomeMapId(value);
+  }
+
+  private handlePlayerDeath() {
+    this.clearAttributePotionBuffs(false);
+    this.deathSystem.handlePlayerDeath();
+  }
+
+  private applyGhostVisual() {
+    this.deathSystem.applyGhostVisual();
+  }
+
+  private clearGhostVisual() {
+    this.deathSystem.clearGhostVisual();
+  }
+
+  private stayAsGhost() {
+    this.deathSystem.stayAsGhost();
+  }
+
+  private acceptPriestRevival() {
+    this.deathSystem.acceptPriestRevival();
+  }
+
+  private goToHomePriestViaCommand() {
+    this.deathSystem.goToHomePriestViaCommand();
+  }
+
+  private tryReviveAtPriestNpc(priest: StaticNpcDefinition) {
+    this.deathSystem.tryReviveAtPriestNpc(priest);
+  }
+
+  private markHomeCity() {
+    this.deathSystem.markHomeCity();
+  }
+
+  private persistHomeMapId() {
+    this.deathSystem.persistHomeMapId();
+  }
+
+  private syncNpcsForCurrentMap() {
+    this.npcManager?.syncForMap(this.currentMapId);
+  }
+
+  revivePlayerFromAlly() {
+    this.deathSystem.reviveFromAlly();
   }
 
   private setupInput() {
@@ -1303,115 +2321,23 @@ private worldItems: {
     });
   }
 
-  private createWorldMapOverlay() {
-    this.worldMapOverlay = this.add.container(0, 0).setScrollFactor(0).setDepth(2000).setVisible(false);
-    this.rebuildWorldMapOverlay();
-  }
-
-  private rebuildWorldMapOverlay() {
-    if (!this.worldMapOverlay) return;
-
-    const w = this.scale.width;
-    const h = this.scale.height;
-    this.worldMapOverlay.removeAll(true);
-    this.worldMapMapCenters.clear();
-
-    const backdrop = this.add
-      .rectangle(0, 0, w, h, 0x000000, 0.72)
-      .setOrigin(0, 0)
-      .setScrollFactor(0);
-    const panelW = Math.min(700, Math.floor(w * 0.84));
-    const panelH = Math.min(470, Math.floor(h * 0.82));
-    const panelX = Math.floor((w - panelW) / 2);
-    const panelY = Math.floor((h - panelH) / 2);
-    const panel = this.add
-      .rectangle(panelX, panelY, panelW, panelH, 0x0e1524, 0.96)
-      .setOrigin(0, 0)
-      .setStrokeStyle(2, 0x7ba7d9, 0.95)
-      .setScrollFactor(0);
-    const title = this.add
-      .text(panelX + Math.floor(panelW / 2), panelY + 14, "Mapa Mundial (M)", {
-        fontFamily: "monospace",
-        fontSize: "18px",
-        color: "#dbe9ff",
-        fontStyle: "bold",
-      })
-      .setOrigin(0.5, 0)
-      .setScrollFactor(0);
-
-    this.worldMapOverlay.add([backdrop, panel, title]);
-
-    const maps = getAllMaps();
-    const cols = Math.max(2, Math.ceil(Math.sqrt(maps.length)));
-    const rows = Math.max(1, Math.ceil(maps.length / cols));
-    const topPadding = 56;
-    const sidePadding = 28;
-    const gapX = 18;
-    const gapY = 16;
-    const availW = panelW - sidePadding * 2 - gapX * (cols - 1);
-    const availH = panelH - topPadding - 24 - gapY * (rows - 1);
-    const cellW = Math.max(110, Math.floor(availW / cols));
-    const cellH = Math.max(72, Math.floor(availH / rows));
-
-    maps.forEach((map, index) => {
-      const col = index % cols;
-      const row = Math.floor(index / cols);
-      const x = panelX + sidePadding + col * (cellW + gapX);
-      const y = panelY + topPadding + row * (cellH + gapY);
-      const mapBox = this.add
-        .rectangle(x, y, cellW, cellH, 0x1a2b42, 0.92)
-        .setOrigin(0, 0)
-        .setStrokeStyle(1, 0x9fc4ef, 0.9)
-        .setScrollFactor(0);
-      const mapName = this.add
-        .text(x + Math.floor(cellW / 2), y + Math.floor(cellH / 2), map.name, {
-          fontFamily: "monospace",
-          fontSize: "14px",
-          color: "#ffffff",
-          align: "center",
-          wordWrap: { width: cellW - 12, useAdvancedWrap: false },
-        })
-        .setOrigin(0.5, 0.5)
-        .setScrollFactor(0);
-
-      this.worldMapMapCenters.set(map.id, {
-        x: x + Math.floor(cellW / 2),
-        y: y + cellH - 14,
-      });
-      this.worldMapOverlay?.add([mapBox, mapName]);
-    });
-
-    const marker = this.worldMapMapCenters.get(this.currentMapId);
-    this.worldMapCurrentMarker = this.add
-      .circle(marker?.x ?? panelX + panelW / 2, marker?.y ?? panelY + panelH / 2, 6, 0xff2a2a, 1)
-      .setStrokeStyle(2, 0x2a0000, 1)
-      .setScrollFactor(0);
-    this.worldMapOverlay.add(this.worldMapCurrentMarker);
-    this.worldMapOverlay.setVisible(this.isWorldMapOpen);
-  }
-
-  private updateWorldMapMarker() {
-    if (!this.worldMapCurrentMarker) return;
-    const marker = this.worldMapMapCenters.get(this.currentMapId);
-    if (!marker) return;
-    this.worldMapCurrentMarker.setPosition(marker.x, marker.y);
-  }
-
-  private toggleWorldMap() {
-    if (!this.worldMapOverlay) return;
-    this.isWorldMapOpen = !this.isWorldMapOpen;
-    this.worldMapOverlay.setVisible(this.isWorldMapOpen);
-    this.updateWorldMapMarker();
+  private refreshMapLocationLabel() {
+    this.gameUi.setMapLocation(
+      this.currentMap.name,
+      this.playerTileX,
+      this.playerTileY
+    );
   }
 
   private refreshHud() {
-    this.gameUi.setMapName(this.currentMap.name);
+    this.refreshMapLocationLabel();
     this.refreshMinimap();
-    this.updateWorldMapMarker();
+    this.mapController.updateWorldMapMarker();
     const p = this.playerProgress;
 
     this.gameUi.setStats({
       name: this.playerName,
+      nameColor: getPlayerNameColors(this.selectedFaction, this.playerRole).fill,
       level: p.level,
       hp: p.hp,
       hpMax: p.hpMax,
@@ -1424,7 +2350,7 @@ private worldItems: {
   }
 
   private refreshMinimap() {
-    const bounds = this.getMinimapBounds();
+    const bounds = this.mapController.getMinimapBounds();
     this.gameUi.updateMinimap(
       this.currentMap,
       this.playerTileX,
@@ -1433,82 +2359,91 @@ private worldItems: {
     );
   }
 
-  private getMinimapBounds() {
-    let minTileX = 0;
-    let minTileY = 0;
-    let maxTileX = this.currentMap.width - 1;
-    let maxTileY = this.currentMap.height - 1;
-    const edgeTransitions = this.currentMap.edgeTransitions;
-
-    if (edgeTransitions?.left) {
-      minTileX = Math.min(maxTileX, EDGE_TRANSITION_TRIGGER_DISTANCE + 1);
-    }
-    if (edgeTransitions?.right) {
-      maxTileX = Math.max(
-        minTileX,
-        this.currentMap.width - 2 - EDGE_TRANSITION_TRIGGER_DISTANCE
-      );
-    }
-    if (edgeTransitions?.up) {
-      minTileY = Math.min(maxTileY, EDGE_TRANSITION_TRIGGER_DISTANCE + 1);
-    }
-    if (edgeTransitions?.down) {
-      maxTileY = Math.max(
-        minTileY,
-        this.currentMap.height - 2 - EDGE_TRANSITION_TRIGGER_DISTANCE
-      );
-    }
-
-    return { minTileX, minTileY, maxTileX, maxTileY };
-  }
-
   update(_time: number, delta: number) {
-    this.snapCameraScroll();
+    this.expireAttributePotionBuffsIfNeeded();
+    this.mapController.snapCameraScroll();
+    this.drawHitboxDebugOverlay();
     this.updatePlayerDebuffs();
-    this.updateMeditation(delta);
+    this.meditationSystem.update(delta);
+    this.updateMobShowcaseAi();
     this.updateMobAi();
     this.syncEntityDepths();
+    this.syncMovingMobFaces();
     this.syncPlayerFacePosition();
     this.syncPlayerNameLabelPosition();
-    this.syncEquippedWeaponVisual();
-    this.syncMeditationFxPosition();
-    this.syncTreeOcclusion();
+    this.syncEquippedHeldItemVisuals();
+    this.meditationSystem.syncFxPosition();
+    this.syncSceneryOcclusion();
 
     if (!this.cursors || !this.wasd || this.isChangingMap) {
       return;
     }
-    if (this.worldMapToggleKey && Phaser.Input.Keyboard.JustDown(this.worldMapToggleKey)) {
-      this.toggleWorldMap();
-      return;
-    }
-    if (
-      this.pendingSpellCast &&
-      this.cancelSpellTargetingKey &&
-      Phaser.Input.Keyboard.JustDown(this.cancelSpellTargetingKey)
-    ) {
-      this.cancelSpellTargeting("Lanzamiento cancelado.");
-      return;
-    }
-    
+
     if (
       this.gameUi.isChatFocused() ||
       this.gameUi.isConfirmOpen() ||
-      this.gameUi.isMacroEditorOpen()
+      this.gameUi.isMacroEditorOpen() ||
+      this.gameUi.isStatsOverlayOpen() ||
+      (this.bankOverlay?.isOpen() ?? false) ||
+      (this.shopOverlay?.isOpen() ?? false)
     ) {
       return;
     }
-    if (this.isWorldMapOpen) {
+
+    if (this.worldMapToggleKey && Phaser.Input.Keyboard.JustDown(this.worldMapToggleKey)) {
+      this.mapController.toggleWorldMap();
+      return;
+    }
+    if (
+      this.combatController.hasPendingSpellCast() &&
+      this.cancelSpellTargetingKey &&
+      Phaser.Input.Keyboard.JustDown(this.cancelSpellTargetingKey)
+    ) {
+      this.combatController.cancelSpellTargeting("Lanzamiento cancelado.");
+      return;
+    }
+    if (this.shopOverlay?.isOpen() && Phaser.Input.Keyboard.JustDown(this.cancelSpellTargetingKey)) {
+      this.shopOverlay.handleEscape();
+      return;
+    }
+    if (this.bankOverlay?.isOpen() && Phaser.Input.Keyboard.JustDown(this.cancelSpellTargetingKey)) {
+      this.bankOverlay.handleEscape();
+      return;
+    }
+    if (this.mapController.isWorldMapOpen()) {
+      return;
+    }
+
+    if (this.isPlayerDeadOrGhost()) {
+      if (this.meditateKey && Phaser.Input.Keyboard.JustDown(this.meditateKey)) {
+        this.gameUi.addChatLine("No podés meditar estando muerto o en forma fantasma.");
+      }
+      if (this.attackKey && Phaser.Input.Keyboard.JustDown(this.attackKey)) {
+        this.gameUi.addChatLine("No podés atacar en esta forma.");
+      }
+      if (this.isMoving) {
+        return;
+      }
+      const direction = this.getPressedDirection();
+      if (direction) {
+        this.stopMeditation("Dejaste de meditar.");
+        if (this.isMultiplayerActive()) {
+          this.tryNetworkStep(direction);
+        } else {
+          this.tryStep(direction);
+        }
+      }
       return;
     }
 
     if (this.meditateKey && Phaser.Input.Keyboard.JustDown(this.meditateKey)) {
-      this.toggleMeditation("hotkey");
+      this.meditationSystem.toggle("hotkey");
       return;
     }
 
     if (this.attackKey && Phaser.Input.Keyboard.JustDown(this.attackKey)) {
       this.stopMeditation("Dejaste de meditar.");
-      this.tryAttackDummy();
+      this.combatController.tryAttackDummy();
     }
     if (
       this.equipSelectedSlotKey &&
@@ -1529,7 +2464,7 @@ private worldItems: {
 
     if (Phaser.Input.Keyboard.JustDown(this.pickupKey)) {
       this.stopMeditation("Dejaste de meditar.");
-      this.tryPickupItem();
+      this.inventoryController.tryPickupAtPlayerTile();
     }
 
     if (this.isMoving) {
@@ -1551,34 +2486,15 @@ private worldItems: {
     }
 
     this.stopMeditation("Dejaste de meditar.");
+    if (this.isMultiplayerActive()) {
+      this.tryNetworkStep(direction);
+      return;
+    }
     this.tryStep(direction);
   }
 
   private isPlayerImmobilized(now = this.time.now): boolean {
     return now < this.playerImmobilizedUntilMs;
-  }
-
-  private applyInmovilizadoDebuffToDummy(dummy: DummyState, sourceName: string) {
-    const now = this.time.now;
-    const wasImmobilized = now < dummy.immobilizedUntilMs;
-    dummy.immobilizedUntilMs = Math.max(
-      dummy.immobilizedUntilMs,
-      now + INMOVILIZADO_MOB_DURATION_MS
-    );
-
-    if (wasImmobilized) {
-      this.gameUi.addCombatLine(
-        `${sourceName} refuerza Inmovilizado en ${dummy.name} (${formatImmobilizeRemaining(
-          dummy.immobilizedUntilMs - now
-        )}).`
-      );
-      return;
-    }
-    this.gameUi.addCombatLine(
-      `${sourceName} inmoviliza a ${dummy.name} por ${formatImmobilizeDuration(
-        INMOVILIZADO_MOB_DURATION_MS
-      )}.`
-    );
   }
 
   private applyInmovilizadoDebuffToPlayer(targetName: string, sourceName: string) {
@@ -1613,18 +2529,28 @@ private worldItems: {
     this.wasPlayerImmobilizedLastFrame = isImmobilized;
   }
 
-  private syncTreeOcclusion() {
-    if (!this.player || this.mapTrees.length === 0) return;
+  private syncSceneryOcclusion() {
+    if (!this.player) return;
 
-    this.mapTrees.forEach((tree) => {
-      const bounds = tree.getBounds();
-      const playerBehindTree =
+    const applyOcclusion = (
+      sprite: Phaser.GameObjects.Image,
+      occludedAlpha: number
+    ) => {
+      const bounds = sprite.getBounds();
+      const playerBehind =
         this.player.x >= bounds.left &&
         this.player.x <= bounds.right &&
-        this.player.y <= tree.y &&
+        this.player.y <= sprite.y &&
         this.player.y >= bounds.top;
-      tree.setAlpha(playerBehindTree ? TREE_OCCLUDED_ALPHA : 1);
-    });
+      sprite.setAlpha(playerBehind ? occludedAlpha : 1);
+    };
+
+    this.mapController.getMapTrees().forEach((tree) =>
+      applyOcclusion(tree, TREE_OCCLUDED_ALPHA)
+    );
+    this.mapController.getMapBuildings().forEach((building) =>
+      applyOcclusion(building, BUILDING_OCCLUDED_ALPHA)
+    );
   }
 
   private getPressedDirection(): MoveDirection | null {
@@ -1651,178 +2577,109 @@ private worldItems: {
     this.desiredFacing = null;
     return null;
   }
-  private handleInventorySlotDoubleClick(slotIndex: number) {
-    const stack = this.inventory[slotIndex];
-    if (!stack) {
-      return;
-    }
-
-    const item = getItemDefinition(stack.itemId);
-    if (item.type === "consumable") {
-      this.useConsumableFromSlot(slotIndex);
-      return;
-    }
-
-    this.toggleEquipStateFromSlot(slotIndex);
-  }
-
   private tryToggleEquipmentFromSelectedSlot() {
-    const slotIndex = this.gameUi.getSelectedInventorySlot();
-    if (slotIndex < 0 || slotIndex >= this.inventory.length) {
-      this.gameUi.addChatLine("Seleccioná un casillero del inventario primero.");
-      return;
-    }
-
-    this.toggleEquipStateFromSlot(slotIndex);
+    this.inventoryController.tryToggleEquipmentFromSelectedSlot();
   }
 
   private tryDropSelectedItem() {
-    const slotIndex = this.gameUi.getSelectedInventorySlot();
-    if (slotIndex < 0 || slotIndex >= this.inventory.length) {
-      this.gameUi.addChatLine("Seleccioná un casillero del inventario primero.");
-      return;
-    }
-
-    const stack = this.inventory[slotIndex];
-    if (!stack) {
-      this.gameUi.addChatLine("Ese casillero está vacío.");
-      return;
-    }
-
-    const item = getItemDefinition(stack.itemId);
-    this.gameUi.showDropConfirm(
-      item.name,
-      stack.count,
-      (dropCount) => this.dropItemFromSlot(slotIndex, dropCount)
-    );
+    this.inventoryController.tryDropSelectedItem();
   }
 
-  private dropItemFromSlot(slotIndex: number, dropCount: number) {
-    const stack = this.inventory[slotIndex];
-    if (!stack || dropCount <= 0) {
-      return;
-    }
-
-    const { itemId } = stack;
-    const originalCount = stack.count;
-    const safeDropCount = Math.min(dropCount, originalCount);
-    const isDroppingAll = safeDropCount >= originalCount;
-
-    if (isDroppingAll) {
-      const equippedSlot = this.getEquippedSlotForItem(itemId);
-      if (equippedSlot) {
-        this.equipment[equippedSlot] = null;
-        if (equippedSlot === "armor") {
-          this.syncEquippedArmorOutfit();
-        }
-        if (equippedSlot === "weapon") {
-          this.syncEquippedWeaponVisual();
-        }
-      }
-      this.inventory[slotIndex] = null;
-      this.gameUi.clearInventorySlot(slotIndex);
-    } else {
-      stack.count = originalCount - safeDropCount;
-      const itemDef = getItemDefinition(itemId);
-      this.gameUi.setInventorySlot(slotIndex, itemDef.textureKey, stack.count);
-    }
-
-    this.createWorldItem(itemId, this.playerTileX, this.playerTileY, safeDropCount);
-
-    const item = getItemDefinition(itemId);
-    this.gameUi.addChatLine(
-      safeDropCount > 1 ? `Tiraste ${item.name} x${safeDropCount}.` : `Tiraste ${item.name}.`
-    );
+  private tryDropGold() {
+    this.inventoryController.tryDropGold();
   }
 
-  private getEquippedSlotForItem(itemId: ItemId): EquipmentSlot | null {
-    for (const slot of ["weapon", "shield", "helmet", "armor"] as const) {
-      if (this.equipment[slot] === itemId) {
-        return slot;
-      }
+  private getArmorVisualForItem(
+    item: ReturnType<typeof getItemDefinition>
+  ): PlayerArmorVisualOptions | undefined {
+    if (item.equipSlot !== "armor" || !item.outfitOverride || item.outfitOverride === "base") {
+      return undefined;
     }
-    return null;
+    const outfit = item.outfitOverride;
+    const stdPath =
+      item.spritesheetStdPath ?? getDefaultArmorVisualForOutfit(outfit).spritesheetStdPath;
+    return {
+      clasesBajas: item.clasesBajas ?? isShortRace(this.selectedRace),
+      spritesheetStdPath: stdPath,
+      spritesheetBajosPath:
+        item.spritesheetBajosPath ??
+        (stdPath ? inferBajosSpritesheetPath(stdPath) : undefined),
+    };
   }
 
-  private toggleEquipStateFromSlot(slotIndex: number) {
-    const stack = this.inventory[slotIndex];
-    if (!stack) {
-      this.gameUi.addChatLine("Ese casillero está vacío.");
+  private validateEquippedArmorForRace() {
+    const armorItemId = this.equipment.armor;
+    if (!armorItemId) {
       return;
     }
-
-    const item = getItemDefinition(stack.itemId);
-    if (!item.equipSlot) {
-      this.gameUi.addChatLine(`${item.name} no se puede equipar.`);
+    const item = getItemDefinition(armorItemId);
+    const check = canRaceEquipArmor(this.selectedRace, item.clasesBajas ?? false);
+    if (check.allowed) {
       return;
     }
-
-    if (this.equipment[item.equipSlot] === stack.itemId) {
-      this.unequipItem(item.equipSlot);
-      return;
-    }
-
-    this.equipItem(slotIndex);
-  }
-  
-  private equipItem(slotIndex: number) {
-    const stack = this.inventory[slotIndex];
-  
-    if (!stack) {
-      return;
-    }
-  
-    const item = getItemDefinition(stack.itemId);
-  
-    if (!item.equipSlot) {
-      return;
-    }
-  
-    this.equipment[item.equipSlot] = stack.itemId;
+    this.equipment.armor = null;
     this.syncEquippedArmorOutfit();
-    this.syncEquippedWeaponVisual();
-
-    const combat = this.getCombatSnapshot();
-    const parts: string[] = [];
-    if (item.combatModifiers?.attackMinBonus || item.combatModifiers?.attackMaxBonus) {
-      parts.push(`danio ${combat.attackMin}-${combat.attackMax}`);
-    }
-    if ((item.combatModifiers?.damageReductionPercent ?? 0) > 0) {
-      parts.push(`reduccion ${Math.round(combat.damageReductionPercent * 100)}%`);
-    }
-    const statsText = parts.length > 0 ? ` (${parts.join(", ")})` : "";
-    this.gameUi.addChatLine(`Equipaste ${item.name}${statsText}.`);
-  }
-
-  private unequipItem(slot: EquipmentSlot) {
-    const equippedItemId = this.equipment[slot];
-    if (!equippedItemId) {
-      return;
-    }
-
-    const item = getItemDefinition(equippedItemId);
-    this.equipment[slot] = null;
-    this.syncEquippedArmorOutfit();
-    this.syncEquippedWeaponVisual();
-    this.gameUi.addChatLine(`Te quitaste ${item.name}.`);
+    this.gameUi.addChatLine(check.reason ?? "Te quitaste una armadura incompatible con tu raza.");
   }
 
   private syncEquippedArmorOutfit() {
+    if (!this.isWorldSceneLive()) {
+      return;
+    }
     const armorItemId = this.equipment.armor;
     let nextOutfit: Outfit = "base";
+    let nextArmorVisual: PlayerArmorVisualOptions | undefined;
+
     if (armorItemId) {
       const armorItem = getItemDefinition(armorItemId);
       if (armorItem.equipSlot === "armor") {
         nextOutfit = armorItem.outfitOverride ?? "base";
+        nextArmorVisual = this.getArmorVisualForItem(armorItem);
       }
+    } else {
+      nextOutfit = "base";
+      nextArmorVisual = undefined;
     }
-    if (nextOutfit === this.equippedOutfit) return;
+
+    const baseBodyKey = raceBodyTextureKey(this.selectedRace, this.selectedGender);
+    const nextTextureKey = textureKeyForPlayer(
+      nextOutfit,
+      baseBodyKey,
+      nextArmorVisual,
+      this.selectedRace
+    );
+    const currentTextureKey = textureKeyForPlayer(
+      this.equippedOutfit,
+      baseBodyKey,
+      this.equippedArmorVisual,
+      this.selectedRace
+    );
+    const outfitChanged = nextOutfit !== this.equippedOutfit;
+    const visualChanged =
+      JSON.stringify(nextArmorVisual) !== JSON.stringify(this.equippedArmorVisual);
+    const renderedTextureKey = this.player.texture.key;
+    const bodyNeedsUpdate = renderedTextureKey !== nextTextureKey;
+    if (
+      !outfitChanged &&
+      !visualChanged &&
+      !bodyNeedsUpdate &&
+      nextTextureKey === currentTextureKey
+    ) {
+      return;
+    }
+
     this.equippedOutfit = nextOutfit;
+    this.equippedArmorVisual = nextArmorVisual;
+
+    if (this.useGhostAppearance || this.isPlayerDeadOrGhost()) {
+      this.syncEquippedHeldItemVisuals();
+      return;
+    }
+
     const pos = this.getPlayerFeetWorldForTile(this.playerTileX, this.playerTileY);
     this.player.setPosition(pos.x, pos.y);
-    this.syncPlayerFacePosition();
-    this.syncEquippedWeaponVisual();
-    this.playFacingAnim(this.isMoving ? "walk" : "idle");
+    this.applyLocalPlayerBodyVisual();
+    this.syncEquippedHeldItemVisuals();
   }
 
   private updateDesiredFacing() {
@@ -1871,47 +2728,12 @@ private worldItems: {
     return this.cursors.right.isDown || this.wasd.right.isDown;
   }
 
-  private tryPickupItem() {
-    const itemIndex = this.worldItems.findIndex((item) => {
-      return (
-        item.tileX === this.playerTileX &&
-        item.tileY === this.playerTileY
-      );
-    });
-  
-    if (itemIndex === -1) {
-      this.gameUi.addChatLine("No hay ningún item para agarrar.");
-      return;
-    }
-  
-    const worldItem = this.worldItems[itemIndex];
-    const { added, remaining } = addToInventory(
-      this.inventory,
-      worldItem.id,
-      worldItem.count
-    );
-
-    if (added <= 0) {
-      this.gameUi.addChatLine("No tenés espacio en el inventario.");
-      return;
-    }
-
-    const item = getItemDefinition(worldItem.id);
-    if (remaining <= 0) {
-      worldItem.sprite.destroy();
-      this.worldItems.splice(itemIndex, 1);
-    } else {
-      worldItem.count = remaining;
-    }
-
-    this.gameUi.addChatLine(
-      added > 1 ? `Agarraste ${item.name} x${added}.` : `Agarraste ${item.name}.`
-    );
-  
-    this.refreshInventoryUi();
-  }
-  
   private refreshInventoryUi() {
+    const equippedIds = Object.values(this.equipment).filter(
+      (itemId): itemId is ItemId => itemId != null
+    );
+    this.gameUi.setEquippedItemIds(equippedIds);
+
     this.inventory.forEach((stack, slotIndex) => {
       if (!stack) {
         this.gameUi.clearInventorySlot(slotIndex);
@@ -1919,9 +2741,16 @@ private worldItems: {
       }
   
       const item = getItemDefinition(stack.itemId);
-      this.gameUi.setInventorySlot(slotIndex, item.textureKey, stack.count);
+      this.gameUi.setInventorySlot(
+        slotIndex,
+        item.textureKey,
+        stack.count,
+        stack.itemId
+      );
     });
+    this.refreshInventoryUsability();
     this.refreshMacroVisuals();
+    this.scheduleCharacterProgressSave();
   }
 
   private openMacroEditor(slotIndex: number) {
@@ -1998,7 +2827,7 @@ private worldItems: {
       (spell) =>
         this.learnedSpellIds.has(spell.idSpell) &&
         spell.usableBy.includes(this.selectedClass) &&
-        spell.nivelMagiaRequerido <= this.playerMagicLevel
+        spell.nivelMagiaRequerido <= this.getMagicSkillLevel()
     );
   }
 
@@ -2029,7 +2858,8 @@ private worldItems: {
       !event.code ||
       this.gameUi.isChatFocused() ||
       this.gameUi.isConfirmOpen() ||
-      this.gameUi.isMacroEditorOpen()
+      this.gameUi.isMacroEditorOpen() ||
+      this.gameUi.isStatsOverlayOpen()
     ) {
       return;
     }
@@ -2074,9 +2904,12 @@ private worldItems: {
         healMax: spellDefinition.healMax,
         puedeUsarseEnAliados: spellDefinition.puedeUsarseEnAliados,
         remueveDebuff: spellDefinition.remueveDebuff,
+        aoe: spellDefinition.aoe,
+        aoeRadiusTiles: spellDefinition.aoeRadiusTiles,
       };
-      this.beginSpellTargeting(spell);
-      this.gameUi.addChatLine(`Macro ${macroIndex + 1}: preparado ${spell.nombre}.`);
+      if (this.combatController.beginSpellTargeting(spell)) {
+        this.gameUi.addChatLine(`Macro ${macroIndex + 1}: preparado ${spell.nombre}.`);
+      }
       return;
     }
 
@@ -2099,7 +2932,7 @@ private worldItems: {
       return;
     }
 
-    this.toggleEquipStateFromSlot(slotIndex);
+    this.inventoryController.toggleEquipFromSlot(slotIndex);
   }
 
   private directionFromFacing(facing: Facing): MoveDirection {
@@ -2119,6 +2952,10 @@ private worldItems: {
   }
 
   private tryStep(dir: MoveDirection) {
+    if (this.isMoving) {
+      return;
+    }
+
     const nextX = this.playerTileX + dir.dx;
     const nextY = this.playerTileY + dir.dy;
 
@@ -2133,6 +2970,7 @@ private worldItems: {
     this.facing = dir.facing;
     this.isMoving = true;
 
+    this.refreshMapLocationLabel();
     this.refreshMinimap();
 
     const target = this.getPlayerFeetWorldForTile(nextX, nextY);
@@ -2142,16 +2980,16 @@ private worldItems: {
       targets: this.player,
       x: target.x,
       y: target.y,
-      duration: STEP_DURATION_MS,
+      duration: this.getLocalPlayerStepDurationMs(),
       ease: "Linear",
       onUpdate: () => {
         this.syncPlayerFacePosition();
-        this.syncEquippedWeaponVisual();
+        this.syncEquippedHeldItemVisuals();
       },
       onComplete: () => {
         this.player.setPosition(target.x, target.y);
         this.syncPlayerFacePosition();
-        this.syncEquippedWeaponVisual();
+        this.syncEquippedHeldItemVisuals();
 
         this.isMoving = false;
         this.playFacingAnim("idle");
@@ -2170,27 +3008,59 @@ private worldItems: {
     );
 
     if (transition) {
+      if (this.isMultiplayerActive()) {
+        this.gameUi.addChatLine(
+          "No podés cambiar de mapa en multijugador (solo Pueblo está disponible online)."
+        );
+        return;
+      }
       this.changeMap(transition);
     }
   }
 
-  private changeMap(transition: {
-    toMapId: string;
-    toTileX: number;
-    toTileY: number;
-    facing?: Facing;
-  }) {
+  private changeMap(
+    transition: {
+      toMapId: string;
+      toTileX: number;
+      toTileY: number;
+      facing?: Facing;
+    },
+    options?: { silent?: boolean }
+  ) {
+    if (this.isMultiplayerActive() && !options?.silent) {
+      this.gameUi.addChatLine(
+        "No podés cambiar de mapa en multijugador (solo Pueblo está disponible online)."
+      );
+      return;
+    }
+    this.applyMapTransition(transition, options);
+  }
+
+  private applyMapTransition(
+    transition: {
+      toMapId: string;
+      toTileX: number;
+      toTileY: number;
+      facing?: Facing;
+    },
+    options?: { silent?: boolean }
+  ) {
     this.stopMeditation();
-    if (this.pendingSpellCast) {
-      this.cancelSpellTargeting();
+    if (this.combatController.hasPendingSpellCast()) {
+      this.combatController.cancelSpellTargeting();
     }
     this.isChangingMap = true;
     this.tweens.killTweensOf(this.player);
     this.isMoving = false;
 
+    if (!this.isMultiplayerActive()) {
+      this.cacheCurrentMapWorldItems();
+    }
+    this.worldItemManager.clearSprites();
+
     this.currentMapId = transition.toMapId;
     this.currentMap = getMap(this.currentMapId);
-    this.updateWorldBackgroundColor();
+    this.mapController.updateWorldBackgroundColor();
     this.playerTileX = transition.toTileX;
     this.playerTileY = transition.toTileY;
 
@@ -2198,79 +3068,96 @@ private worldItems: {
       this.facing = transition.facing;
     }
 
-    this.drawMap(this.currentMap);
+    this.mapController.drawMap(this.currentMap);
+    this.syncNpcsForCurrentMap();
     this.syncDummyVisibilityForCurrentMap();
-    this.updateCameraBounds();
+    this.mapController.updateCameraBounds();
 
     const pos = this.getPlayerFeetWorldForTile(this.playerTileX, this.playerTileY);
 
     this.player.setPosition(pos.x, pos.y);
     this.syncPlayerFacePosition();
     this.updatePlayerFaceFrame();
-    this.syncEquippedWeaponVisual();
+    if (!this.isMultiplayerActive()) {
+      this.restoreWorldItemsForCurrentMap();
+    }
+    if (this.deathPhase !== "alive") {
+      this.applyGhostVisual();
+    } else {
+      this.syncEquippedHeldItemVisuals();
+    }
 
     this.playFacingAnim("idle");
     this.refreshHud();
-    this.gameUi.addChatLine(`Entraste a ${this.currentMap.name}.`);
+    if (!options?.silent) {
+      this.gameUi.addChatLine(`Entraste a ${this.currentMap.name}.`);
+      this.cameras.main.flash(120, 255, 255, 200);
+    }
 
-    this.cameras.main.flash(120, 255, 255, 200);
     this.isChangingMap = false;
+    this.persistCharacterProgress();
   }
 
   private playFacingAnim(state: "walk" | "idle") {
-    const bodyFacing: Facing = this.facing === "right" ? "left" : this.facing;
-    const key = playerAnimationKey(state, bodyFacing, this.equippedOutfit);
+    const isProfile = this.facing === "left" || this.facing === "right";
+    const bodyFacing: Facing = isProfile ? "left" : this.facing;
     this.player.setFlipX(this.facing === "right");
+    this.refreshPlayerHitboxInteraction();
 
-    if (this.player.anims.currentAnim?.key !== key) {
+    const visualOutfit = this.useGhostAppearance ? "base" : this.equippedOutfit;
+    const key = playerAnimationKey(
+      state,
+      bodyFacing,
+      visualOutfit,
+      this.getVisualBodyTextureKey(),
+      this.useGhostAppearance ? undefined : this.equippedArmorVisual,
+      this.getVisualRace()
+    );
+
+    if (state === "walk" && isProfile) {
+      this.player.play({ key, repeat: -1 }, true);
+    } else {
+      // Siempre reiniciar idle/walk frontal: setTexture(..., 0) deja frame 0 (abajo)
+      // aunque currentAnim.key siga siendo el de otro facing.
       this.player.play(key);
     }
 
     this.updatePlayerFaceFrame();
     this.syncPlayerFacePosition();
-    this.syncEquippedWeaponVisual();
+    if (!this.useGhostAppearance) {
+      this.syncEquippedHeldItemVisuals();
+    }
   }
 
   private updatePlayerFaceFrame() {
     if (!this.playerFace) return;
 
     this.playerFace.setFrame(
-      getHumanFaceFrame(this.selectedFaceIndex, this.facing)
+      getFaceFrame(
+        this.getVisualRace(),
+        this.getVisualGender(),
+        this.selectedFaceIndex,
+        this.facing
+      )
     );
   }
 
   private syncPlayerFacePosition() {
     if (!this.player || !this.playerFace) return;
   
-    const offset = PLAYER_FACE_OFFSET[this.facing];
-    let walkSwayX = 0;
-    let walkSwayY = 0;
-
-    if (this.isMoving) {
-      const anim = this.player.anims.currentAnim;
-      const frame = this.player.anims.currentFrame;
-      const frameTotal = Math.max(1, anim?.frames.length ?? 1);
-      const rawFrameIndex = frame?.index ?? 0;
-      const frameIndex = ((rawFrameIndex % frameTotal) + frameTotal) % frameTotal;
-      const phase =
-        (frameIndex / Math.max(1, frameTotal - 1)) * Math.PI * 2;
-
-      if (this.facing === "left" || this.facing === "right") {
-        // A/D: leve movimiento hacia atras/adelante, sincronizado con el paso.
-        walkSwayX = Math.sin(phase) * 0.18;
-        walkSwayY = Math.cos(phase) * 0.04;
-      } else {
-        // W/S: movimiento aun mas suave.
-        walkSwayX = Math.sin(phase) * 0.08;
-        walkSwayY = Math.cos(phase) * 0.1;
-      }
-    }
+    const offset = this.getActiveFaceLayout().offset[this.facing];
+    const { x: walkSwayX, y: walkSwayY } = getPlayerHeadWalkSway(
+      this.player,
+      this.facing,
+      this.isMoving
+    );
   
     this.playerFace.setPosition(
       this.player.x + offset.x + walkSwayX,
       this.player.y - offset.y + walkSwayY
     );
     this.playerFace.setDepth(this.player.depth + 0.02);
+    this.syncEquippedHelmetVisual(walkSwayX, walkSwayY);
   }
 
   private syncPlayerNameLabelPosition() {
@@ -2280,37 +3167,35 @@ private worldItems: {
     this.playerNameLabel.setDepth(this.player.depth + 2);
   }
 
-  private syncEquippedWeaponVisual() {
-    if (!this.player || !this.equippedWeaponSprite) return;
+  private getEquippedGearContext(): EquippedGearSyncContext {
+    return {
+      player: this.player,
+      facing: this.facing,
+      isMoving: this.isMoving,
+      useGhostAppearance: this.useGhostAppearance,
+      equipment: this.equipment,
+      weaponSprite: this.equippedWeaponSprite,
+      shieldSprite: this.equippedShieldSprite,
+      helmetSprite: this.equippedHelmetSprite,
+    };
+  }
 
-    const equippedWeaponId = this.equipment.weapon;
-    if (!equippedWeaponId) {
-      this.equippedWeaponSprite.setVisible(false);
+  private syncEquippedHelmetVisual(walkSwayX?: number, walkSwayY?: number) {
+    if (!this.isWorldSceneLive()) {
       return;
     }
+    applyEquippedHelmetVisual({
+      ...this.getEquippedGearContext(),
+      walkSwayX,
+      walkSwayY,
+    });
+  }
 
-    const weaponDef = getItemDefinition(equippedWeaponId);
-    const weaponTexture = weaponDef.equippedTextureKey ?? weaponDef.textureKey;
-    this.equippedWeaponSprite.setTexture(weaponTexture);
-    const idleFrame = weaponDef.equippedIdleFrame ?? 0;
-    const walkFrame = weaponDef.equippedWalkFrame ?? idleFrame;
-    const bodyFrameIndex = this.player.anims.currentFrame?.index ?? 0;
-    const useWalkFrame = this.isMoving && bodyFrameIndex % 2 === 1;
-
-    const hasDirectionalSheet =
-      Boolean(weaponDef.equippedFrameWidth) && Boolean(weaponDef.equippedFrameHeight);
-
-    const weaponFrame = hasDirectionalSheet
-      ? WEAPON_ROW_BY_FACING[this.facing] * WEAPON_SHEET_COLS + (useWalkFrame ? 1 : 0)
-      : useWalkFrame
-      ? walkFrame
-      : idleFrame;
-    this.equippedWeaponSprite.setFrame(weaponFrame);
-    this.equippedWeaponSprite.setScale(weaponDef.equippedScale ?? 1);
-    this.equippedWeaponSprite.setPosition(this.player.x, this.player.y);
-    this.equippedWeaponSprite.setDepth(this.player.depth + 0.015);
-    this.equippedWeaponSprite.setVisible(true);
-    this.equippedWeaponSprite.setFlipX(false);
+  private syncEquippedHeldItemVisuals() {
+    if (!this.isWorldSceneLive()) {
+      return;
+    }
+    applyEquippedHeldItemVisuals(this.getEquippedGearContext());
   }
 
   private depthFromFeetY(feetY: number): number {
@@ -2335,11 +3220,52 @@ private worldItems: {
     };
   }
 
+  private syncMobSpriteOrigin(dummy: DummyState) {
+    const model = MOB_MODELS[dummy.modelId];
+    dummy.sprite.setOrigin(0.5, model.facingOriginY?.[dummy.facing] ?? 1);
+  }
+
   private syncDummyWorldPosition(dummy: DummyState) {
+    this.syncMobSpriteOrigin(dummy);
     const feet = this.getMobFeetWorld(dummy.modelId, dummy.tileX, dummy.tileY);
     dummy.sprite.setPosition(feet.x, feet.y);
-    dummy.sprite.setDepth(this.depthFromFeetY(feet.y));
+    const depth = this.depthFromFeetY(feet.y);
+    dummy.sprite.setDepth(depth);
+    this.syncMobFaceForDummy(dummy);
     dummy.hpLabel.setPosition(feet.x, feet.y - 30);
+    dummy.hpLabel.setDepth(depth + 3);
+  }
+
+  private attachMobFaceIfNeeded(dummy: DummyState, facing: Facing = dummy.facing) {
+    if (!mobHasFaceOverlay(dummy.modelId)) {
+      dummy.face?.destroy();
+      dummy.face = undefined;
+      return;
+    }
+    if (!dummy.face) {
+      dummy.face = createMobFaceSpriteIfNeeded(this, dummy.modelId, facing);
+      if (dummy.face && this.uiCamera) {
+        this.uiCamera.ignore(dummy.face);
+      }
+    }
+    this.syncMobFaceForDummy(dummy);
+  }
+
+  private syncMovingMobFaces() {
+    for (const dummy of this.dummies) {
+      if (!dummy.face || !dummy.alive || dummy.mapId !== this.currentMapId) continue;
+      syncMobFaceSprite(dummy.sprite, dummy.face, dummy.modelId, dummy.facing);
+      dummy.face.setDepth(dummy.sprite.depth + 0.02);
+    }
+  }
+
+  private syncMobFaceForDummy(dummy: DummyState) {
+    if (!dummy.face) {
+      return;
+    }
+    syncMobFaceSprite(dummy.sprite, dummy.face, dummy.modelId, dummy.facing);
+    dummy.face.setDepth(dummy.sprite.depth + 0.02);
+    dummy.face.setVisible(dummy.sprite.visible);
   }
 
   private syncEntityDepths() {
@@ -2365,14 +3291,44 @@ private worldItems: {
     return tileDefinition.walkable;
   }
 
+  private isTileOccupiedByRemotePlayer(tileX: number, tileY: number): boolean {
+    if (!this.isMultiplayerActive()) {
+      return false;
+    }
+    return (
+      this.multiplayer?.getRemotePlayers()?.isTileOccupiedByRemote(tileX, tileY, this.currentMapId) ??
+      false
+    );
+  }
+
+  private isTileOccupiedByStaticNpc(
+    tileX: number,
+    tileY: number,
+    mapId = this.currentMapId
+  ): boolean {
+    return getNpcOccupiedTiles(mapId).some((tile) => tile.x === tileX && tile.y === tileY);
+  }
+
   private isTileWalkable(tileX: number, tileY: number): boolean {
     if (!this.isMapTileWalkable(tileX, tileY)) {
       return false;
     }
 
+    if (isTileBlockedByMapObject(this.currentMap.objects, tileX, tileY)) {
+      return false;
+    }
+
+    if (this.isTileOccupiedByStaticNpc(tileX, tileY)) {
+      return false;
+    }
+
+    if (this.isTileOccupiedByRemotePlayer(tileX, tileY)) {
+      return false;
+    }
+
     const blocksByDummy = this.dummies.some((dummy) => {
       if (!dummy.alive || this.currentMapId !== dummy.mapId) return false;
-      return this.getDummyOccupiedTiles(dummy).some((occupiedTile) => {
+      return this.getDummyBlockedTiles(dummy).some((occupiedTile) => {
         return occupiedTile.x === tileX && occupiedTile.y === tileY;
       });
     });
@@ -2383,440 +3339,54 @@ private worldItems: {
     return true;
   }
 
-  private createDummyIfNeeded() {
-    if (this.dummies.length > 0) {
-      this.syncDummyVisibilityForCurrentMap();
-      return;
-    }
+  private createMobShowcaseIfNeeded() {
+    this.mobController.createShowcaseIfNeeded();
+  }
 
-    this.dummies = [];
-    MOB_SPAWNS.forEach((spawn) => {
-      const model = MOB_MODELS[spawn.modelId];
-      const spawnTile = this.pickRandomMobSpawnTile(spawn);
-      const spawnFeet = this.getMobFeetWorld(spawn.modelId, spawnTile.x, spawnTile.y);
-      const sprite = this.add.sprite(spawnFeet.x, spawnFeet.y, model.textureKey, model.idleFrame);
-      sprite.setOrigin(0.5, 1);
-      sprite.setDepth(9);
-      sprite.setScale(model.scale);
-      sprite.setInteractive({ useHandCursor: true, pixelPerfect: true });
+  private removeShowcaseDummies() {
+    this.mobController.removeShowcaseDummies();
+  }
 
-      const hpLabel = this.add.text(
-        spawnFeet.x,
-        spawnFeet.y - 30,
-        `${spawn.name} ${spawn.maxHp}/${spawn.maxHp}`,
-        {
-          fontFamily: "monospace",
-          fontSize: "10px",
-          color: "#f7e5c6",
-          stroke: "#000000",
-          strokeThickness: 2,
-        }
-      );
-      hpLabel.setOrigin(0.5, 1);
-      hpLabel.setDepth(12);
-      hpLabel.setVisible(false);
+  private destroyAllDummies() {
+    this.mobController.destroyAll();
+  }
 
-      const dummy: DummyState = {
-        spawnConfig: spawn,
-        id: spawn.id,
-        modelId: spawn.modelId,
-        name: spawn.name,
-        mapId: spawn.mapId,
-        tileX: spawnTile.x,
-        tileY: spawnTile.y,
-        hitboxOffsetY: spawn.hitboxOffsetY,
-        sizeTiles: spawn.sizeTiles,
-        hp: spawn.maxHp,
-        maxHp: spawn.maxHp,
-        detectionRangeTiles: spawn.detectionRangeTiles,
-        leashRangeTiles: spawn.leashRangeTiles,
-        attackDamage: spawn.attackDamage,
-        attackCooldownMs: spawn.attackCooldownMs,
-        respawnMs: spawn.respawnMs,
-        expReward: spawn.expReward,
-        drops: spawn.drops,
-        aiMoveCooldownMs: MOB_AI_MOVE_COOLDOWN_MS,
-        nextAiMoveAt: 0,
-        nextAttackAt: 0,
-        immobilizedUntilMs: 0,
-        isAggroed: false,
-        isStatic: false,
-        fixedSpawnTile: undefined,
-        facing: "down",
-        isMoving: false,
-        sprite,
-        hpLabel,
-        alive: true,
-      };
-      this.syncDummyWorldPosition(dummy);
-      this.setMobAnimationState(dummy, "idle");
-      sprite.on("pointerdown", () => {
-        if (this.pendingSpellCast) {
-          this.tryCastSpellOnDummy(dummy);
-          return;
-        }
-        this.inspectDummy(dummy);
-      });
-      this.dummies.push(dummy);
-    });
-
-    const trainingDummyMapId = this.currentMapId;
-    const trainingDummyTileX = this.playerTileX;
-    const trainingDummyTileY = Math.max(0, this.playerTileY - 1);
-    const trainingDummyModelId: MobModelId = "gallina";
-    const trainingDummyModel = MOB_MODELS[trainingDummyModelId];
-    const trainingFeet = this.getMobFeetWorld(
-      trainingDummyModelId,
-      trainingDummyTileX,
-      trainingDummyTileY
-    );
-    const trainingSprite = this.add.sprite(
-      trainingFeet.x,
-      trainingFeet.y,
-      trainingDummyModel.textureKey,
-      trainingDummyModel.idleFrame
-    );
-    trainingSprite.setOrigin(0.5, 1);
-    trainingSprite.setDepth(9);
-    trainingSprite.setScale(trainingDummyModel.scale);
-    trainingSprite.setInteractive({ useHandCursor: true, pixelPerfect: true });
-
-    const trainingHpLabel = this.add.text(
-      trainingFeet.x,
-      trainingFeet.y - 30,
-      `${TRAINING_DUMMY_NAME} ${TRAINING_DUMMY_HP}/${TRAINING_DUMMY_HP}`,
-      {
-        fontFamily: "monospace",
-        fontSize: "10px",
-        color: "#f7e5c6",
-        stroke: "#000000",
-        strokeThickness: 2,
-      }
-    );
-    trainingHpLabel.setOrigin(0.5, 1);
-    trainingHpLabel.setDepth(12);
-    trainingHpLabel.setVisible(false);
-
-    const trainingSpawnConfig: MobSpawnConfig = {
-      id: TRAINING_DUMMY_ID,
-      mobId: "gallina",
-      name: TRAINING_DUMMY_NAME,
-      mapId: trainingDummyMapId,
-      hitboxOffsetY: 0,
-      sizeTiles: 1,
-      modelId: trainingDummyModelId,
-      maxHp: TRAINING_DUMMY_HP,
-      detectionRangeTiles: 0,
-      leashRangeTiles: 0,
-      attackDamage: 0,
-      attackCooldownMs: 1000,
-      respawnMs: 10_000,
-      expReward: 0,
-      drops: [],
-    };
-
-    const trainingDummy: DummyState = {
-      spawnConfig: trainingSpawnConfig,
-      id: TRAINING_DUMMY_ID,
-      modelId: trainingDummyModelId,
-      name: TRAINING_DUMMY_NAME,
-      mapId: trainingDummyMapId,
-      tileX: trainingDummyTileX,
-      tileY: trainingDummyTileY,
-      hitboxOffsetY: 0,
-      sizeTiles: 1,
-      hp: TRAINING_DUMMY_HP,
-      maxHp: TRAINING_DUMMY_HP,
-      detectionRangeTiles: 0,
-      leashRangeTiles: 0,
-      attackDamage: 0,
-      attackCooldownMs: 1000,
-      respawnMs: 10_000,
-      expReward: 0,
-      drops: [],
-      aiMoveCooldownMs: MOB_AI_MOVE_COOLDOWN_MS,
-      nextAiMoveAt: 0,
-      nextAttackAt: 0,
-      immobilizedUntilMs: 0,
-      isAggroed: false,
-      isStatic: true,
-      fixedSpawnTile: { x: trainingDummyTileX, y: trainingDummyTileY },
-      facing: "down",
-      isMoving: false,
-      sprite: trainingSprite,
-      hpLabel: trainingHpLabel,
-      alive: true,
-    };
-    this.syncDummyWorldPosition(trainingDummy);
-    this.setMobAnimationState(trainingDummy, "idle");
-    trainingSprite.on("pointerdown", () => {
-      if (this.pendingSpellCast) {
-        this.tryCastSpellOnDummy(trainingDummy);
-        return;
-      }
-      this.inspectDummy(trainingDummy);
-    });
-    this.dummies.push(trainingDummy);
-
-    this.syncDummyVisibilityForCurrentMap();
+  private updateMobShowcaseAi() {
+    this.mobController.updateShowcaseAi();
   }
 
   private syncDummyVisibilityForCurrentMap() {
-    this.dummies.forEach((dummy) => {
-      const visible = this.currentMapId === dummy.mapId;
-      dummy.sprite.setVisible(visible && dummy.alive);
-      dummy.hpLabel.setVisible(false);
-
-      if (visible && dummy.alive && !dummy.isMoving) {
-        this.syncDummyWorldPosition(dummy);
-      }
-    });
+    this.mobController.syncVisibilityForCurrentMap();
   }
 
   private updateMobAi() {
-    if (!this.player || this.isChangingMap) return;
-
-    const now = this.time.now;
-
-    this.dummies.forEach((dummy) => {
-      if (!dummy.alive || dummy.mapId !== this.currentMapId) return;
-      if (dummy.isStatic) {
-        this.setMobAnimationState(dummy, "idle");
-        return;
-      }
-      if (now < dummy.immobilizedUntilMs) {
-        this.stopDummyMovement(dummy);
-        this.setMobAnimationState(dummy, "idle");
-        return;
-      }
-
-      const dummyHitTile = this.getDummyHitTile(dummy);
-      const distanceToPlayer =
-        Math.abs(this.playerTileX - dummyHitTile.x) + Math.abs(this.playerTileY - dummyHitTile.y);
-
-      if (distanceToPlayer > dummy.leashRangeTiles) {
-        dummy.isAggroed = false;
-        this.setMobAnimationState(dummy, "idle");
-        return;
-      }
-
-      if (!dummy.isAggroed && distanceToPlayer <= dummy.detectionRangeTiles) {
-        dummy.isAggroed = true;
-      }
-
-      if (!dummy.isAggroed) {
-        this.setMobAnimationState(dummy, "idle");
-        return;
-      }
-
-      if (distanceToPlayer === 1) {
-        if (!dummy.isMoving) {
-          this.tryMobAttackPlayer(dummy, now);
-          this.setMobAnimationState(dummy, "idle");
-        }
-        return;
-      }
-
-      if (dummy.isMoving) {
-        return;
-      }
-
-      if (now < dummy.nextAiMoveAt) {
-        return;
-      }
-
-      const movedFacing = this.tryMoveDummyTowardsPlayer(dummy);
-      if (movedFacing) {
-        dummy.nextAiMoveAt = now + dummy.aiMoveCooldownMs;
-      } else {
-        this.setMobAnimationState(dummy, "idle");
-      }
-    });
+    if (!this.player) return;
+    this.mobAiSystem.update(this.dummies, this.time.now);
   }
 
-  private tryMoveDummyTowardsPlayer(dummy: DummyState): Facing | null {
-    return this.tryMoveDummyTowardsTile(dummy, this.playerTileX, this.playerTileY);
-  }
-
-  private tryMoveDummyTowardsTile(
-    dummy: DummyState,
-    targetTileX: number,
-    targetTileY: number
-  ): Facing | null {
-    const dx = targetTileX - dummy.tileX;
-    const dy = targetTileY - dummy.tileY;
-    const stepX = Math.sign(dx);
-    const stepY = Math.sign(dy);
-    const prioritizeX = Math.abs(dx) >= Math.abs(dy);
-
-    const options: { x: number; y: number }[] = prioritizeX
-      ? [
-          { x: dummy.tileX + stepX, y: dummy.tileY },
-          { x: dummy.tileX, y: dummy.tileY + stepY },
-          { x: dummy.tileX, y: dummy.tileY + (stepY === 0 ? 1 : -stepY) },
-          { x: dummy.tileX + (stepX === 0 ? 1 : -stepX), y: dummy.tileY },
-        ]
-      : [
-          { x: dummy.tileX, y: dummy.tileY + stepY },
-          { x: dummy.tileX + stepX, y: dummy.tileY },
-          { x: dummy.tileX + (stepX === 0 ? 1 : -stepX), y: dummy.tileY },
-          { x: dummy.tileX, y: dummy.tileY + (stepY === 0 ? 1 : -stepY) },
-        ];
-
-    for (const option of options) {
-      if (!this.isTileWalkableForMob(option.x, option.y, dummy)) continue;
-
-      const movedFacing =
-        option.x > dummy.tileX
-          ? "right"
-          : option.x < dummy.tileX
-          ? "left"
-          : option.y > dummy.tileY
-          ? "down"
-          : "up";
-      if (this.startDummyStep(dummy, option.x, option.y, movedFacing)) {
-        return movedFacing;
-      }
-    }
-
-    return null;
-  }
-
-  private startDummyStep(
-    dummy: DummyState,
-    nextTileX: number,
-    nextTileY: number,
-    facing: Facing
-  ): boolean {
-    if (dummy.isMoving) {
-      return false;
-    }
-
-    this.tweens.killTweensOf(dummy.sprite);
-    this.tweens.killTweensOf(dummy.hpLabel);
-
-    dummy.tileX = nextTileX;
-    dummy.tileY = nextTileY;
-    dummy.facing = facing;
-    dummy.isMoving = true;
-
-    const target = this.getMobFeetWorld(dummy.modelId, nextTileX, nextTileY);
-    this.setMobAnimationState(dummy, "walk");
-
-    this.tweens.add({
-      targets: dummy.sprite,
-      x: target.x,
-      y: target.y,
-      duration: MOB_STEP_DURATION_MS,
-      ease: "Linear",
-      onUpdate: () => {
-        dummy.hpLabel.setPosition(dummy.sprite.x, dummy.sprite.y - 30);
-        dummy.sprite.setDepth(this.depthFromFeetY(dummy.sprite.y));
-        dummy.hpLabel.setDepth(dummy.sprite.depth + 3);
-      },
-      onComplete: () => {
-        dummy.isMoving = false;
-        this.syncDummyWorldPosition(dummy);
-        if (dummy.alive && dummy.isAggroed) {
-          this.setMobAnimationState(dummy, "idle");
-        }
-      },
-    });
-
-    return true;
+  private startDummyStep(dummy: DummyState, nextTileX: number, nextTileY: number, facing: Facing): boolean {
+    return this.mobAiSystem.startDummyStep(dummy, nextTileX, nextTileY, facing);
   }
 
   private stopDummyMovement(dummy: DummyState) {
-    if (!dummy.isMoving) {
-      return;
-    }
-    this.tweens.killTweensOf(dummy.sprite);
-    this.tweens.killTweensOf(dummy.hpLabel);
-    dummy.isMoving = false;
-    this.syncDummyWorldPosition(dummy);
+    this.mobAiSystem.stopDummyMovement(dummy);
   }
 
   private isTileWalkableForMob(tileX: number, tileY: number, source: DummyState): boolean {
     if (!this.isMapTileWalkable(tileX, tileY)) return false;
     if (tileX === this.playerTileX && tileY === this.playerTileY) return false;
+    if (this.isTileOccupiedByStaticNpc(tileX, tileY)) {
+      return false;
+    }
 
     const blockedByAnotherMob = this.dummies.some((dummy) => {
       if (dummy === source || !dummy.alive || dummy.mapId !== this.currentMapId) return false;
-      return this.getDummyOccupiedTiles(dummy).some((occupiedTile) => {
+      if (source.isShowcase && dummy.isShowcase) return false;
+      return this.getDummyBlockedTiles(dummy).some((occupiedTile) => {
         return occupiedTile.x === tileX && occupiedTile.y === tileY;
       });
     });
     return !blockedByAnotherMob;
-  }
-
-  private tryAttackDummy() {
-    const now = this.time.now;
-    if (now < this.nextAttackAt) {
-      return;
-    }
-
-    const targetDummy = this.getDummyInAttackRange();
-    if (!targetDummy) {
-      this.gameUi.addCombatLine("No hay nadie para golpear.");
-      return;
-    }
-
-    const coreStats = this.getCoreStats();
-    const missChance = getMissChanceFromAgility(coreStats.agility);
-    const didMiss = Math.random() < missChance;
-    const combat = this.getCombatSnapshot();
-    this.nextAttackAt = now + ATTACK_COOLDOWN_MS;
-    if (didMiss) {
-      this.playAttackFeedback(targetDummy.tileX, targetDummy.tileY);
-      this.gameUi.addCombatLine(`Fallaste el golpe (${Math.round(missChance * 100)}% falla).`);
-      return;
-    }
-
-    const damage = Phaser.Math.Between(combat.attackMin, combat.attackMax);
-    const result = this.dealDamageToDummy(targetDummy, damage);
-
-    const hitTile = this.getDummyHitTile(targetDummy);
-    this.playAttackFeedback(hitTile.x, hitTile.y);
-
-    targetDummy.sprite.setTint(0xe4b270);
-    const baseScaleX = targetDummy.sprite.scaleX;
-    const baseScaleY = targetDummy.sprite.scaleY;
-    this.tweens.add({
-      targets: targetDummy.sprite,
-      scaleX: baseScaleX * 1.08,
-      scaleY: baseScaleY * 0.92,
-      yoyo: true,
-      duration: 70,
-      ease: "Quad.Out",
-    });
-
-    this.time.delayedCall(90, () => {
-      if (targetDummy.alive) {
-        targetDummy.sprite.clearTint();
-      }
-    });
-
-    this.gameUi.addCombatLine(`Golpeaste a ${targetDummy.name} por ${result.damageApplied}.`);
-  }
-
-  private tryMobAttackPlayer(dummy: DummyState, now: number) {
-    if (now < dummy.nextAttackAt) return;
-
-    const dummyHitTile = this.getDummyHitTile(dummy);
-    dummy.facing = this.resolveFacingTowardsTargetTile(
-      dummyHitTile.x,
-      dummyHitTile.y,
-      this.playerTileX,
-      this.playerTileY,
-      dummy.facing
-    );
-    this.setMobAnimationState(dummy, "idle");
-
-    dummy.nextAttackAt = now + dummy.attackCooldownMs;
-    const damageApplied = this.applyIncomingDamage(dummy.attackDamage);
-    this.showDamageNumber(this.player.x, this.player.y - 44, damageApplied, "mob");
-    this.playAttackFeedback(this.playerTileX, this.playerTileY);
-    this.gameUi.addCombatLine(`${dummy.name} te golpea por ${damageApplied}.`);
   }
 
   private resolveFacingTowardsTargetTile(
@@ -2826,31 +3396,13 @@ private worldItems: {
     toTileY: number,
     fallbackFacing: Facing
   ): Facing {
-    const dx = toTileX - fromTileX;
-    const dy = toTileY - fromTileY;
-    if (dx === 0 && dy === 0) return fallbackFacing;
-
-    if (Math.abs(dx) >= Math.abs(dy)) {
-      return dx >= 0 ? "right" : "left";
-    }
-    return dy >= 0 ? "down" : "up";
-  }
-
-  private dealDamageToDummy(dummy: DummyState, rawDamage: number): { damageApplied: number; killed: boolean } {
-    const damageApplied = Math.max(0, Math.floor(rawDamage));
-    dummy.hp = Math.max(0, dummy.hp - damageApplied);
-    dummy.hpLabel.setText(`${dummy.name} ${dummy.hp}/${dummy.maxHp}`);
-    this.showDamageNumber(dummy.sprite.x, dummy.sprite.y - 38, damageApplied, "player");
-
-    if (dummy.hp > 0) {
-      return { damageApplied, killed: false };
-    }
-
-    this.killDummy(dummy);
-    return { damageApplied, killed: true };
+    return this.mobAiSystem.resolveFacingTowardsTargetTile(fromTileX, fromTileY, toTileX, toTileY, fallbackFacing);
   }
 
   private killDummy(dummy: DummyState) {
+    if (this.inspectedDummyId === dummy.id) {
+      this.inspectedDummyId = null;
+    }
     this.stopDummyMovement(dummy);
     dummy.alive = false;
     dummy.nextAiMoveAt = 0;
@@ -2860,8 +3412,13 @@ private worldItems: {
     dummy.sprite.stop();
     dummy.sprite.clearTint();
     dummy.sprite.setVisible(false);
+    if (dummy.face) {
+      dummy.face.setVisible(false);
+    }
     dummy.hpLabel.setVisible(false);
     this.gameUi.addCombatLine(`${dummy.name} fue destruido.`);
+    this.killStats.creaturesKilled += 1;
+    this.refreshSkillsUi();
     this.grantExperience(dummy.expReward);
     this.tryDropFromDummy(dummy);
     this.scheduleDummyRespawn(dummy);
@@ -2878,47 +3435,10 @@ private worldItems: {
     }
   }
 
-  private getCombatSnapshot(): PlayerCombatSnapshot {
-    const coreStats = this.getCoreStats();
-    let attackMin = ATTACK_MIN_DAMAGE;
-    let attackMax = ATTACK_MAX_DAMAGE;
-    let damageReductionPercent = 0;
-    const strBonus = getStrengthDamageBonus(coreStats.strength);
-    attackMin += strBonus.minBonus;
-    attackMax += strBonus.maxBonus;
-
-    for (const equippedItemId of Object.values(this.equipment)) {
-      if (!equippedItemId) continue;
-      const item = getItemDefinition(equippedItemId);
-      const mods = item.combatModifiers;
-      if (!mods) continue;
-
-      attackMin += mods.attackMinBonus ?? 0;
-      attackMax += mods.attackMaxBonus ?? 0;
-      damageReductionPercent += mods.damageReductionPercent ?? 0;
-    }
-
-    attackMin = Math.max(1, Math.floor(attackMin));
-    attackMax = Math.max(attackMin, Math.floor(attackMax));
-    damageReductionPercent = Phaser.Math.Clamp(damageReductionPercent, 0, 0.9);
-
-    return { attackMin, attackMax, damageReductionPercent };
-  }
-
-  // Centraliza la mitigacion para cuando agreguemos golpes de mobs al player.
-  private applyIncomingDamage(rawDamage: number): number {
-    if (rawDamage <= 0) {
-      return 0;
-    }
-    const combat = this.getCombatSnapshot();
-    const reduced = Math.max(0, Math.floor(rawDamage * (1 - combat.damageReductionPercent)));
-    this.playerProgress.hp = Math.max(0, this.playerProgress.hp - reduced);
-    this.refreshHud();
-    return reduced;
-  }
-
   private getCoreStats(): CoreStats {
-    return resolveCoreStats(this.selectedRace, this.selectedClass);
+    this.expireAttributePotionBuffsIfNeeded();
+    const natural = resolveCoreStats(this.selectedRace, this.selectedClass);
+    return applyStatsWithPotionBuffs(natural, this.attributeBuffs);
   }
 
   private applyBaseVitalsFromAttributes() {
@@ -2933,9 +3453,105 @@ private worldItems: {
     }
   }
 
+  private resetCurrentCharacterProgress() {
+    if (!this.characterId) {
+      this.gameUi.addChatLine("No hay personaje activo para resetear.");
+      return;
+    }
+
+    this.stopMeditation();
+    if (this.combatController.hasPendingSpellCast()) {
+      this.combatController.cancelSpellTargeting();
+    }
+    this.deathOverlay?.hide();
+    this.bankOverlay?.hide();
+    this.shopOverlay?.hide();
+
+    this.ensureProgressService().delete(this.characterId);
+    deleteBankState(this.characterId);
+
+    this.worldItemManager.clearAll();
+    this.inventory = Array(INVENTORY_SLOT_COUNT).fill(null);
+    this.equipment = {
+      weapon: null,
+      shield: null,
+      helmet: null,
+      armor: null,
+    };
+    this.equippedOutfit = "base";
+    this.equippedArmorVisual = undefined;
+    this.deathPhase = "alive";
+    this.useGhostAppearance = false;
+    this.clearAttributePotionBuffs(false);
+    this.skillLevels = createInitialSkillLevels();
+    this.learnedSpellIds.clear();
+    this.initializeStarterSpells();
+    this.killStats = {
+      creaturesKilled: 0,
+      criminalsKilled: 0,
+      usersKilled: 0,
+    };
+    this.macroBindings = Array.from({ length: 10 }, () => ({
+      keyCode: null,
+      action: DEFAULT_MACRO_ACTION,
+      itemId: null,
+      spellId: null,
+    }));
+    this.bankState = createEmptyBankState();
+    this.hasLoadedCharacterProgress = true;
+
+    this.syncCharacterVitalsAndSpells();
+    this.spawnStarterInventory();
+    this.validateEquippedArmorForRace();
+    this.syncEquippedArmorOutfit();
+    this.syncEquippedHeldItemVisuals();
+    this.refreshKnownSpellsUi();
+    this.refreshSkillsUi();
+    this.refreshMacroVisuals();
+    this.refreshInventoryUi();
+    this.refreshHud();
+
+    const startMap = getMap(START_MAP_ID);
+    const centerTileX = Math.floor(startMap.width / 2);
+    const centerTileY = Math.floor(startMap.height / 2);
+    this.facing = "down";
+
+    if (this.currentMapId !== START_MAP_ID) {
+      this.applyMapTransition(
+        {
+          toMapId: START_MAP_ID,
+          toTileX: centerTileX,
+          toTileY: centerTileY,
+          facing: "down",
+        },
+        { silent: true }
+      );
+    } else {
+      this.playerTileX = centerTileX;
+      this.playerTileY = centerTileY;
+      const pos = this.getPlayerFeetWorldForTile(centerTileX, centerTileY);
+      this.player.setPosition(pos.x, pos.y);
+      this.syncPlayerFacePosition();
+      this.playFacingAnim("idle");
+      this.refreshMapLocationLabel();
+      this.refreshMinimap();
+    }
+
+    patchSavedCharacterMeta(this.characterId, {
+      level: this.playerProgress.level,
+      homeMapId: this.homeMapId,
+    });
+    this.persistCharacterProgress();
+    this.playSpawnEffect();
+    this.gameUi.addChatLine(
+      `Progreso reseteado. Empezás de nuevo con ${TEST_START_GOLD.toLocaleString("es-AR")} de oro.`
+    );
+  }
+
   private applyTestStartingVitals() {
     this.playerProgress.hpMax = TEST_START_HP_MAX;
     this.playerProgress.hp = TEST_START_HP;
+    this.playerProgress.gold = TEST_START_GOLD;
     if (CLASS_USES_MANA[this.selectedClass]) {
       this.playerProgress.mpMax = TEST_START_MP_MAX;
       this.playerProgress.mp = TEST_START_MP;
@@ -2967,15 +3583,26 @@ private worldItems: {
       this.playerProgress.hp = this.playerProgress.hpMax;
       this.playerProgress.mp = CLASS_USES_MANA[this.selectedClass] ? this.playerProgress.mpMax : 0;
 
-      this.gameUi.addChatLine(
-        `Subiste a nivel ${this.playerProgress.level}! HP+${levelBonuses.hpBonus}, MP+${levelBonuses.mpBonus}.`
+      const magiaCapGain = getSkillCapGainBetweenLevels(
+        "magia",
+        this.playerProgress.level - 1,
+        this.playerProgress.level
       );
+      this.gameUi.addChatLine(
+        `Subiste a nivel ${this.playerProgress.level}! HP+${levelBonuses.hpBonus}, MP+${levelBonuses.mpBonus}. Tope de Magia +${magiaCapGain}.`
+      );
+      this.refreshSkillsUi();
+      this.refreshInventoryUsability();
     }
 
     this.refreshHud();
+    this.scheduleCharacterProgressSave();
   }
 
   private scheduleDummyRespawn(dummy: DummyState) {
+    if (dummy.isShowcase || dummy.respawnMs <= 0) {
+      return;
+    }
     this.time.delayedCall(dummy.respawnMs, () => {
       const spawnTile = dummy.fixedSpawnTile ?? this.pickRandomMobSpawnTile(dummy.spawnConfig);
       dummy.hp = dummy.maxHp;
@@ -2985,6 +3612,10 @@ private worldItems: {
       dummy.tileY = spawnTile.y;
       dummy.isAggroed = false;
       dummy.immobilizedUntilMs = 0;
+      if (dummy.behavior === "peaceful") {
+        dummy.nextAiMoveAt =
+          this.time.now + Phaser.Math.Between(PEACEFUL_WANDER_MIN_MS, PEACEFUL_WANDER_MAX_MS);
+      }
       dummy.facing = "down";
       dummy.sprite.clearTint();
       this.setMobAnimationState(dummy, "idle");
@@ -3002,6 +3633,7 @@ private worldItems: {
       this.dummies.find(
         (dummy) =>
           dummy.alive &&
+          !dummy.isShowcase &&
           dummy.mapId === this.currentMapId &&
           this.getDummyOccupiedTiles(dummy).some(
             (occupiedTile) => occupiedTile.x === tile.x && occupiedTile.y === tile.y
@@ -3011,33 +3643,348 @@ private worldItems: {
   }
 
   private getDummyHitTile(dummy: DummyState): { x: number; y: number } {
-    return { x: dummy.tileX, y: dummy.tileY + dummy.hitboxOffsetY };
+    return { x: dummy.tileX, y: dummy.tileY + Math.round(dummy.hitboxOffsetY / TILE_SIZE) };
   }
 
-  private pickRandomMobSpawnTile(spawn: MobSpawnConfig): { x: number; y: number } {
-    const map = getMap(spawn.mapId);
-    const maxAttempts = Math.max(50, map.width * map.height);
+  /** Tiles que conforman la caja de objetivo (click, hechizos, alcance). */
+  private getDummyTargetTiles(dummy: DummyState): { x: number; y: number }[] {
+    const hitTile = this.getDummyHitTile(dummy);
+    return getMobFootprintTiles(
+      hitTile.x,
+      hitTile.y,
+      dummy.hitboxWidthTiles,
+      dummy.hitboxHeightTiles
+    );
+  }
 
-    for (let i = 0; i < maxAttempts; i++) {
-      const x = Phaser.Math.Between(0, map.width - 1);
-      const y = Phaser.Math.Between(0, map.height - 1);
-      if (!this.isTileWalkableInMap(map, x, y)) continue;
+  /** Footprint usado para bloqueo de movimiento (ancla del mob en tileX/tileY). */
+  private getDummyBlockedTiles(dummy: DummyState): { x: number; y: number }[] {
+    const byBaseAnchor = getMobFootprintTiles(
+      dummy.tileX,
+      dummy.tileY,
+      dummy.hitboxWidthTiles,
+      dummy.hitboxHeightTiles
+    );
+    const byVisualOffset = this.getDummyTargetTiles(dummy);
+    const unique = new Map<string, { x: number; y: number }>();
+    for (const tile of [...byBaseAnchor, ...byVisualOffset]) {
+      unique.set(`${tile.x},${tile.y}`, tile);
+    }
+    return [...unique.values()];
+  }
 
-      if (spawn.mapId === this.currentMapId && x === this.playerTileX && y === this.playerTileY) {
+  private getDummyOccupiedTilesLarge(dummy: DummyState): { x: number; y: number }[] {
+    const hitTile = this.getDummyHitTile(dummy);
+    const occupied: { x: number; y: number }[] = [];
+    const startOffset = -(dummy.sizeTiles - 1);
+    for (let oy = startOffset; oy <= 0; oy += 1) {
+      for (let ox = startOffset; ox <= 0; ox += 1) {
+        occupied.push({ x: hitTile.x + ox, y: hitTile.y + oy });
+      }
+    }
+    return occupied;
+  }
+
+  private getMobHitboxHeightPx(dummy: DummyState): number {
+    return dummy.hitboxHeightTiles * TILE_SIZE * MOB_HITBOX_HEIGHT_RATIO;
+  }
+
+  private getPlayerBodyHitboxConfig(): BodyHitboxConfig {
+    const isProfile = this.facing === "left" || this.facing === "right";
+    return {
+      width: isProfile ? PLAYER_HITBOX_PROFILE_WIDTH_PX : PLAYER_HITBOX_WIDTH_PX,
+      height: PLAYER_HITBOX_HEIGHT_PX,
+      offsetX: PLAYER_HITBOX_OFFSET_X,
+      offsetY: PLAYER_HITBOX_OFFSET_Y,
+    };
+  }
+
+  private getPlayerHitboxAreaRect(sprite: Phaser.GameObjects.Sprite): Phaser.Geom.Rectangle {
+    return buildHitboxFrameRect(sprite, this.getPlayerBodyHitboxConfig());
+  }
+
+  private setupPlayerHitboxInteraction() {
+    const hitArea = this.getPlayerHitboxAreaRect(this.player);
+    this.player.setInteractive(hitArea, Phaser.Geom.Rectangle.Contains);
+    this.player.input!.cursor = "pointer";
+  }
+
+  private refreshPlayerHitboxInteraction() {
+    if (!this.player.input) {
+      this.setupPlayerHitboxInteraction();
+      return;
+    }
+    this.player.input.hitArea = this.getPlayerHitboxAreaRect(this.player);
+  }
+
+  private drawHitboxDebugOverlay() {
+    if (!this.hitboxDebugEnabled || !this.player) {
+      this.hitboxDebugGraphics?.clear().setVisible(false);
+      return;
+    }
+
+    if (!this.hitboxDebugGraphics || !this.hitboxDebugGraphics.active) {
+      this.hitboxDebugGraphics = this.add.graphics().setDepth(50_000);
+      if (this.uiCamera) {
+        this.uiCamera.ignore(this.hitboxDebugGraphics);
+      }
+    }
+
+    const g = this.hitboxDebugGraphics;
+    g.clear().setVisible(true);
+
+    const strokeRect = (rect: Phaser.Geom.Rectangle, color: number, alpha = 0.95) => {
+      g.lineStyle(2, color, alpha);
+      g.strokeRect(rect.x, rect.y, rect.width, rect.height);
+    };
+
+    const playerHit = getInteractiveHitAreaWorldBounds(this.player);
+    if (playerHit) {
+      strokeRect(playerHit, 0x44ff66);
+    }
+
+    this.multiplayer?.getRemotePlayers()?.forEachVisibleBody((body) => {
+      const rect = getInteractiveHitAreaWorldBounds(body);
+      if (rect) {
+        strokeRect(rect, 0xffdd44);
+      }
+    });
+
+    for (const dummy of this.dummies) {
+      if (!dummy.alive || dummy.mapId !== this.currentMapId) {
         continue;
       }
 
-      const occupied = this.dummies.some((dummy) => {
-        return dummy.alive && dummy.mapId === spawn.mapId && dummy.tileX === x && dummy.tileY === y;
-      });
-      if (occupied) continue;
+      const clickHit = getInteractiveHitAreaWorldBounds(dummy.sprite);
+      if (clickHit) {
+        strokeRect(clickHit, 0xff8888, 0.7);
+      }
 
-      return { x, y };
+      for (const tile of this.getDummyTargetTiles(dummy)) {
+        strokeRect(tileToWorldRect(tile.x, tile.y, TILE_SIZE), 0xff2222);
+      }
     }
 
-    const fallbackX = Math.floor(map.width / 2);
-    const fallbackY = Math.floor(map.height / 2);
-    return { x: fallbackX, y: fallbackY };
+    this.npcManager?.forEachInteractiveHitArea((rect) => {
+      strokeRect(rect, 0x55ddff);
+    });
+  }
+
+  private findPlayerAtWorldPoint(worldX: number, worldY: number): boolean {
+    return containsWorldPointInHitArea(this.player, worldX, worldY);
+  }
+
+  private findDummyAtWorldPoint(worldX: number, worldY: number): DummyState | null {
+    const tileX = Math.floor(worldX / TILE_SIZE);
+    const tileY = Math.floor(worldY / TILE_SIZE);
+    for (const dummy of this.dummies) {
+      if (!dummy.alive || dummy.mapId !== this.currentMapId) {
+        continue;
+      }
+      if (
+        this.getDummyTargetTiles(dummy).some(
+          (tile) => tile.x === tileX && tile.y === tileY
+        )
+      ) {
+        return dummy;
+      }
+    }
+    return null;
+  }
+
+  private setupMobHitboxInteraction(
+    sprite: Phaser.GameObjects.Sprite,
+    hitboxHeightTiles: number,
+    hitboxWidthTiles: number,
+    hitboxOffsetYPx = 0
+  ) {
+    const width = Math.max(1, hitboxWidthTiles) * TILE_SIZE;
+    const height = Math.max(1, hitboxHeightTiles) * TILE_SIZE * MOB_HITBOX_HEIGHT_RATIO;
+    const hitArea = buildHitboxFrameRect(sprite, {
+      width,
+      height,
+      offsetX: 0,
+      offsetY: hitboxOffsetYPx,
+    });
+    sprite.setInteractive(hitArea, Phaser.Geom.Rectangle.Contains);
+    sprite.input!.cursor = "pointer";
+  }
+
+  private isWorldPointerBlocked(): boolean {
+    return (
+      this.gameUi.isChatFocused() ||
+      this.gameUi.isConfirmOpen() ||
+      this.gameUi.isMacroEditorOpen() ||
+      this.gameUi.isStatsOverlayOpen() ||
+      (this.bankOverlay?.isOpen() ?? false) ||
+      (this.shopOverlay?.isOpen() ?? false) ||
+      this.mapController.isWorldMapOpen()
+    );
+  }
+
+  private tryOpenMerchantNpcFromPointer(
+    pointer: Phaser.Input.Pointer,
+    currentlyOver: Phaser.GameObjects.GameObject[]
+  ): boolean {
+    for (const gameObject of currentlyOver) {
+      const npc = this.npcManager?.findNpcByGameObject(gameObject);
+      if (npc && isMerchantRole(npc.role)) {
+        this.tryOpenShopNpc(npc);
+        return true;
+      }
+    }
+    const merchant = this.npcManager?.findNpcAtWorldPoint(pointer.worldX, pointer.worldY);
+    if (merchant && isMerchantRole(merchant.role)) {
+      this.tryOpenShopNpc(merchant);
+      return true;
+    }
+    return false;
+  }
+
+  private setupWorldPointerHandlers() {
+    this.game.canvas.addEventListener("contextmenu", (event) => {
+      event.preventDefault();
+    });
+
+    this.input.on(
+      "pointerdown",
+      (
+        pointer: Phaser.Input.Pointer,
+        currentlyOver: Phaser.GameObjects.GameObject[]
+      ) => {
+        if (this.isWorldPointerBlocked()) {
+          return;
+        }
+
+        if (pointer.rightButtonDown()) {
+          if (this.isPlayerDeadOrGhost()) {
+            for (const gameObject of currentlyOver) {
+              const npc = this.npcManager?.findNpcByGameObject(gameObject);
+              if (npc?.role === "priest") {
+                this.tryReviveAtPriestNpc(npc);
+                return;
+              }
+            }
+
+            const priest = this.npcManager?.findNpcAtWorldPoint(
+              pointer.worldX,
+              pointer.worldY
+            );
+            if (priest?.role === "priest") {
+              this.tryReviveAtPriestNpc(priest);
+            }
+          } else {
+            for (const gameObject of currentlyOver) {
+              const npc = this.npcManager?.findNpcByGameObject(gameObject);
+              if (npc?.role === "banker") {
+                this.tryOpenBankNpc(npc);
+                return;
+              }
+            }
+
+            const banker = this.npcManager?.findNpcAtWorldPoint(
+              pointer.worldX,
+              pointer.worldY
+            );
+            if (banker?.role === "banker") {
+              this.tryOpenBankNpc(banker);
+              return;
+            }
+
+            if (this.tryOpenMerchantNpcFromPointer(pointer, currentlyOver)) {
+              return;
+            }
+          }
+          return;
+        }
+
+        if (this.combatController.hasPendingSpellCast()) {
+          const spell = this.combatController.getPendingSpellCast()!;
+          if (this.combatController.spellCanTargetDummy(spell)) {
+            for (const gameObject of currentlyOver) {
+              const dummy = this.dummies.find((entry) => entry.sprite === gameObject);
+              if (dummy?.alive) {
+                this.combatController.tryCastSpellOnDummy(dummy);
+                return;
+              }
+            }
+
+            const dummy = this.findDummyAtWorldPoint(pointer.worldX, pointer.worldY);
+            if (dummy) {
+              this.combatController.tryCastSpellOnDummy(dummy);
+              return;
+            }
+          }
+
+          if (this.combatController.spellCanTargetPlayer(spell)) {
+            for (const gameObject of currentlyOver) {
+              if (gameObject === this.player) {
+                this.combatController.tryCastSpellOnPlayer();
+                return;
+              }
+            }
+
+            if (this.findPlayerAtWorldPoint(pointer.worldX, pointer.worldY)) {
+              this.combatController.tryCastSpellOnPlayer();
+              return;
+            }
+          }
+
+          if (this.gameUi.isPointerOverSidebar(pointer.x, pointer.y)) {
+            return;
+          }
+
+          this.combatController.cancelSpellTargeting("Lanzamiento cancelado.");
+          return;
+        }
+
+        for (const gameObject of currentlyOver) {
+          if (gameObject === this.player) {
+            return;
+          }
+          const dummy = this.dummies.find((entry) => entry.sprite === gameObject);
+          if (dummy?.alive) {
+            this.inspectDummy(dummy);
+            return;
+          }
+        }
+
+        const inspectedDummy = this.findDummyAtWorldPoint(
+          pointer.worldX,
+          pointer.worldY
+        );
+        if (inspectedDummy?.alive) {
+          this.inspectDummy(inspectedDummy);
+          return;
+        }
+
+        this.clearInspectedDummy();
+      }
+    );
+  }
+
+  private pickRandomMobSpawnTile(spawn: MobSpawnConfig): { x: number; y: number } {
+    return pickSharedMobSpawnTile(spawn.mapId, (tileX, tileY) => {
+      if (this.isTileOccupiedByStaticNpc(tileX, tileY, spawn.mapId)) {
+        return true;
+      }
+
+      if (
+        spawn.mapId === this.currentMapId &&
+        tileX === this.playerTileX &&
+        tileY === this.playerTileY
+      ) {
+        return true;
+      }
+
+      return this.dummies.some(
+        (dummy) =>
+          dummy.alive &&
+          dummy.mapId === spawn.mapId &&
+          dummy.tileX === tileX &&
+          dummy.tileY === tileY
+      );
+    });
   }
 
   private isTileWalkableInMap(map: GameMap, tileX: number, tileY: number): boolean {
@@ -3048,194 +3995,63 @@ private worldItems: {
   }
 
   private getDummyOccupiedTiles(dummy: DummyState): { x: number; y: number }[] {
-    const hitTile = this.getDummyHitTile(dummy);
-    if (dummy.sizeTiles <= 1) {
-      return [{ x: hitTile.x, y: hitTile.y }];
-    }
-
-    const occupied: { x: number; y: number }[] = [];
-    const startOffset = -(dummy.sizeTiles - 1);
-    for (let oy = startOffset; oy <= 0; oy++) {
-      for (let ox = startOffset; ox <= 0; ox++) {
-        occupied.push({ x: hitTile.x + ox, y: hitTile.y + oy });
-      }
-    }
-    return occupied;
+    return this.getDummyTargetTiles(dummy);
   }
 
-  private playAttackFeedback(tileX: number, tileY: number) {
-    const { x, y } = tileToFeetWorld(tileX, tileY, TILE_SIZE);
-
-    const hitFx = this.add
-      .rectangle(x, y - 18, 18, 18, 0xffe06b, 0.8)
-      .setDepth(20)
-      .setAngle(45);
-    if (this.uiCamera) {
-      this.uiCamera.ignore(hitFx);
-    }
-
-    this.tweens.add({
-      targets: hitFx,
-      alpha: 0,
-      scaleX: 1.6,
-      scaleY: 1.6,
-      duration: 120,
-      ease: "Linear",
-      onComplete: () => hitFx.destroy(),
-    });
-
-    this.cameras.main.shake(45, 0.0016, true);
-    this.playHitSound();
+  private getMobMoveSpeedRatio(modelId: MobModelId): number {
+    return MOB_MODELS[modelId].moveSpeedRatio ?? MOB_DEFAULT_MOVE_SPEED_RATIO;
   }
 
-  private registerMobAnimations() {
-    (Object.keys(MOB_MODELS) as MobModelId[]).forEach((modelId) => {
-      const model = MOB_MODELS[modelId];
-      (["down", "up", "left", "right"] as Facing[]).forEach((facing) => {
-        const walkKey = this.mobAnimationKey(modelId, "walk", facing);
-        if (!this.anims.exists(walkKey)) {
-          const frames = this.mobWalkFrames(modelId, facing).map((frame) => ({
-            key: model.textureKey,
-            frame,
-          }));
-          this.anims.create({
-            key: walkKey,
-            frames,
-            frameRate: 9,
-            repeat: -1,
-          });
-        }
-      });
-    });
+  private getMobStepDurationMs(modelId: MobModelId): number {
+    const ratio = this.getMobMoveSpeedRatio(modelId);
+    return Math.ceil(STEP_DURATION_MS / ratio);
   }
 
-  private mobAnimationKey(modelId: MobModelId, state: "walk", facing: Facing): string {
-    return `mob_${modelId}_${state}_${facing}`;
-  }
-
-  private mobWalkFrames(modelId: MobModelId, facing: Facing): number[] {
+  private computeMobWalkFrameRate(modelId: MobModelId): number {
     const model = MOB_MODELS[modelId];
-    if (model.dirAxis === "columns" && model.dirCols) {
-      const col = model.dirCols[facing];
-      return Array.from({ length: model.moveFrameCount }, (_unused, row) => {
-        return row * model.sheetCols + col;
-      });
-    }
-
-    const row = model.dirRows?.[facing] ?? 0;
-    return Array.from({ length: model.moveFrameCount }, (_unused, frame) => {
-      return row * model.sheetCols + frame;
-    });
+    const walkStart = model.walkStartFrame ?? 0;
+    const walkCount =
+      model.walkAnimFrameCount ?? Math.max(1, model.moveFrameCount - walkStart);
+    const stepSeconds = this.getMobStepDurationMs(modelId) / 1000;
+    return walkCount / stepSeconds;
   }
 
   private setMobAnimationState(dummy: DummyState, state: "idle" | "walk") {
-    const idleFrame = this.mobWalkFrames(dummy.modelId, dummy.facing)[0] ?? 0;
+    this.syncMobSpriteOrigin(dummy);
     if (state === "walk") {
-      const key = this.mobAnimationKey(dummy.modelId, "walk", dummy.facing);
-      if (dummy.sprite.anims.currentAnim?.key !== key) {
-        dummy.sprite.play(key, true);
-      }
-      return;
+      playMobWalkAnimation(dummy.sprite, dummy.modelId, dummy.facing);
+    } else {
+      playMobIdleFrame(dummy.sprite, dummy.modelId, dummy.facing);
     }
-
-    dummy.sprite.stop();
-    dummy.sprite.setFrame(idleFrame);
-  }
-
-  private showDamageNumber(
-    worldX: number,
-    worldY: number,
-    damage: number,
-    source: "player" | "mob" = "player"
-  ) {
-    if (source === "player") {
-      this.clearActivePlayerDamageNumber();
-    }
-
-    const damageValue = Math.max(0, Math.floor(damage));
-    const textValue = damageValue > 200 ? `${damageValue}!¡` : `${damageValue}`;
-    const damageText = this.add
-      .text(worldX, worldY, textValue, {
-        fontFamily: "monospace",
-        fontSize: "15px",
-        color: "#ff3333",
-        stroke: "#240000",
-        strokeThickness: 3,
-        fontStyle: "bold",
-      })
-      .setOrigin(0.5, 1)
-      .setDepth(24);
-
-    if (this.uiCamera) {
-      this.uiCamera.ignore(damageText);
-    }
-
-    const tween = this.tweens.add({
-      targets: damageText,
-      y: worldY - 20,
-      alpha: 0,
-      duration: 800,
-      ease: "Cubic.Out",
-      onComplete: () => {
-        if (source === "player") {
-          this.activePlayerDamageText = undefined;
-          this.activePlayerDamageTween = undefined;
-        }
-        damageText.destroy();
-      },
-    });
-
-    if (source === "player") {
-      this.activePlayerDamageText = damageText;
-      this.activePlayerDamageTween = tween;
-    }
-  }
-
-  private clearActivePlayerDamageNumber() {
-    if (this.activePlayerDamageTween) {
-      this.activePlayerDamageTween.stop();
-      this.activePlayerDamageTween = undefined;
-    }
-    if (this.activePlayerDamageText) {
-      this.activePlayerDamageText.destroy();
-      this.activePlayerDamageText = undefined;
-    }
+    this.syncMobFaceForDummy(dummy);
   }
 
   private registerSpellAnimations() {
-    if (!this.anims.exists(IMPLOSION_ANIM_KEY)) {
+    ALL_FX_SHEETS.forEach((fx) => {
+      const animKey = spellEffectAnimKey(fx.idSpell);
+      if (this.anims.exists(animKey)) {
+        return;
+      }
+
+      const texture = this.textures.get(fx.sheetKey);
+      if (texture.key === "__MISSING") {
+        return;
+      }
+
+      const frames = fx.frameSequence
+        ? fx.frameSequence.map((frame) => ({ key: fx.sheetKey, frame }))
+        : this.anims.generateFrameNumbers(fx.sheetKey, {
+            start: 0,
+            end: fx.frameCount - 1,
+          });
+
       this.anims.create({
-        key: IMPLOSION_ANIM_KEY,
-        frames: IMPLOSION_FRAME_SEQUENCE.map((frame) => ({
-          key: IMPLOSION_ANIM_TEXTURE_KEY,
-          frame,
-        })),
-        frameRate: 14,
+        key: animKey,
+        frames,
+        frameRate: fx.frameRate,
         repeat: 0,
       });
-    }
-    if (!this.anims.exists(INMOVILIZAR_ANIM_KEY)) {
-      this.anims.create({
-        key: INMOVILIZAR_ANIM_KEY,
-        frames: INMOVILIZAR_FRAME_SEQUENCE.map((frame) => ({
-          key: INMOVILIZAR_ANIM_TEXTURE_KEY,
-          frame,
-        })),
-        frameRate: 12,
-        repeat: 0,
-      });
-    }
-    if (!this.anims.exists(HERIDAS_GRAVES_ANIM_KEY)) {
-      this.anims.create({
-        key: HERIDAS_GRAVES_ANIM_KEY,
-        frames: HERIDAS_GRAVES_FRAME_SEQUENCE.map((frame) => ({
-          key: HERIDAS_GRAVES_ANIM_TEXTURE_KEY,
-          frame,
-        })),
-        frameRate: 10,
-        repeat: 0,
-      });
-    }
+    });
   }
 
   private registerMeditationAnimation() {
@@ -3253,53 +4069,79 @@ private worldItems: {
     });
   }
 
-  private playImplosionAnimation(tileX: number, tileY: number) {
-    const { x, y } = tileToFeetWorld(tileX, tileY, TILE_SIZE);
-    const fx = this.add
-      .sprite(x, y - 28, IMPLOSION_ANIM_TEXTURE_KEY, IMPLOSION_FRAME_SEQUENCE[0])
-      .setDepth(20)
-      .setScale(0.9);
-    if (this.uiCamera) {
-      this.uiCamera.ignore(fx);
+  private playSpellEffect(spellId: number, tileX: number, tileY: number) {
+    const fxConfig = getSpellEffectConfig(spellId);
+    if (!fxConfig) {
+      return;
     }
-    fx.once(Phaser.Animations.Events.ANIMATION_COMPLETE, () => {
-      fx.destroy();
-    });
-    fx.play(IMPLOSION_ANIM_KEY);
-    this.cameras.main.shake(90, 0.0022, true);
-    this.playHitSound();
+
+    const animKey = spellEffectAnimKey(spellId);
+    if (!this.anims.exists(animKey)) {
+      return;
+    }
+
+    const { x, y } = tileToFeetWorld(tileX, tileY, TILE_SIZE);
+    const offsetX = fxConfig.offsetX ?? 0;
+    const offsetY = fxConfig.offsetY ?? 0;
+    const originX = fxConfig.originX ?? 0.5;
+    const originY = fxConfig.originY ?? 0.5;
+    const worldX = x + offsetX;
+    const worldY = y + offsetY;
+
+    const sprite = this.add
+      .sprite(worldX, worldY, fxConfig.sheetKey, getSpellEffectFirstFrame(fxConfig))
+      .setOrigin(originX, originY)
+      .setDepth(this.depthFromFeetY(y) + 1)
+      .setScale(fxConfig.scale ?? 1)
+      .setBlendMode(Phaser.BlendModes.ADD);
+
+    if (this.uiCamera) {
+      this.uiCamera.ignore(sprite);
+    }
+
+    const destroyFx = () => {
+      if (sprite.active) {
+        sprite.destroy();
+      }
+    };
+    sprite.once(`animationcomplete-${animKey}`, destroyFx);
+
+    const played = sprite.play({ key: animKey, repeat: 0 });
+    if (!played) {
+      destroyFx();
+      return;
+    }
+
+    if (fxConfig.shakeOnPlay) {
+      this.cameras.main.shake(90, 0.0022, true);
+    }
+    if (fxConfig.playHitSound) {
+      this.playHitSound();
+    }
   }
 
-  private playInmovilizarAnimation(tileX: number, tileY: number) {
-    const { x, y } = tileToFeetWorld(tileX, tileY, TILE_SIZE);
-    const fx = this.add
-      .sprite(x, y + INMOVILIZAR_FX_OFFSET_Y, INMOVILIZAR_ANIM_TEXTURE_KEY, INMOVILIZAR_FRAME_SEQUENCE[0])
-      .setOrigin(0.5, 1)
-      .setDepth(20)
-      .setScale(0.85);
-    if (this.uiCamera) {
-      this.uiCamera.ignore(fx);
-    }
-    fx.once(Phaser.Animations.Events.ANIMATION_COMPLETE, () => {
-      fx.destroy();
-    });
-    fx.play(INMOVILIZAR_ANIM_KEY);
-  }
+  private playSpawnEffect() {
+    const fx = SPAWN_FX_CONFIG;
+    const { x, y } = tileToFeetWorld(this.playerTileX, this.playerTileY, TILE_SIZE);
+    const worldX = x + (fx.offsetX ?? 0);
+    const worldY = y + (fx.offsetY ?? 0);
 
-  private playHeridasGravesAnimation(tileX: number, tileY: number) {
-    const { x, y } = tileToFeetWorld(tileX, tileY, TILE_SIZE);
-    const fx = this.add
-      .sprite(x, y, HERIDAS_GRAVES_ANIM_TEXTURE_KEY, HERIDAS_GRAVES_FRAME_SEQUENCE[0])
-      .setOrigin(0.5, 1)
-      .setDepth(20)
-      .setScale(1);
+    const sprite = this.add
+      .sprite(worldX, worldY, fx.sheetKey, 0)
+      .setOrigin(fx.originX ?? 0.5, fx.originY ?? 0.5)
+      .setDepth(this.depthFromFeetY(y) - 1)
+      .setScale(fx.scale ?? 1)
+      .setAlpha(0.6)
+      .setBlendMode(Phaser.BlendModes.ADD);
+
     if (this.uiCamera) {
-      this.uiCamera.ignore(fx);
+      this.uiCamera.ignore(sprite);
     }
-    fx.once(Phaser.Animations.Events.ANIMATION_COMPLETE, () => {
-      fx.destroy();
+
+    sprite.once(Phaser.Animations.Events.ANIMATION_COMPLETE, () => {
+      sprite.destroy();
     });
-    fx.play(HERIDAS_GRAVES_ANIM_KEY);
+    sprite.play(spellEffectAnimKey(SPAWN_FX_ID));
   }
 
   private playHitSound() {
@@ -3342,13 +4184,29 @@ private worldItems: {
   }
 
   private toggleCitizenOutfit() {
-    this.equippedOutfit = this.equippedOutfit === "base" ? "citizen" : "base";
+    if (this.equipment.armor) {
+      this.gameUi.addChatLine("Quitá la armadura del cuerpo antes de cambiar la ropa de ciudadano.");
+      return;
+    }
+    if (this.equippedOutfit === "base") {
+      const check = canRaceEquipArmor(this.selectedRace, true);
+      if (!check.allowed) {
+        this.gameUi.addChatLine(check.reason ?? "No podés usar esa ropa.");
+        return;
+      }
+      this.equippedOutfit = "citizen";
+      this.equippedArmorVisual = getDefaultArmorVisualForOutfit("citizen");
+    } else {
+      this.equippedOutfit = "base";
+      this.equippedArmorVisual = undefined;
+    }
+    this.applyLocalPlayerBodyVisual();
+    this.syncEquippedHeldItemVisuals();
     const label =
       this.equippedOutfit === "citizen"
         ? "Equipaste Ropa de Ciudadano."
         : "Te quitaste la Ropa de Ciudadano.";
 
     this.gameUi.addChatLine(label);
-    this.playFacingAnim(this.isMoving ? "walk" : "idle");
   }
 }

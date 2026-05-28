@@ -5,14 +5,27 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:server": "npm run start --prefix server",
+    "server:stop": "powershell -NoProfile -ExecutionPolicy Bypass -Command \"$p=(Get-NetTCPConnection -LocalPort 3001 -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty OwningProcess); if ($p) { Stop-Process -Id $p -Force; Write-Host ('Stopped server PID ' + $p) } else { Write-Host 'No server process on port 3001' }\"",
+    "server:restart": "npm run server:stop && npm run dev:server",
+    "dev:all": "concurrently -n web,server -c cyan,magenta \"npm run dev\" \"npm run dev:server\"",
     "build": "tsc && vite build",
     "preview": "vite preview",
     "audit:sprites": "node tools/audit-sprites.mjs",
+    "audit:mobs": "node tools/audit-mob-sprites.mjs",
     "normalize:sprites": "node tools/normalize-sprites.mjs",
     "rebuild:cuero": "node tools/rebuild-cuero-from-base.mjs",
-    "pipeline-std1": "node tools/ao-export/pipeline-armor-std1.mjs"
+    "pipeline-std1": "node tools/ao-export/pipeline-armor-std1.mjs --in \"C:/Users/imaga/Desktop/input Script\" --out \"C:/Users/imaga/Desktop/output Script\" --mode raw",
+    "deploy:std1": "node tools/ao-export/deploy-std1.mjs",
+    "import:items": "npm run pipeline-std1",
+    "extract:citizen-icon": "node tools/ao-export/extract-catalog-icon.mjs --in \"C:/Users/imaga/Desktop/input Script/1005.png\" --block 0 --icon-x 0 --icon-y 0 --out citizenClothesBajos_icon.png",
+    "ref:frames": "node tools/extract-ao-reference-frames.mjs",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "devDependencies": {
+    "concurrently": "^9.1.2",
+    "vitest": "^3.2.4",
     "pngjs": "^7.0.0",
     "typescript": "^5.8.3",
     "vite": "^6.3.5"

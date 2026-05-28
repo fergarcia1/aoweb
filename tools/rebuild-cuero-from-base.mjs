@@ -17,7 +17,7 @@ const basePath = path.resolve(
 );
 const armorPath = path.resolve(
   workspaceRoot,
-  "public/assets/ao/armors/armor_cuero_std.png"
+  "public/assets/ao/armors/cuero_std.png"
 );
 
 function frameBounds(png, frameX, frameY, frameW, frameH) {
@@ -159,7 +159,7 @@ async function main() {
     ) + "\n"
   );
 
-  console.log("Rebuilt armor_cuero_std.png aligned to base model.");
+  console.log("Rebuilt cuero_std.png aligned to base model.");
   console.log(`Report: ${path.relative(workspaceRoot, reportPath)}`);
 }
 

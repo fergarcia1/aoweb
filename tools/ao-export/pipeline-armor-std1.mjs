@@ -24,7 +24,7 @@ const FRAME_W = 32;
 const FRAME_H = 48;
 const SHEET_COLS = 6;
 const SHEET_ROWS = 4;
-const INNER_MARGIN = 1;
+const INNER_MARGIN = 0;
 
 function parseArgs() {
   const args = process.argv.slice(2);
@@ -69,8 +69,9 @@ function parseArgs() {
 
 function isBg(r, g, b, a) {
   if (a < 20) return true;
-  if (r < 30 && g < 30 && b < 30) return true;
-  if (r > 240 && g > 240 && b > 240) return true;
+  // Solo negro puro / blanco puro: no eliminar grises oscuros del sprite.
+  if (r <= 4 && g <= 4 && b <= 4) return true;
+  if (r > 248 && g > 248 && b > 248) return true;
   return false;
 }
 
@@ -117,8 +118,8 @@ function removeCatalogLines(png) {
       opaqueCount += 1;
       if (r < 70 && g < 70 && b < 70) darkCount += 1;
     }
-    if (opaqueCount < h * 0.35) continue;
-    if (darkCount / opaqueCount < 0.75) continue;
+    if (opaqueCount < h * 0.55) continue;
+    if (darkCount / opaqueCount < 0.88) continue;
 
     let isolated = true;
     for (let y = 0; y < h; y += 1) {
@@ -142,8 +143,8 @@ function removeCatalogLines(png) {
       opaqueCount += 1;
       if (r < 70 && g < 70 && b < 70) darkCount += 1;
     }
-    if (opaqueCount < w * 0.35) continue;
-    if (darkCount / opaqueCount < 0.75) continue;
+    if (opaqueCount < w * 0.55) continue;
+    if (darkCount / opaqueCount < 0.88) continue;
     for (let x = 0; x < w; x += 1) setPixel(png, x, y, 0, 0, 0, 0);
   }
 }
@@ -266,7 +267,7 @@ function cleanFrameSeams(png, frameX, frameY) {
       opaque += 1;
       if (r < 80 && g < 80 && b < 80) dark += 1;
     }
-    if (opaque < FRAME_H * 0.2 || dark / opaque < 0.7) continue;
+    if (opaque < FRAME_H * 0.45 || dark / opaque < 0.88) continue;
 
     let isolated = true;
     for (let ly = 0; ly < FRAME_H; ly += 1) {

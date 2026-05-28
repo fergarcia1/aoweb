@@ -1,4 +1,10 @@
 import Phaser from "phaser";
+import {
+  AOWEB_SKIN_INVENTORY_CELL,
+  scaleSkinX,
+  scaleSkinY,
+} from "./aowebSkinLayout";
+import { registerPlayerHudAssets, setupPlayerHudTextures } from "./playerHudFrame";
 
 const INVENTORY_UI_PATH = "/assets/ao/uiGrafica/";
 
@@ -43,6 +49,8 @@ export type InventoryPanelOptions = {
   slotScale?: number;
   gap?: number;
   padding?: number;
+  /** Sin marco ni tiles visibles (la skin ya dibuja la grilla). */
+  frameless?: boolean;
 };
 
 export type InventoryPanel = {
@@ -52,6 +60,18 @@ export type InventoryPanel = {
   height: number;
   getSlotCenter: (slotIndex: number) => { x: number; y: number };
   getSlotBottomRight: (slotIndex: number) => { x: number; y: number };
+  layoutGrid: (bounds: { x: number; y: number; w: number; h: number }) => void;
+  layoutSkinGrid: (
+    origin: { x: number; y: number },
+    screenW: number,
+    screenH: number
+  ) => void;
+  layoutSkinGridInPanel: (
+    panel: { x: number; y: number; w: number; h: number },
+    screenW: number,
+    screenH: number
+  ) => void;
+  getSlotTopLeft: (slotIndex: number) => { x: number; y: number };
 };
 
 export function registerInventoryPanelAssets(scene: Phaser.Scene): void {
@@ -107,6 +127,7 @@ export function registerInventoryPanelAssets(scene: Phaser.Scene): void {
     INVENTORY_UI_KEYS.macroMark,
     INVENTORY_UI_PATH + INVENTORY_UI_FILES.macroMark
   );
+  registerPlayerHudAssets(scene);
 }
 
 export function setupInventoryPanelTextures(scene: Phaser.Scene): void {
@@ -117,6 +138,7 @@ export function setupInventoryPanelTextures(scene: Phaser.Scene): void {
       texture.setFilter(Phaser.Textures.FilterMode.NEAREST);
     }
   }
+  setupPlayerHudTextures(scene);
 }
 
 export function createInventoryPanel(
@@ -127,6 +149,7 @@ export function createInventoryPanel(
 ): InventoryPanel {
   const cols = options.cols ?? 5;
   const rows = options.rows ?? 4;
+  const frameless = options.frameless ?? false;
   const slotScale = options.slotScale ?? 2;
   const gap = options.gap ?? 6;
   const padding = options.padding ?? 14;
@@ -148,16 +171,18 @@ export function createInventoryPanel(
   const container = scene.add.container(x, y);
   container.setScrollFactor(0);
 
-  createInventoryFrame(scene, container, panelWidth, panelHeight);
+  if (!frameless) {
+    createInventoryFrame(scene, container, panelWidth, panelHeight);
 
-  const panelBase = scene.add.image(
-    gridStartX,
-    padding,
-    INVENTORY_UI_KEYS.panelBase
-  );
-  panelBase.setOrigin(0, 0);
-  panelBase.setDisplaySize(gridWidth, gridHeight);
-  container.add(panelBase);
+    const panelBase = scene.add.image(
+      gridStartX,
+      padding,
+      INVENTORY_UI_KEYS.panelBase
+    );
+    panelBase.setOrigin(0, 0);
+    panelBase.setDisplaySize(gridWidth, gridHeight);
+    container.add(panelBase);
+  }
 
   const slots: Phaser.GameObjects.Image[] = [];
 
@@ -177,17 +202,97 @@ export function createInventoryPanel(
       slot.setOrigin(0, 0);
       slot.setDisplaySize(slotWidth, slotHeight);
       slot.setData("slotIndex", slotIndex);
+      if (frameless) {
+        // Mantener los slots "invisibles" pero clickeables en la skin.
+        slot.setAlpha(0.001);
+      }
 
       container.add(slot);
       slots.push(slot);
     }
   }
 
+  const layoutGrid = (bounds: { x: number; y: number; w: number; h: number }) => {
+    container.setPosition(bounds.x, bounds.y);
+    const slotGap = 2;
+    const slotW = Math.floor((bounds.w - slotGap * (cols - 1)) / cols);
+    const slotH = Math.floor((bounds.h - slotGap * (rows - 1)) / rows);
+    for (let row = 0; row < rows; row += 1) {
+      for (let col = 0; col < cols; col += 1) {
+        const slotIndex = row * cols + col;
+        const slot = slots[slotIndex];
+        const slotX = col * (slotW + slotGap);
+        const slotY = row * (slotH + slotGap);
+        slot.setPosition(slotX, slotY);
+        slot.setDisplaySize(slotW, slotH);
+      }
+    }
+  };
+
+  const positionSkinGridSlots = (
+    slotW: number,
+    slotH: number,
+    gapX: number,
+    gapY: number
+  ) => {
+    for (let row = 0; row < rows; row += 1) {
+      for (let col = 0; col < cols; col += 1) {
+        const slotIndex = row * cols + col;
+        const slot = slots[slotIndex];
+        slot.setPosition(col * (slotW + gapX), row * (slotH + gapY));
+        slot.setDisplaySize(slotW, slotH);
+      }
+    }
+  };
+
+  const layoutSkinGrid = (
+    origin: { x: number; y: number },
+    screenW: number,
+    screenH: number
+  ) => {
+    const slotW = scaleSkinX(AOWEB_SKIN_INVENTORY_CELL.w, screenW);
+    const slotH = scaleSkinY(AOWEB_SKIN_INVENTORY_CELL.h, screenH);
+    const gapX = scaleSkinX(AOWEB_SKIN_INVENTORY_CELL.gapX, screenW);
+    const gapY = scaleSkinY(AOWEB_SKIN_INVENTORY_CELL.gapY, screenH);
+    const ox = scaleSkinX(origin.x, screenW);
+    const oy = scaleSkinY(origin.y, screenH);
+    container.setPosition(ox, oy);
+    positionSkinGridSlots(slotW, slotH, gapX, gapY);
+  };
+
+  const layoutSkinGridInPanel = (
+    panel: { x: number; y: number; w: number; h: number },
+    screenW: number,
+    screenH: number
+  ) => {
+    const slotW = scaleSkinX(AOWEB_SKIN_INVENTORY_CELL.w, screenW);
+    const slotH = scaleSkinY(AOWEB_SKIN_INVENTORY_CELL.h, screenH);
+    const gapX = scaleSkinX(AOWEB_SKIN_INVENTORY_CELL.gapX, screenW);
+    const gapY = scaleSkinY(AOWEB_SKIN_INVENTORY_CELL.gapY, screenH);
+    const gridW = cols * slotW + (cols - 1) * gapX;
+    const gridH = rows * slotH + (rows - 1) * gapY;
+    const px = scaleSkinX(panel.x, screenW);
+    const py = scaleSkinY(panel.y, screenH);
+    const pw = scaleSkinX(panel.w, screenW);
+    const ph = scaleSkinY(panel.h, screenH);
+    const ox = px + Math.max(0, Math.floor((pw - gridW) / 2));
+    const oy = py + Math.max(0, Math.floor((ph - gridH) / 2));
+    container.setPosition(ox, oy);
+    positionSkinGridSlots(slotW, slotH, gapX, gapY);
+  };
+
   return {
     container,
     slots,
     width: panelWidth,
     height: panelHeight,
+    layoutGrid,
+    layoutSkinGrid,
+    layoutSkinGridInPanel,
+    getSlotTopLeft: (slotIndex: number) => {
+      const slot = slots[slotIndex];
+      return { x: slot.x + 2, y: slot.y + 2 };
+    },
     getSlotCenter: (slotIndex: number) => {
       const slot = slots[slotIndex];
 

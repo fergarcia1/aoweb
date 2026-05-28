@@ -1,0 +1,8 @@
+export {
+  AOI_RADIUS_TILES,
+  DEFAULT_MAP_ID,
+  FULL_SNAPSHOT_ON_JOIN_ONLY,
+  SAFE_ZONE_MAP_IDS,
+  STEP_DURATION_MS,
+  WORLD_TICK_MS,
+} from "../game-data/constants";

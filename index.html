@@ -17,15 +17,21 @@
         background: #0d1117;
         overflow: hidden;
         color: #e6edf3;
-        font-family: "Segoe UI", Tahoma, sans-serif;
+        font-family: Verdana, Arial, Helvetica, sans-serif;
+      }
+      :root {
+        --app-nav-height: 44px;
       }
       #game {
-        width: 100%;
-        height: 100%;
+        position: fixed;
+        top: var(--app-nav-height);
+        left: 0;
+        right: 0;
+        bottom: 0;
       }
       #game canvas {
-        image-rendering: pixelated;
-        image-rendering: crisp-edges;
+        /* auto: el texto HUD/nombres se lee bien; los sprites usan filtro NEAREST en Phaser */
+        image-rendering: auto;
         display: block;
       }
       #app-navbar {
@@ -55,6 +61,7 @@
         display: flex;
         align-items: center;
         gap: 8px;
+        flex-shrink: 0;
       }
       #app-navbar button {
         pointer-events: auto;
@@ -96,6 +103,9 @@
       <div class="nav-actions">
         <button type="button" id="nav-news-btn">Noticias</button>
         <button type="button" id="nav-wiki-btn">Wiki</button>
+        <button type="button" id="nav-fullscreen-btn" title="Pantalla completa">
+          ⛶ Pantalla completa
+        </button>
         <button type="button" id="nav-play-btn" class="nav-primary">Jugar</button>
       </div>
       <span id="nav-status" class="nav-status" aria-live="polite"></span>

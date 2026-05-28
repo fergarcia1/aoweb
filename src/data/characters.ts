@@ -1,19 +1,35 @@
 import type { CharacterClassId } from "./items";
 
 export const CHARACTER_SLOT_COUNT = 6;
-const STORAGE_KEY = "aoweb_character_slots";
+const STORAGE_KEY = "aoweb_character_slots_v2";
 const ACTIVE_SLOT_KEY = "aoweb_active_character_slot";
 
-export type CharacterRaceId = "human" | "drow";
+export type CharacterRaceId =
+  | "human"
+  | "elf"
+  | "drow"
+  | "dwarf"
+  | "gnome"
+  | "orc"
+  | "fantasma";
+
+/** Raza visual al morir (sprites en fantasma_std / fantasma_faces). No es seleccionable. */
+export const GHOST_RACE_ID: CharacterRaceId = "fantasma";
+export type CharacterGenderId = "male" | "female";
+export type CharacterFactionId = "imperial" | "caos";
 
 export type SavedCharacter = {
   id: string;
   name: string;
   classId: CharacterClassId;
   raceId: CharacterRaceId;
-  /** Columna 0-based en human_faces.png (cara 1 → 0). */
+  genderId: CharacterGenderId;
+  factionId: CharacterFactionId;
+  /** Columna 0-based en {race}_{gender}_faces.png (cara 1 → 0). */
   faceIndex: number;
   level: number;
+  /** Ciudad marcada con /marcarhogar; el sacerdote de revive está aquí. */
+  homeMapId?: string;
 };
 
 export type CharacterSlot = SavedCharacter | null;
@@ -29,8 +45,85 @@ export const CLASS_LABELS: Record<CharacterClassId, string> = {
 
 export const RACE_LABELS: Record<CharacterRaceId, string> = {
   human: "Humano",
+  elf: "Elfo",
   drow: "Elfo Oscuro",
+  dwarf: "Enano",
+  gnome: "Gnomo",
+  orc: "Orco",
+  fantasma: "Fantasma",
 };
+
+const GENDER_LABELS: Record<CharacterGenderId, string> = {
+  male: "Hombre",
+  female: "Mujer",
+};
+
+export const GENDER_UI_LABELS: Record<CharacterGenderId, string> = {
+  male: "Masculino",
+  female: "Femenino",
+};
+
+export const FACTION_LABELS: Record<CharacterFactionId, string> = {
+  imperial: "Imperial",
+  caos: "Caos",
+};
+
+/** Color del nombre en mundo / HUD / selección de personaje. */
+export const FACTION_NAME_COLORS: Record<CharacterFactionId, { fill: string; stroke: string }> = {
+  imperial: { fill: "#4da6ff", stroke: "#001a33" },
+  caos: { fill: "#ff5252", stroke: "#330808" },
+};
+
+export function getFactionNameColors(factionId: CharacterFactionId) {
+  return FACTION_NAME_COLORS[factionId];
+}
+
+export type PlayerRole = "player" | "admin";
+
+const ADMIN_CHARACTER_NAMES = new Set(["lonler"]);
+
+export function isAdminCharacterName(name: string): boolean {
+  return ADMIN_CHARACTER_NAMES.has(name.trim().toLowerCase());
+}
+
+export const ADMIN_NAME_COLORS = { fill: "#00e676", stroke: "#003d20" };
+
+export function getPlayerNameColors(
+  factionId: CharacterFactionId,
+  role: PlayerRole = "player"
+) {
+  if (role === "admin") {
+    return ADMIN_NAME_COLORS;
+  }
+  return getFactionNameColors(factionId);
+}
+
+export const ALL_RACES: CharacterRaceId[] = [
+  "human",
+  "elf",
+  "drow",
+  "dwarf",
+  "gnome",
+  "orc",
+];
+
+export const ALL_CLASSES: CharacterClassId[] = [
+  "paladin",
+  "mago",
+  "druida",
+  "guerrero",
+  "cazador",
+  "asesino",
+];
+
+export const ALL_GENDERS: CharacterGenderId[] = ["male", "female"];
+
+export function formatRaceGenderLabel(
+  raceId: CharacterRaceId,
+  genderId: CharacterGenderId
+): string {
+  return `${RACE_LABELS[raceId]} (${GENDER_LABELS[genderId]})`;
+}
 
 function createDefaultSlots(): CharacterSlot[] {
   return [
@@ -39,15 +132,58 @@ function createDefaultSlots(): CharacterSlot[] {
       name: "Lonler",
       classId: "paladin",
       raceId: "human",
+      genderId: "male",
       faceIndex: 0,
+      factionId: "imperial",
+      level: 50,
+      homeMapId: "pueblo",
+    },
+    {
+      id: "demo-orc-warrior",
+      name: "Grok",
+      classId: "guerrero",
+      raceId: "orc",
+      genderId: "male",
+      faceIndex: 0,
+      factionId: "caos",
       level: 1,
+    },
+    {
+      id: "demo-gnome-mage",
+      name: "Zyx",
+      classId: "mago",
+      raceId: "gnome",
+      genderId: "male",
+      faceIndex: 0,
+      factionId: "imperial",
+      level: 50,
     },
     null,
     null,
     null,
-    null,
-    null,
   ];
+}
+
+function normalizeRaceId(value: string): CharacterRaceId {
+  if (
+    value === "human" ||
+    value === "elf" ||
+    value === "drow" ||
+    value === "dwarf" ||
+    value === "gnome" ||
+    value === "orc"
+  ) {
+    return value;
+  }
+  return "human";
+}
+
+function normalizeGenderId(value: unknown): CharacterGenderId {
+  return value === "female" ? "female" : "male";
+}
+
+function normalizeFactionId(value: unknown): CharacterFactionId {
+  return value === "caos" ? "caos" : "imperial";
 }
 
 function normalizeSlots(raw: unknown): CharacterSlot[] {
@@ -73,13 +209,20 @@ function normalizeSlots(raw: unknown): CharacterSlot[] {
     }
     const faceIndex =
       typeof record.faceIndex === "number" ? Math.max(0, Math.floor(record.faceIndex)) : 0;
+    const homeMapId =
+      typeof record.homeMapId === "string" && record.homeMapId.trim().length > 0
+        ? record.homeMapId.trim()
+        : undefined;
     slots[index] = {
       id: record.id,
       name: record.name,
       classId: record.classId as CharacterClassId,
-      raceId: record.raceId as CharacterRaceId,
+      raceId: normalizeRaceId(record.raceId),
+      genderId: normalizeGenderId(record.genderId),
+      factionId: normalizeFactionId(record.factionId),
       faceIndex,
       level: Math.max(1, Math.floor(record.level)),
+      homeMapId,
     };
   }
 
@@ -125,4 +268,40 @@ export function getActiveCharacter(): SavedCharacter | null {
   if (index === null) return null;
   const slots = loadCharacterSlots();
   return slots[index] ?? null;
+}
+
+export function saveCharacterToSlot(slotIndex: number, character: SavedCharacter): boolean {
+  if (slotIndex < 0 || slotIndex >= CHARACTER_SLOT_COUNT) {
+    return false;
+  }
+  const slots = loadCharacterSlots();
+  slots[slotIndex] = character;
+  saveCharacterSlots(slots);
+  return true;
+}
+
+/** Sincroniza nivel (y hogar) del slot con el progreso guardado en partida. */
+export function patchSavedCharacterMeta(
+  characterId: string,
+  patch: { level?: number; homeMapId?: string }
+): void {
+  const slots = loadCharacterSlots();
+  const index = slots.findIndex((slot) => slot?.id === characterId);
+  if (index < 0 || !slots[index]) {
+    return;
+  }
+  const current = slots[index]!;
+  slots[index] = {
+    ...current,
+    level:
+      patch.level !== undefined
+        ? Math.max(1, Math.floor(patch.level))
+        : current.level,
+    homeMapId: patch.homeMapId ?? current.homeMapId,
+  };
+  saveCharacterSlots(slots);
+}
+
+export function createCharacterId(): string {
+  return `char-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 }

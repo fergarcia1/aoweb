@@ -1,9 +1,82 @@
 import mobsRaw from "./mobs.json";
-import type { ItemId } from "../items/itemDefinitions";
+import { ALL_ITEM_IDS, type ItemId } from "../items/itemDefinitions";
+import type { Facing } from "../player/playerSprites";
+import { MOB_VISUAL_CONFIGS } from "../game/mobs/mobVisualConfig";
+import { buildMobModelsFromVisualConfigs } from "../game/mobs/toMobModelConfig";
 
-export type MobModelId = "gallina";
-export type MobId = "gallina";
+export type MobModelId =
+  | "gallina"
+  | "conejo"
+  | "lobo"
+  | "serpiente"
+  | "arana"
+  | "oso"
+  | "golem_plata"
+  | "aparicion"
+  | "aprendiz_mago"
+  | "asesino"
+  | "basilisco"
+  | "bruja_drow"
+  | "demonio"
+  | "chaman_nieves"
+  | "ciclope"
+  | "training_dummy";
+
+export type MobId =
+  | "gallina"
+  | "conejo"
+  | "lobo"
+  | "serpiente"
+  | "arana"
+  | "oso"
+  | "golem_plata"
+  | "aparicion"
+  | "aprendiz_mago"
+  | "asesino"
+  | "basilisco"
+  | "bruja_drow"
+  | "demonio"
+  | "chaman_nieves"
+  | "ciclope";
+
+const MOB_IDS: MobId[] = [
+  "gallina",
+  "conejo",
+  "lobo",
+  "serpiente",
+  "arana",
+  "oso",
+  "golem_plata",
+  "aparicion",
+  "aprendiz_mago",
+  "asesino",
+  "basilisco",
+  "bruja_drow",
+  "demonio",
+  "chaman_nieves",
+  "ciclope",
+];
+const MOB_MODEL_IDS: MobModelId[] = [
+  "gallina",
+  "conejo",
+  "lobo",
+  "serpiente",
+  "arana",
+  "oso",
+  "golem_plata",
+  "aparicion",
+  "aprendiz_mago",
+  "asesino",
+  "basilisco",
+  "bruja_drow",
+  "demonio",
+  "chaman_nieves",
+  "ciclope",
+  "training_dummy",
+];
 const GLOBAL_MOB_ATTACK_COOLDOWN_MS = 1000;
+
+export type MobBehavior = "aggressive" | "peaceful";
 
 export type MobDropConfig = {
   itemId: ItemId;
@@ -14,8 +87,11 @@ export type MobSpawnConfig = {
   id: string;
   mobId: MobId;
   name: string;
+  behavior: MobBehavior;
   mapId: string;
   hitboxOffsetY: number;
+  hitboxHeightTiles: number;
+  hitboxWidthTiles: number;
   sizeTiles: number;
   modelId: MobModelId;
   maxHp: number;
@@ -31,7 +107,10 @@ export type MobSpawnConfig = {
 export type MobDefinitionConfig = {
   mobId: MobId;
   name: string;
+  behavior: MobBehavior;
   hitboxOffsetY: number;
+  hitboxHeightTiles: number;
+  hitboxWidthTiles: number;
   sizeTiles: number;
   modelId: MobModelId;
   maxHp: number;
@@ -58,6 +137,10 @@ export type MobModelConfig = {
   idleFrame: number;
   sheetCols: number;
   moveFrameCount: number;
+  walkStartFrame?: number;
+  walkAnimFrameCount?: number;
+  mirrorRightFromLeft?: boolean;
+  moveSpeedRatio?: number;
   dirAxis: "rows" | "columns";
   dirRows?: {
     down: number;
@@ -71,49 +154,48 @@ export type MobModelConfig = {
     left: number;
     right: number;
   };
+  /** Frame base por dirección (grillas 2×2 u otras no alineadas a filas). */
+  directionFrames?: Record<Facing, number>;
+  /** Origen Y (0–1) por dirección; 1 = borde inferior del frame en Phaser. */
+  facingOriginY?: Partial<Record<Facing, number>>;
+  /** Columnas de animación de caminar (índices dentro de la fila SWAD). */
+  walkColumns?: number[];
+  visualType?: "singleSheet" | "directionSheets";
+  textureKeysByFacing?: Partial<Record<Facing, string>>;
+  texturePathsByFacing?: Partial<Record<Facing, string>>;
   visualOffsetY: number;
   scale: number;
 };
 
-export const MOB_MODELS: Record<MobModelId, MobModelConfig> = {
-  gallina: {
-    textureKey: "mob_gallina",
-    texturePath: "/assets/ao/imperium/mobs/npc_bodies/gallina.png",
-    frameWidth: 32,
-    frameHeight: 48,
-    idleFrame: 0,
-    sheetCols: 6,
-    moveFrameCount: 6,
-    dirAxis: "rows",
-    dirRows: {
-      down: 0,
-      up: 1,
-      left: 2,
-      right: 3,
-    },
-    visualOffsetY: 0,
-    scale: 1,
-  },
-};
+/** Generado desde `MOB_VISUAL_CONFIGS` (fase 1 — contrato visual). */
+export const MOB_MODELS: Record<MobModelId, MobModelConfig> =
+  buildMobModelsFromVisualConfigs(MOB_VISUAL_CONFIGS);
+
+export { MOB_VISUAL_CONFIGS } from "../game/mobs/mobVisualConfig";
+
+function asMobBehavior(value: string | undefined): MobBehavior {
+  if (value === "peaceful") return "peaceful";
+  return "aggressive";
+}
 
 function asMobId(value: string): MobId {
-  if (value === "gallina") return value;
+  if ((MOB_IDS as readonly string[]).includes(value)) {
+    return value as MobId;
+  }
   throw new Error(`Mob no soportado: ${value}`);
 }
 
 function asMobModelId(value: string): MobModelId {
-  if (value === "gallina") return value;
+  if ((MOB_MODEL_IDS as readonly string[]).includes(value)) {
+    return value as MobModelId;
+  }
   throw new Error(`Modelo de mob no soportado: ${value}`);
 }
 
 function asItemId(value: string): ItemId {
-  if (value === "weapon_saramiana") return value;
-  if (value === "armor_cuero") return value;
-  if (value === "armor_placas") return value;
-  if (value === "armor_placas_rojas") return value;
-  if (value === "armor_placas_azules") return value;
-  if (value === "potion_hp") return value;
-  if (value === "scroll_implosion") return value;
+  if ((ALL_ITEM_IDS as readonly string[]).includes(value)) {
+    return value as ItemId;
+  }
   throw new Error(`Item de drop no soportado: ${value}`);
 }
 
@@ -123,7 +205,10 @@ export const MOB_DEFINITIONS: Record<MobId, MobDefinitionConfig> = Object.fromEn
     {
       mobId: asMobId(mob.mobId),
       name: mob.name,
+      behavior: asMobBehavior(mob.behavior),
       hitboxOffsetY: Math.floor(mob.hitboxOffsetY),
+      hitboxHeightTiles: Math.max(1, Math.floor(mob.hitboxHeightTiles ?? 2)),
+      hitboxWidthTiles: Math.max(1, Math.floor(mob.hitboxWidthTiles ?? 1)),
       sizeTiles: Math.max(1, Math.floor(mob.sizeTiles)),
       modelId: asMobModelId(mob.modelId),
       maxHp: Math.max(1, Math.floor(mob.maxHp)),
@@ -153,8 +238,11 @@ export const MOB_SPAWNS: MobSpawnConfig[] = MAP_MOB_SPAWNS.flatMap((entry) => {
     id: `${entry.mobId}_${entry.mapId}_${index + 1}`,
     mobId: entry.mobId,
     name: base.name,
+    behavior: base.behavior,
     mapId: entry.mapId,
     hitboxOffsetY: base.hitboxOffsetY,
+    hitboxHeightTiles: base.hitboxHeightTiles,
+    hitboxWidthTiles: base.hitboxWidthTiles,
     sizeTiles: base.sizeTiles,
     modelId: base.modelId,
     maxHp: base.maxHp,

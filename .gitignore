@@ -32,3 +32,6 @@ tools/ao-export/_tmp*/
 
 # User-local export folders (optional)
 RecursosAO/
+
+# Referencias de video AO (generadas con ffmpeg, no commitear)
+tools/reference/ao-client-frames/

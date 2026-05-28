@@ -1,6 +1,8 @@
 import Phaser from "phaser";
+import { CharacterCreationScene } from "./scenes/CharacterCreationScene";
 import { CharacterSelectScene } from "./scenes/CharacterSelectScene";
 import { GameScene } from "./scenes/GameScene";
+import { disconnectActiveMultiplayer } from "./network/multiplayerSession";
 import { setupAppNavbar } from "./ui/appNavbar";
 import { reportStartupError, setupErrorDiagnostics } from "./debug/errorDiagnostics";
 
@@ -15,14 +17,21 @@ const config: Phaser.Types.Core.GameConfig = {
   pixelArt: true,
   autoRound: true,
   roundPixels: true,
+  dom: {
+    createContainer: true,
+  },
   scale: {
     mode: Phaser.Scale.FIT,
     autoCenter: Phaser.Scale.CENTER_BOTH,
   },
-  scene: [GameScene, CharacterSelectScene],
+  scene: [GameScene, CharacterSelectScene, CharacterCreationScene],
 };
 
 setupErrorDiagnostics();
+
+if (typeof window !== "undefined") {
+  window.addEventListener("pagehide", () => disconnectActiveMultiplayer());
+}
 
 try {
   const game = new Phaser.Game(config);

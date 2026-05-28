@@ -51,3 +51,53 @@ export function addToInventory(
 
   return { added: count - remaining, remaining };
 }
+
+export function moveEntireStack(
+  from: InventorySlot[],
+  fromIndex: number,
+  to: InventorySlot[]
+): { moved: number; ok: boolean } {
+  const stack = from[fromIndex];
+  if (!stack) {
+    return { moved: 0, ok: false };
+  }
+
+  const result = addToInventory(to, stack.itemId, stack.count);
+  if (result.added <= 0) {
+    return { moved: 0, ok: false };
+  }
+
+  if (result.added >= stack.count) {
+    from[fromIndex] = null;
+  } else {
+    stack.count -= result.added;
+  }
+
+  return { moved: result.added, ok: true };
+}
+
+export function moveStackAmount(
+  from: InventorySlot[],
+  fromIndex: number,
+  to: InventorySlot[],
+  amount: number
+): { moved: number; ok: boolean } {
+  const stack = from[fromIndex];
+  if (!stack) {
+    return { moved: 0, ok: false };
+  }
+
+  const transfer = Math.min(Math.max(1, Math.floor(amount)), stack.count);
+  const result = addToInventory(to, stack.itemId, transfer);
+  if (result.added <= 0) {
+    return { moved: 0, ok: false };
+  }
+
+  if (result.added >= stack.count) {
+    from[fromIndex] = null;
+  } else {
+    stack.count -= result.added;
+  }
+
+  return { moved: result.added, ok: true };
+}

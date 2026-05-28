@@ -1,0 +1,14 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "noEmit": true,
+    "rootDir": "..",
+    "baseUrl": ".."
+  },
+  "include": ["src/**/*.ts", "../shared/**/*.ts", "../game-data/**/*.ts", "../game-data/items/**/*.ts", "../src/maps/**/*.ts", "../src/maps/tileDefinitions.ts", "../src/maps/mapTileUtils.ts", "../src/maps/constants.ts", "../src/maps/types.ts", "../src/maps/mapObjectDefinitions.ts", "../src/npcs/**/*.ts"]
+}

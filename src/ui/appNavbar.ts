@@ -8,8 +8,33 @@ export function setupAppNavbar(game: Phaser.Game): void {
     openCharacterSelect(game);
   });
 
+  setupFullscreenToggle(game);
+
   bindPlaceholderNavButton("nav-news-btn", "Noticias — próximamente.");
   bindPlaceholderNavButton("nav-wiki-btn", "Wiki — próximamente.");
+}
+
+function setupFullscreenToggle(game: Phaser.Game): void {
+  const button = document.getElementById("nav-fullscreen-btn");
+  if (!button) {
+    return;
+  }
+
+  const syncLabel = () => {
+    button.textContent = game.scale.isFullscreen ? "Salir pantalla completa" : "Pantalla completa";
+  };
+
+  game.scale.on("enterfullscreen", syncLabel);
+  game.scale.on("leavefullscreen", syncLabel);
+  syncLabel();
+
+  button.addEventListener("click", () => {
+    if (game.scale.isFullscreen) {
+      game.scale.stopFullscreen();
+    } else {
+      game.scale.startFullscreen();
+    }
+  });
 }
 
 function bindPlaceholderNavButton(elementId: string, message: string): void {
@@ -38,12 +63,23 @@ function setNavStatus(message: string): void {
 }
 
 export function openCharacterSelect(game: Phaser.Game): void {
-  const gameScene = game.scene.getScene("GameScene");
-  const isGameRunning = gameScene?.scene.isActive() ?? false;
+  const charSelectScene = game.scene.getScene("CharacterSelectScene");
+  if (charSelectScene?.scene.isActive()) {
+    return;
+  }
 
-  if (isGameRunning) {
-    game.scene.pause("GameScene");
-    game.scene.run("CharacterSelectScene", { returnMode: "resume" });
+  const gameScene = game.scene.getScene("GameScene");
+  const gameSceneIsUp =
+    Boolean(gameScene) &&
+    (gameScene.scene.isActive() || gameScene.scene.isPaused());
+
+  if (gameSceneIsUp) {
+    if (gameScene.scene.isActive()) {
+      game.scene.pause("GameScene");
+    }
+    if (!charSelectScene?.scene.isActive()) {
+      game.scene.run("CharacterSelectScene", { returnMode: "resume" });
+    }
     return;
   }
 

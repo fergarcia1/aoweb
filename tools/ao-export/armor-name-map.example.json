@@ -1,7 +1,6 @@
 {
-  "1002_b000": "armor_tunicaRoja",
-  "1002_b001": "armor_tunicaAzul",
-  "1009_b000": "armor_cuero",
-  "1105_b000": "gnome_male_base",
-  "1105_b001": "gnome_female_base"
+  "1005_b000": "citizenClothesBajos",
+  "1002_b000": "tunicaRoja",
+  "1002_b001": "tunicaAzul",
+  "1009_b000": "cuero"
 }

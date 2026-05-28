@@ -10,7 +10,7 @@
     },
     {
       "id": "player_citizen",
-      "path": "public/assets/ao/armors/armor_citizenClothes_std.png",
+      "path": "public/assets/ao/armors/citizenClothesBajos_std.png",
       "frameWidth": 32,
       "frameHeight": 48,
       "frames": 20,
@@ -19,7 +19,7 @@
     },
     {
       "id": "player_cuero",
-      "path": "public/assets/ao/armors/armor_cuero_std.png",
+      "path": "public/assets/ao/armors/cuero_std.png",
       "frameWidth": 32,
       "frameHeight": 48,
       "frames": 20,
@@ -46,8 +46,16 @@
       "id": "mob_gallina",
       "path": "public/assets/ao/imperium/mobs/npc_bodies/gallina.png",
       "frameWidth": 32,
-      "frameHeight": 32,
-      "frames": 4,
+      "frameHeight": 48,
+      "frames": 24,
+      "anchor": "feet"
+    },
+    {
+      "id": "mob_lobo",
+      "path": "public/assets/ao/imperium/mobs/npc_bodies/lobo.png",
+      "frameWidth": 128,
+      "frameHeight": 128,
+      "frames": 12,
       "anchor": "feet"
     }
   ]

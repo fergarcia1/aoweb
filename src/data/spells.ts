@@ -1,5 +1,26 @@
 import type { CharacterClassId } from "./items";
 
+export const SPELL_ID = {
+  CURAR_VENENO: 1,
+  PROYECTIL_MAGICO: 2,
+  CURAR_HERIDAS_LEVES: 3,
+  SAETA_IGNEA: 4,
+  PROYECTIL_ELECTRICO: 5,
+  METAMORFOSIS_AGUILA: 6,
+  IMPLOSION: 7,
+  INMOVILIZAR: 8,
+  CURAR_HERIDAS_GRAVES: 9,
+  PARALIZAR: 10,
+  TORMENTA_ELECTRICA: 11,
+} as const;
+
+/** Hechizos que requieren llevar un Anillo Espectral en el inventario. */
+export const SPELL_IDS_REQUIRING_ANILLO_ESPECTRAL = new Set<number>([SPELL_ID.IMPLOSION]);
+
+export function spellRequiresAnilloEspectral(spellId: number): boolean {
+  return SPELL_IDS_REQUIRING_ANILLO_ESPECTRAL.has(spellId);
+}
+
 export type SpellDefinition = {
   idSpell: number;
   nombre: string;
@@ -16,6 +37,10 @@ export type SpellDefinition = {
   usableBy: CharacterClassId[];
   iconAssetPath?: string;
   isStarter: boolean;
+  /** true si afecta tiles alrededor del objetivo, no solo un tile. */
+  aoe: boolean;
+  /** Radio en tiles (Manhattan o redonda según implementación de combate). 0 si aoe es false. */
+  aoeRadiusTiles: number;
 };
 
 export const SPELL_DEFINITIONS: SpellDefinition[] = [
@@ -35,6 +60,8 @@ export const SPELL_DEFINITIONS: SpellDefinition[] = [
     usableBy: ["paladin", "mago", "druida", "asesino"],
     iconAssetPath: "/assets/ao/spells/spell1.png",
     isStarter: true,
+    aoe: false,
+    aoeRadiusTiles: 0,
   },
   {
     idSpell: 2,
@@ -52,6 +79,8 @@ export const SPELL_DEFINITIONS: SpellDefinition[] = [
     usableBy: ["paladin", "mago", "druida", "asesino"],
     iconAssetPath: "/assets/ao/spells/spell2.png",
     isStarter: true,
+    aoe: false,
+    aoeRadiusTiles: 0,
   },
   {
     idSpell: 3,
@@ -69,6 +98,8 @@ export const SPELL_DEFINITIONS: SpellDefinition[] = [
     usableBy: ["paladin", "mago", "druida", "asesino"],
     iconAssetPath: "/assets/ao/spells/spell3.png",
     isStarter: true,
+    aoe: false,
+    aoeRadiusTiles: 0,
   },
   {
     idSpell: 4,
@@ -86,6 +117,8 @@ export const SPELL_DEFINITIONS: SpellDefinition[] = [
     usableBy: ["paladin", "mago", "druida", "asesino"],
     iconAssetPath: "/assets/ao/spells/spell4.png",
     isStarter: false,
+    aoe: false,
+    aoeRadiusTiles: 0,
   },
   {
     idSpell: 5,
@@ -101,7 +134,10 @@ export const SPELL_DEFINITIONS: SpellDefinition[] = [
     puedeUsarseEnAliados: false,
     remueveDebuff: null,
     usableBy: ["mago", "druida"],
+    iconAssetPath: "/assets/ao/spells/spell4.png",
     isStarter: false,
+    aoe: false,
+    aoeRadiusTiles: 0,
   },
   {
     idSpell: 6,
@@ -116,8 +152,11 @@ export const SPELL_DEFINITIONS: SpellDefinition[] = [
     healMax: 0,
     puedeUsarseEnAliados: false,
     remueveDebuff: null,
-    usableBy: ["mago", "druida"],
+    usableBy: ["druida"],
+    iconAssetPath: "/assets/ao/spells/spell2.png",
     isStarter: false,
+    aoe: false,
+    aoeRadiusTiles: 0,
   },
   {
     idSpell: 7,
@@ -135,6 +174,8 @@ export const SPELL_DEFINITIONS: SpellDefinition[] = [
     usableBy: ["paladin", "mago", "druida", "asesino"],
     iconAssetPath: "/assets/ao/spells/spellFuerte.png",
     isStarter: false,
+    aoe: true,
+    aoeRadiusTiles: 2,
   },
   {
     idSpell: 8,
@@ -151,8 +192,10 @@ export const SPELL_DEFINITIONS: SpellDefinition[] = [
     puedeUsarseEnAliados: false,
     remueveDebuff: null,
     usableBy: ["paladin", "mago", "druida", "asesino"],
-    iconAssetPath: "/assets/ao/spells/spell4.png",
+    iconAssetPath: "/assets/ao/spells/spell5.png",
     isStarter: true,
+    aoe: false,
+    aoeRadiusTiles: 0,
   },
   {
     idSpell: 9,
@@ -171,5 +214,46 @@ export const SPELL_DEFINITIONS: SpellDefinition[] = [
     usableBy: ["paladin", "mago", "druida", "asesino"],
     iconAssetPath: "/assets/ao/spells/spell3.png",
     isStarter: true,
+    aoe: false,
+    aoeRadiusTiles: 0,
+  },
+  {
+    idSpell: SPELL_ID.PARALIZAR,
+    nombre: "Paralizar",
+    descripcion:
+      "Descarga arcana que paraliza al objetivo, impidiéndole moverse durante un tiempo.",
+    valor: 5200,
+    nivelMagiaRequerido: 0,
+    manaCost: 220,
+    danioMin: 0,
+    danioMax: 0,
+    healMin: 0,
+    healMax: 0,
+    puedeUsarseEnAliados: false,
+    remueveDebuff: null,
+    usableBy: ["paladin", "mago", "druida", "asesino"],
+    iconAssetPath: "/assets/ao/spells/spell7.png",
+    isStarter: false,
+    aoe: false,
+    aoeRadiusTiles: 0,
+  },
+  {
+    idSpell: SPELL_ID.TORMENTA_ELECTRICA,
+    nombre: "Tormenta Electrica",
+    descripcion: "Invoca una tormenta eléctrica devastadora sobre el objetivo.",
+    valor: 11000,
+    nivelMagiaRequerido: 0,
+    manaCost: 45,
+    danioMin: 55,
+    danioMax: 85,
+    healMin: 0,
+    healMax: 0,
+    puedeUsarseEnAliados: false,
+    remueveDebuff: null,
+    usableBy: ["paladin", "mago", "druida", "asesino"],
+    iconAssetPath: "/assets/ao/spells/spell8.png",
+    isStarter: false,
+    aoe: true,
+    aoeRadiusTiles: 2,
   },
 ];
