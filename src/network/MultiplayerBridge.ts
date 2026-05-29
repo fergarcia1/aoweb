@@ -52,6 +52,7 @@ export type MultiplayerBridgeCallbacks = {
   onWorldItemUpdated: (mapId: string, item: NetWorldItemState) => void;
   onWorldItemRemoved: (mapId: string, worldItemId: string) => void;
   getJoinPayload: () => MultiplayerJoinPayload;
+  onCharacterAlreadyOnline?: (message: string) => void;
 };
 
 /**
@@ -62,6 +63,7 @@ export class MultiplayerBridge {
   private remotePlayers: RemotePlayerManager | null = null;
   private playerId: string | null = null;
   private spawnSynced = false;
+  private skipNextDisconnectNotice = false;
 
   constructor(
     private readonly scene: Phaser.Scene,
@@ -94,6 +96,10 @@ export class MultiplayerBridge {
         this.playerId = null;
         this.spawnSynced = false;
         this.remotePlayers?.clear();
+        if (this.skipNextDisconnectNotice) {
+          this.skipNextDisconnectNotice = false;
+          return;
+        }
         this.callbacks.onStatus("Desconectado del servidor");
         this.callbacks.onChatLine("Perdiste la conexión con el servidor.");
       },
@@ -127,7 +133,12 @@ export class MultiplayerBridge {
       onChat: (from, text) => {
         this.callbacks.onChatLine(`${from}: ${text}`);
       },
-      onError: (message) => {
+      onError: (message, code) => {
+        if (code === "character_already_online") {
+          this.skipNextDisconnectNotice = true;
+          this.callbacks.onCharacterAlreadyOnline?.(message);
+          return;
+        }
         this.callbacks.onStatus(message);
         this.callbacks.onChatLine(message);
       },
@@ -147,6 +158,7 @@ export class MultiplayerBridge {
     this.remotePlayers = null;
     this.playerId = null;
     this.spawnSynced = false;
+    this.skipNextDisconnectNotice = false;
   }
 
   isActive() {

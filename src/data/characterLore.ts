@@ -34,8 +34,8 @@ export const RACE_DESCRIPTIONS: Record<CharacterRaceId, string> = {
 };
 
 export const FACTION_DESCRIPTIONS: Record<CharacterFactionId, string> = {
-  imperial:
-    "El Imperio es la encarnación del orden y la lealtad. Sus ciudadanos luchan por la estabilidad del reino contra el caos.",
+  ciudadano:
+    "Los Ciudadanos defienden el orden del reino. No pueden atacar a otros ciudadanos, pero sí enfrentar a los seguidores del Caos.",
   caos:
-    "Los seguidores del Caos rechazan las normas del Imperio. Forjan su propio camino fuera de la ley, aceptando el riesgo de la criminalidad.",
+    "Los seguidores del Caos pueden atacar a ciudadanos y a otros caóticos. Viven fuera de la ley del reino.",
 };

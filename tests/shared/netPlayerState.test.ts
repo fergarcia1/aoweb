@@ -25,6 +25,22 @@ describe("normalizeNetPlayerState", () => {
     expect(state!.facing).toBe("down");
     expect(state!.equipment.equippedOutfit).toBe("base");
   });
+
+  it("normalizes legacy imperial faction to ciudadano", () => {
+    const state = normalizeNetPlayerState({
+      id: "p1",
+      factionId: "imperial",
+    });
+    expect(state!.factionId).toBe("ciudadano");
+  });
+
+  it("keeps caos faction", () => {
+    const state = normalizeNetPlayerState({
+      id: "p1",
+      factionId: "caos",
+    });
+    expect(state!.factionId).toBe("caos");
+  });
 });
 
 describe("normalizeNetPlayerEquipment", () => {

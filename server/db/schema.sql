@@ -104,4 +104,7 @@ CREATE TABLE IF NOT EXISTS world_items (
 CREATE INDEX IF NOT EXISTS idx_world_items_map_tile
   ON world_items(map_id, tile_x, tile_y);
 
+-- Patches for databases created before newer columns (idempotent).
+ALTER TABLE characters ADD COLUMN IF NOT EXISTS gold INTEGER NOT NULL DEFAULT 0;
+
 COMMIT;

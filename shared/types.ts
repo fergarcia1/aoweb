@@ -4,6 +4,8 @@ export type MoveDirectionId = "up" | "down" | "left" | "right";
 
 export type PlayerRole = "player" | "admin";
 
+import { normalizeFactionId } from "./faction";
+
 export type NetPlayerEquipment = {
   weaponId: string | null;
   shieldId: string | null;
@@ -111,7 +113,7 @@ export function normalizeNetPlayerState(
     raceId: typeof raw.raceId === "string" ? raw.raceId : "human",
     genderId: typeof raw.genderId === "string" ? raw.genderId : "male",
     classId: typeof raw.classId === "string" ? raw.classId : "paladin",
-    factionId: typeof raw.factionId === "string" ? raw.factionId : "imperial",
+    factionId: normalizeFactionId(raw.factionId),
     faceIndex:
       typeof raw.faceIndex === "number" && Number.isFinite(raw.faceIndex)
         ? Math.max(0, Math.floor(raw.faceIndex))

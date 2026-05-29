@@ -93,6 +93,7 @@ import {
   getActiveCharacter,
   getActiveCharacterSlotIndex,
   getPlayerNameColors,
+  normalizeFactionId,
   isAdminCharacterName,
   type PlayerRole,
   loadCharacterSlots,
@@ -288,7 +289,6 @@ import {
   type GameSceneInitData,
   type MacroBinding,
   type MoveDirection,
-  type PlayerAffiliation,
   type PlayerProgressState,
   type RaceId,
   type SpellCastRequest,
@@ -363,8 +363,7 @@ export class GameScene extends Phaser.Scene {
   private attributeBuffs = { strength: 0, agility: 0 };
   /** Expira el bono de pociones verde/amarilla (timer compartido). 0 = sin efecto activo. */
   private attributeBuffExpiresAt = 0;
-  private selectedFaction: CharacterFactionId = "imperial";
-  private readonly playerAffiliation: PlayerAffiliation = "ciudadano";
+  private selectedFaction: CharacterFactionId = "ciudadano";
   private playerProgress: PlayerProgressState = {
     level: 1,
     exp: 0,
@@ -545,7 +544,6 @@ export class GameScene extends Phaser.Scene {
       sendAttackToServer: (facing) => this.multiplayer!.sendAttack(facing),
       sendCastSpellToServer: (spellId, tileX, tileY) =>
         this.multiplayer!.sendCastSpell(spellId, tileX, tileY),
-      ensureServerAliveForCombat: () => this.localPlayerSync.ensureServerReviveSynced(),
       getDummyInAttackRange: () => this.getDummyInAttackRange(),
       getDummyHitTile: (dummy) => this.getDummyHitTile(dummy),
       killDummy: (dummy) => this.killDummy(dummy),
@@ -858,7 +856,15 @@ export class GameScene extends Phaser.Scene {
         this.playerProgress.hp = 0;
       },
       handlePlayerDeath: () => this.handlePlayerDeath(),
+      onCharacterAlreadyOnline: (message) =>
+        this.returnToCharacterSelectForDuplicateLogin(message),
     });
+  }
+
+  private returnToCharacterSelectForDuplicateLogin(message: string) {
+    this.gameUi.addChatLine(message);
+    this.mpController?.disconnect();
+    this.scene.start("CharacterSelectScene");
   }
 
   init(data: GameSceneInitData = {}) {
@@ -1265,7 +1271,7 @@ export class GameScene extends Phaser.Scene {
     this.selectedClass = character.classId;
     this.selectedRace = character.raceId;
     this.selectedGender = character.genderId;
-    this.selectedFaction = character.factionId;
+    this.selectedFaction = normalizeFactionId(character.factionId);
     this.selectedBodyTextureKey = raceBodyTextureKey(character.raceId, character.genderId);
     this.selectedFaceIndex = character.faceIndex;
     this.homeMapId = character.homeMapId ?? DEFAULT_HOME_MAP_ID;
@@ -1583,7 +1589,7 @@ export class GameScene extends Phaser.Scene {
   private inspectPlayerCharacter() {
     const baseText = formatCharacterInspectLine(
       this.playerName,
-      this.playerAffiliation,
+      this.selectedFaction,
       this.selectedClass,
       this.selectedRace,
       this.selectedGender,
@@ -1804,6 +1810,7 @@ export class GameScene extends Phaser.Scene {
         getEquippedWeaponSprite: () => this.equippedWeaponSprite,
         getEquippedShieldSprite: () => this.equippedShieldSprite,
         getEquippedHelmetSprite: () => this.equippedHelmetSprite,
+        isServerAuthoritativeLoot: () => this.isMultiplayerActive(),
         changeMap: (t) => this.changeMap(t as any),
         teleportPlayerLocal: (tx, ty) => {
           this.tweens.killTweensOf(this.player);

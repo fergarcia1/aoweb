@@ -58,7 +58,6 @@ export type GameSceneCombatDeps = {
 
   sendAttackToServer: (facing: Facing) => void;
   sendCastSpellToServer: (spellId: number, tileX: number, tileY: number) => void;
-  ensureServerAliveForCombat?: () => void;
 
   getDummyInAttackRange: () => DummyState | null;
   getDummyHitTile: (dummy: DummyState) => { x: number; y: number };
@@ -161,7 +160,6 @@ export class GameSceneCombatController {
       if (!this.canAffordSpellMana(spell)) {
         return;
       }
-      this.deps.ensureServerAliveForCombat?.();
       const tile = this.deps.getPlayerTile();
       this.playLocalSpellFx(spell.idSpell, tile.x, tile.y);
       this.deps.sendCastSpellToServer(spell.idSpell, tile.x, tile.y);
@@ -230,7 +228,6 @@ export class GameSceneCombatController {
       if (!this.canAffordSpellMana(spell)) {
         return;
       }
-      this.deps.ensureServerAliveForCombat?.();
       this.playLocalSpellFx(spell.idSpell, dummy.tileX, dummy.tileY);
       this.deps.sendCastSpellToServer(spell.idSpell, dummy.tileX, dummy.tileY);
       this.cancelSpellTargeting(`${spell.nombre} lanzado.`);
@@ -289,7 +286,6 @@ export class GameSceneCombatController {
       return;
     }
     if (this.deps.isMultiplayerActive()) {
-      this.deps.ensureServerAliveForCombat?.();
       this.deps.sendAttackToServer(this.deps.getFacing());
       return;
     }

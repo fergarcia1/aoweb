@@ -109,7 +109,7 @@ export type SpellCastRequest = {
 
 export type RaceId = CharacterRaceId;
 export type ClassId = "paladin" | "mago" | "druida" | "guerrero" | "cazador" | "asesino";
-export type PlayerAffiliation = "ciudadano" | "criminal";
+export type { CharacterFactionId } from "../../data/characters";
 
 export type GameSceneInitData = {
   character?: import("../../data/characters").SavedCharacter;

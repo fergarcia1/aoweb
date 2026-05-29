@@ -49,7 +49,7 @@ export type NetworkClientHandlers = {
   onWorldItemSpawned?: (mapId: string, item: NetWorldItemState) => void;
   onWorldItemUpdated?: (mapId: string, item: NetWorldItemState) => void;
   onWorldItemRemoved?: (mapId: string, worldItemId: string) => void;
-  onError?: (message: string) => void;
+  onError?: (message: string, code?: string) => void;
 };
 
 export class NetworkClient {
@@ -273,7 +273,7 @@ export class NetworkClient {
       return;
     }
     if (message.type === "error") {
-      this.handlers.onError?.(message.message);
+      this.handlers.onError?.(message.message, message.code);
     }
   }
 }

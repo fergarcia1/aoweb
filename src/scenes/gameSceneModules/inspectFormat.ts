@@ -1,6 +1,11 @@
-import { formatRaceGenderLabel } from "../../data/characters";
-import type { CharacterGenderId, PlayerRole } from "../../data/characters";
-import type { ClassId, DummyState, PlayerAffiliation, RaceId } from "./types";
+import {
+  FACTION_LABELS,
+  formatRaceGenderLabel,
+  type CharacterFactionId,
+  type CharacterGenderId,
+  type PlayerRole,
+} from "../../data/characters";
+import type { ClassId, DummyState, RaceId } from "./types";
 
 export function formatImmobilizeDuration(durationMs: number): string {
   if (durationMs >= 60_000) {
@@ -20,15 +25,14 @@ export function formatImmobilizeRemaining(remainingMs: number): string {
 
 export function formatCharacterInspectLine(
   name: string,
-  affiliation: PlayerAffiliation,
+  factionId: CharacterFactionId,
   classId: ClassId,
   raceId: RaceId,
   genderId: CharacterGenderId,
   level: number,
   role: PlayerRole = "player"
 ): string {
-  const affiliationLabel =
-    role === "admin" ? "GameMaster" : affiliation === "ciudadano" ? "Ciudadano" : "Criminal";
+  const factionLabel = role === "admin" ? "GameMaster" : FACTION_LABELS[factionId];
   const classLabelById: Record<ClassId, string> = {
     paladin: "Paladín",
     mago: "Mago",
@@ -39,7 +43,7 @@ export function formatCharacterInspectLine(
   };
   const classLabel = classLabelById[classId];
   const raceLabel = formatRaceGenderLabel(raceId, genderId);
-  return `${name} - ${affiliationLabel} - ${classLabel} ${raceLabel} Nivel ${level}`;
+  return `${name} - ${factionLabel} - ${classLabel} ${raceLabel} Nivel ${level}`;
 }
 
 export function getDummyActiveDebuffsForInspect(dummy: DummyState, now: number): string[] {

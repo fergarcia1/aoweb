@@ -73,6 +73,7 @@ export type GameSceneMultiplayerDeps = {
   applyNetMobState: (mob: NetMobState) => void;
   applyNetMobLeft: (mobId: string) => void;
   handleServerPlayerDied: (playerId: string, killerName: string) => void;
+  onCharacterAlreadyOnline: (message: string) => void;
   handleServerUseItemAck: (ack: ServerUseItemAckMessage) => void;
   handleServerPlayerUpdated: (state: NetPlayerState) => void;
 
@@ -191,6 +192,8 @@ export class GameSceneMultiplayerController {
         onGameEvent: (event) => this.onGameEvent(event),
         onPlayerDied: (playerId, killerName) =>
           this.deps.handleServerPlayerDied(playerId, killerName),
+        onCharacterAlreadyOnline: (message) =>
+          this.deps.onCharacterAlreadyOnline(message),
         onUseItemAck: (ack) => this.deps.handleServerUseItemAck(ack),
         onInventoryUpdated: (inventory, gold) => {
           this.deps.syncLocalInventoryFromServer(inventory);

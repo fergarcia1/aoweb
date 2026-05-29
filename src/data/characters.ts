@@ -1,4 +1,12 @@
 import type { CharacterClassId } from "./items";
+import {
+  FACTION_LABELS,
+  normalizeFactionId,
+  type CharacterFactionId,
+} from "../../shared/faction";
+
+export type { CharacterFactionId } from "../../shared/faction";
+export { FACTION_LABELS, normalizeFactionId, canFactionsFight } from "../../shared/faction";
 
 export const CHARACTER_SLOT_COUNT = 6;
 const STORAGE_KEY = "aoweb_character_slots_v2";
@@ -16,8 +24,6 @@ export type CharacterRaceId =
 /** Raza visual al morir (sprites en fantasma_std / fantasma_faces). No es seleccionable. */
 export const GHOST_RACE_ID: CharacterRaceId = "fantasma";
 export type CharacterGenderId = "male" | "female";
-export type CharacterFactionId = "imperial" | "caos";
-
 export type SavedCharacter = {
   id: string;
   name: string;
@@ -63,14 +69,9 @@ export const GENDER_UI_LABELS: Record<CharacterGenderId, string> = {
   female: "Femenino",
 };
 
-export const FACTION_LABELS: Record<CharacterFactionId, string> = {
-  imperial: "Imperial",
-  caos: "Caos",
-};
-
 /** Color del nombre en mundo / HUD / selección de personaje. */
 export const FACTION_NAME_COLORS: Record<CharacterFactionId, { fill: string; stroke: string }> = {
-  imperial: { fill: "#4da6ff", stroke: "#001a33" },
+  ciudadano: { fill: "#4da6ff", stroke: "#001a33" },
   caos: { fill: "#ff5252", stroke: "#330808" },
 };
 
@@ -134,7 +135,7 @@ function createDefaultSlots(): CharacterSlot[] {
       raceId: "human",
       genderId: "male",
       faceIndex: 0,
-      factionId: "imperial",
+      factionId: "ciudadano",
       level: 50,
       homeMapId: "pueblo",
     },
@@ -155,7 +156,7 @@ function createDefaultSlots(): CharacterSlot[] {
       raceId: "gnome",
       genderId: "male",
       faceIndex: 0,
-      factionId: "imperial",
+      factionId: "ciudadano",
       level: 50,
     },
     null,
@@ -180,10 +181,6 @@ function normalizeRaceId(value: string): CharacterRaceId {
 
 function normalizeGenderId(value: unknown): CharacterGenderId {
   return value === "female" ? "female" : "male";
-}
-
-function normalizeFactionId(value: unknown): CharacterFactionId {
-  return value === "caos" ? "caos" : "imperial";
 }
 
 function normalizeSlots(raw: unknown): CharacterSlot[] {

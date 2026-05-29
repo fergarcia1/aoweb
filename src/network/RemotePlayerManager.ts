@@ -1,7 +1,13 @@
 import Phaser from "phaser";
 import { STEP_DURATION_MS, TILE_SIZE } from "../config";
-import type { CharacterFactionId, CharacterGenderId, CharacterRaceId } from "../data/characters";
-import { getPlayerNameColors } from "../data/characters";
+import {
+  GHOST_RACE_ID,
+  getPlayerNameColors,
+  normalizeFactionId,
+  type CharacterFactionId,
+  type CharacterGenderId,
+  type CharacterRaceId,
+} from "../data/characters";
 import {
   GAME_FONT,
   GAME_TEXT_RESOLUTION,
@@ -177,14 +183,7 @@ export class RemotePlayerManager {
   setPlayerGhost(id: string) {
     const entry = this.entries.get(id);
     if (!entry) return;
-    entry.isGhost = true;
-    entry.body.setAlpha(0.35);
-    entry.face.setAlpha(0.35);
-    entry.weaponSprite.setAlpha(0.35);
-    entry.shieldSprite.setAlpha(0.35);
-    entry.helmetSprite.setAlpha(0.35);
-    entry.label.setAlpha(0.5);
-    this.syncRemoteGear(entry);
+    this.applyRemoteGhostAppearance(entry);
   }
 
   forEachVisibleBody(callback: (body: Phaser.GameObjects.Sprite) => void) {
@@ -248,7 +247,10 @@ export class RemotePlayerManager {
     const shieldSprite = createEquippedOverlaySprite(this.scene, feet.x, feet.y);
     const helmetSprite = createEquippedOverlaySprite(this.scene, feet.x, feet.y);
 
-    const colors = getPlayerNameColors(state.factionId as CharacterFactionId, state.role);
+    const colors = getPlayerNameColors(
+      normalizeFactionId(state.factionId) as CharacterFactionId,
+      state.role
+    );
     const label = this.scene.add
       .text(feet.x, feet.y + 2, state.name, {
         fontFamily: GAME_FONT,
@@ -299,7 +301,7 @@ export class RemotePlayerManager {
     if (entry.label.text !== state.name) {
       entry.label.setText(state.name);
       const colors = getPlayerNameColors(
-        state.factionId as CharacterFactionId,
+        normalizeFactionId(state.factionId) as CharacterFactionId,
         state.role
       );
       entry.label.setColor(colors.fill);
@@ -312,28 +314,32 @@ export class RemotePlayerManager {
       this.applyBodyFacing(entry);
     }
 
-    entry.face.setFrame(
-      getFaceFrame(entry.raceId, entry.genderId, entry.faceIndex, entry.facing)
-    );
-
-    const nextOutfit = remoteOutfitFromState(state);
     entry.equipment = netEquipmentToLocal(state.equipment);
-    entry.armorVisual = remoteArmorVisual(
-      entry.equipment,
-      nextOutfit,
-      entry.raceId
-    );
 
-    const nextBodyKey = textureKeyForPlayer(
-      nextOutfit,
-      raceBodyTextureKey(entry.raceId, entry.genderId),
-      entry.armorVisual,
-      entry.raceId
-    );
-    if (nextOutfit !== entry.equippedOutfit || entry.body.texture.key !== nextBodyKey) {
-      entry.equippedOutfit = nextOutfit;
-      entry.body.setTexture(nextBodyKey);
-      entry.body.anims.stop();
+    if (state.hp > 0) {
+      if (entry.isGhost) {
+        this.clearRemoteGhostAppearance(entry, state);
+      }
+      entry.face.setFrame(
+        getFaceFrame(entry.raceId, entry.genderId, entry.faceIndex, entry.facing)
+      );
+      const nextOutfit = remoteOutfitFromState(state);
+      entry.armorVisual = remoteArmorVisual(
+        entry.equipment,
+        nextOutfit,
+        entry.raceId
+      );
+      const nextBodyKey = textureKeyForPlayer(
+        nextOutfit,
+        raceBodyTextureKey(entry.raceId, entry.genderId),
+        entry.armorVisual,
+        entry.raceId
+      );
+      if (nextOutfit !== entry.equippedOutfit || entry.body.texture.key !== nextBodyKey) {
+        entry.equippedOutfit = nextOutfit;
+        entry.body.setTexture(nextBodyKey);
+        entry.body.anims.stop();
+      }
     }
 
     const moved = entry.tileX !== state.tileX || entry.tileY !== state.tileY;
@@ -341,6 +347,9 @@ export class RemotePlayerManager {
     if (!moved && !facingChanged) {
       this.playRemoteBodyAnim(entry, "idle");
       this.syncRemoteVisuals(entry);
+      if (state.hp <= 0) {
+        this.applyRemoteGhostAppearance(entry);
+      }
       return;
     }
 
@@ -374,14 +383,23 @@ export class RemotePlayerManager {
           entry.isMoving = false;
           this.playRemoteBodyAnim(entry, "idle");
           this.syncRemoteVisuals(entry);
+          if (state.hp <= 0) {
+            this.applyRemoteGhostAppearance(entry);
+          }
         },
       });
+      if (state.hp <= 0) {
+        this.applyRemoteGhostAppearance(entry);
+      }
       return;
     }
 
     entry.body.setPosition(target.x, target.y);
     this.playRemoteBodyAnim(entry, "idle");
     this.syncRemoteVisuals(entry);
+    if (state.hp <= 0) {
+      this.applyRemoteGhostAppearance(entry);
+    }
   }
 
   private applyBodyFacing(entry: RemoteEntry) {
@@ -421,17 +439,66 @@ export class RemotePlayerManager {
     syncEquippedHeldItemVisuals(this.buildGearSyncContext(entry));
   }
 
+  private applyRemoteGhostAppearance(entry: RemoteEntry) {
+    entry.isGhost = true;
+    const ghostBodyKey = raceBodyTextureKey(GHOST_RACE_ID, "male");
+    const ghostFaceKey = faceTextureKey(GHOST_RACE_ID, "male");
+    entry.body.setTexture(ghostBodyKey);
+    entry.body.setAlpha(1);
+    entry.body.anims.stop();
+    entry.face.setTexture(ghostFaceKey);
+    entry.face.setFrame(getFaceFrame(GHOST_RACE_ID, "male", entry.faceIndex, entry.facing));
+    entry.face.setAlpha(1);
+    entry.weaponSprite.setVisible(false);
+    entry.shieldSprite.setVisible(false);
+    entry.helmetSprite.setVisible(false);
+    entry.label.setAlpha(1);
+    this.applyBodyFacing(entry);
+    this.playRemoteBodyAnim(entry, "idle");
+    this.syncRemoteVisuals(entry);
+  }
+
+  private clearRemoteGhostAppearance(entry: RemoteEntry, state: NetPlayerState) {
+    entry.isGhost = false;
+    entry.body.setAlpha(1);
+    entry.face.setAlpha(1);
+    entry.weaponSprite.setVisible(true);
+    entry.shieldSprite.setVisible(true);
+    entry.helmetSprite.setVisible(true);
+    entry.label.setAlpha(1);
+    const nextOutfit = remoteOutfitFromState(state);
+    entry.equippedOutfit = nextOutfit;
+    entry.armorVisual = remoteArmorVisual(entry.equipment, nextOutfit, entry.raceId);
+    const bodyKey = textureKeyForPlayer(
+      nextOutfit,
+      raceBodyTextureKey(entry.raceId, entry.genderId),
+      entry.armorVisual,
+      entry.raceId
+    );
+    entry.body.setTexture(bodyKey);
+    entry.face.setTexture(faceTextureKey(entry.raceId, entry.genderId));
+    entry.face.setFrame(
+      getFaceFrame(entry.raceId, entry.genderId, entry.faceIndex, entry.facing)
+    );
+    this.applyBodyFacing(entry);
+    this.playRemoteBodyAnim(entry, "idle");
+    this.syncRemoteGear(entry);
+    this.syncRemoteVisuals(entry);
+  }
+
   private playRemoteBodyAnim(entry: RemoteEntry, state: "walk" | "idle") {
     const isProfile = entry.facing === "left" || entry.facing === "right";
     const bodyFacing: Facing = isProfile ? "left" : entry.facing;
-    const bodyKey = raceBodyTextureKey(entry.raceId, entry.genderId);
+    const visualRaceId = entry.isGhost ? GHOST_RACE_ID : entry.raceId;
+    const visualGenderId = entry.isGhost ? "male" : entry.genderId;
+    const bodyKey = raceBodyTextureKey(visualRaceId, visualGenderId);
     const key = playerAnimationKey(
       state,
       bodyFacing,
-      entry.equippedOutfit,
+      entry.isGhost ? "base" : entry.equippedOutfit,
       bodyKey,
-      entry.armorVisual,
-      entry.raceId
+      entry.isGhost ? undefined : entry.armorVisual,
+      visualRaceId
     );
 
     if (state === "walk" && isProfile) {

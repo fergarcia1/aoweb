@@ -1,7 +1,12 @@
 import type { WebSocket } from "ws";
 import type { AttributeBuffState } from "../../game-data/consumables";
 import { INVENTORY_SLOT_COUNT } from "../../game-data/constants";
-import type { Facing, NetPlayerEquipment, NetPlayerState, PlayerRole } from "../../shared/types";
+import type {
+  Facing,
+  NetPlayerEquipment,
+  NetPlayerState,
+  PlayerRole,
+} from "../../shared/types";
 import { getAttackStatsFromEquipment, getDefenseStatsFromEquipment } from "../../shared/equipmentStats";
 
 export type ServerInventorySlot = {
@@ -78,7 +83,7 @@ export class PlayerSession {
     this.raceId = "human";
     this.genderId = "male";
     this.classId = "paladin";
-    this.factionId = "imperial";
+    this.factionId = "ciudadano";
     this.faceIndex = 0;
   }
 

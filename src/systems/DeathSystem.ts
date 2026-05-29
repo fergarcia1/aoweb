@@ -63,6 +63,8 @@ export type DeathCallbacks = {
     tileY: number,
     mapId: string
   ) => void;
+  /** En multijugador el servidor dropea el loot al morir. */
+  isServerAuthoritativeLoot?: () => boolean;
 };
 
 export class DeathSystem {
@@ -127,6 +129,7 @@ export class DeathSystem {
   dropAllItemsOnDeath() {
     const inventory = this.cb.getInventory();
     const tile = this.cb.getPlayerTile();
+    const spawnOnGround = !(this.cb.isServerAuthoritativeLoot?.() ?? false);
     let droppedInventoryStacks = 0;
     let droppedEquipmentPieces = 0;
     let keptProtectedItems = 0;
@@ -141,7 +144,9 @@ export class DeathSystem {
         continue;
       }
 
-      this.cb.createWorldItem(stack.itemId, tile.x, tile.y, stack.count);
+      if (spawnOnGround) {
+        this.cb.createWorldItem(stack.itemId, tile.x, tile.y, stack.count);
+      }
       this.cb.clearInventorySlot(slotIndex);
       droppedInventoryStacks += 1;
     }
@@ -166,7 +171,9 @@ export class DeathSystem {
         continue;
       }
 
-      this.cb.createWorldItem(itemId, tile.x, tile.y, 1);
+      if (spawnOnGround) {
+        this.cb.createWorldItem(itemId, tile.x, tile.y, 1);
+      }
       this.cb.clearEquipmentSlot(slot);
       droppedEquipmentPieces += 1;
     }

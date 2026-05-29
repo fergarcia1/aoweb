@@ -86,7 +86,7 @@ export class CharacterCreationScene extends Phaser.Scene {
   private raceId: CharacterRaceId = "human";
   private classId: CharacterClassId = "paladin";
   private faceIndex = 0;
-  private factionId: CharacterFactionId = "imperial";
+  private factionId: CharacterFactionId = "ciudadano";
 
   private previewBody!: Phaser.GameObjects.Sprite;
   private previewFace!: Phaser.GameObjects.Sprite;
@@ -375,7 +375,7 @@ export class CharacterCreationScene extends Phaser.Scene {
       })
       .setOrigin(0, 0);
 
-    this.createFactionButton(x + pad, factionY + 16, "imperial");
+    this.createFactionButton(x + pad, factionY + 16, "ciudadano");
     this.createFactionButton(x + pad + 58, factionY + 16, "caos");
 
     const btnY = y + h - pad - 32;
@@ -616,14 +616,14 @@ export class CharacterCreationScene extends Phaser.Scene {
     const size = 48;
     const { x: cx, y: cy } = center;
     bg.clear();
-    bg.fillStyle(faction === "imperial" ? UI.factionImperial : UI.factionCaos, 1);
+    bg.fillStyle(faction === "ciudadano" ? UI.factionImperial : UI.factionCaos, 1);
     bg.fillRoundedRect(cx - size / 2, cy - size / 2, size, size, 4);
     bg.lineStyle(selected ? 2 : 1, selected ? UI.accent : UI.panelBorderDim, 1);
     bg.strokeRoundedRect(cx - size / 2, cy - size / 2, size, size, 4);
   }
 
   private refreshFactionButtons() {
-    (["imperial", "caos"] as CharacterFactionId[]).forEach((faction) => {
+    (["ciudadano", "caos"] as CharacterFactionId[]).forEach((faction) => {
       this.drawFactionButton(faction, this.factionId === faction);
     });
   }

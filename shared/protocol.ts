@@ -218,9 +218,12 @@ export type ServerPlayerDiedMessage = {
   killerName: string;
 };
 
+export type ServerErrorCode = "character_already_online";
+
 export type ServerErrorMessage = {
   type: "error";
   message: string;
+  code?: ServerErrorCode;
 };
 
 export type ServerUseItemAckMessage = {

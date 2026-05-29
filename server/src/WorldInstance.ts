@@ -37,7 +37,12 @@ import { getConsumableById } from "../../game-data/consumables";
 import { isKnownItemId } from "../../game-data/items/registry";
 import { outfitForArmorItemId } from "../../game-data/outfits";
 import { canUseItem } from "../../src/game/itemUsability";
-import { getItemDefinition, type EquipmentSlot, type ItemId } from "../../game-data/items/definitions";
+import {
+  getItemDefinition,
+  itemDropsOnDeath,
+  type EquipmentSlot,
+  type ItemId,
+} from "../../game-data/items/definitions";
 import {
   moveCooldownUntil,
   validateAttackIntent,
@@ -54,6 +59,7 @@ import {
 import { MOB_MODELS, MOB_SPAWNS, type MobModelId } from "../../src/data/mobs";
 import { MOB_DEFAULT_MOVE_SPEED_RATIO } from "../../src/game/mobs/mobVisualConfig";
 import { STEP_DURATION_MS } from "../../game-data/constants";
+import { canFactionsFight, normalizeFactionId } from "../../shared/faction";
 import type { Facing } from "../../shared/types";
 import { getMap } from "../../src/maps/index";
 import { getMapObjectDefinition } from "../../src/maps/mapObjectDefinitions";
@@ -125,6 +131,53 @@ export class WorldInstance {
       }
     }
     return count;
+  }
+
+  private findJoinedSessionByCharacterId(
+    characterId: string,
+    exceptSessionId: string
+  ): PlayerSession | undefined {
+    const normalized = characterId.trim();
+    if (!normalized) {
+      return undefined;
+    }
+    for (const player of this.players.values()) {
+      if (player.id === exceptSessionId || !player.joined) {
+        continue;
+      }
+      if (player.characterId === normalized) {
+        return player;
+      }
+    }
+    return undefined;
+  }
+
+  /** Rechaza el join si el personaje ya está online en otra sesión. */
+  private rejectDuplicateCharacterLogin(session: PlayerSession): boolean {
+    const existing = this.findJoinedSessionByCharacterId(
+      session.characterId,
+      session.id
+    );
+    if (!existing) {
+      return false;
+    }
+
+    console.log(
+      `[join] rechazado personaje duplicado ${session.characterId} (${session.name}); activo en ${existing.id.slice(0, 8)}`
+    );
+
+    this.send(session, {
+      type: "error",
+      code: "character_already_online",
+      message: "Este personaje ya está conectado en otra sesión.",
+    });
+
+    this.players.delete(session.id);
+    this.socketSessions.delete(session.socket);
+    if (session.socket.readyState === session.socket.OPEN) {
+      session.socket.close(4002, "character already online");
+    }
+    return true;
   }
 
   /** Nuevas posiciones aleatorias para todos los mobs (sin repetir tiles en el mapa). */
@@ -416,6 +469,9 @@ export class WorldInstance {
   }
 
   private handlePlayerKilledByMob(mob: MobEntity, victim: PlayerSession) {
+    this.dropPlayerDeathLoot(victim);
+    this.sendInventoryUpdated(victim);
+
     this.broadcastCombatLog(
       victim.mapId,
       victim.tileX,
@@ -533,7 +589,9 @@ export class WorldInstance {
       const session = this.socketSessions.get(socket);
       this.socketSessions.delete(socket);
       if (session) {
-        void this.persistSession(session);
+        void this.persistSession(session).catch((error) => {
+          console.error("[leave] failed to persist session:", error);
+        });
         this.removePlayer(session.id);
       }
     });
@@ -620,6 +678,9 @@ export class WorldInstance {
     mapId?: string
   ) {
     if (!session.joined) {
+      return;
+    }
+    if (session.hp > 0) {
       return;
     }
 
@@ -896,6 +957,10 @@ export class WorldInstance {
     session: PlayerSession,
     message: Extract<ClientMessage, { type: "join" }>
   ) {
+    if (this.rejectDuplicateCharacterLogin(session)) {
+      return;
+    }
+
     const mapId = resolveMultiplayerMapId(message.mapId);
     const clientRequestedThisMap = message.mapId === mapId;
     const spawnOrigin = getMapSpawnTile(mapId);
@@ -905,7 +970,7 @@ export class WorldInstance {
     session.raceId = message.raceId;
     session.genderId = message.genderId;
     session.classId = message.classId;
-    session.factionId = message.factionId;
+    session.factionId = normalizeFactionId(message.factionId);
     session.faceIndex = Math.max(0, Math.floor(message.faceIndex ?? 0));
     session.level = clampPlayerLevel(message.level);
     session.equipment = sanitizeJoinEquipment(message.equipment);
@@ -989,7 +1054,7 @@ export class WorldInstance {
     session.raceId = c.raceId;
     session.genderId = c.genderId;
     session.classId = c.classId;
-    session.factionId = c.factionId;
+    session.factionId = normalizeFactionId(c.factionId);
     session.faceIndex = Math.max(0, Math.floor(c.faceIndex));
     session.level = clampPlayerLevel(c.level);
     session.equipment = sanitizeJoinEquipment({
@@ -1053,6 +1118,10 @@ export class WorldInstance {
   }
 
   private finalizeJoinFromSession(session: PlayerSession, requestedMapId: string) {
+    if (this.rejectDuplicateCharacterLogin(session)) {
+      return;
+    }
+
     const spawnOrigin = getMapSpawnTile(session.mapId);
     const clientRequestedThisMap = requestedMapId === session.mapId;
     const requestedTile =
@@ -1231,6 +1300,12 @@ export class WorldInstance {
         this.sendCombatLog(session, "Esta es zona segura.");
         return;
       }
+      const attackerFaction = normalizeFactionId(session.factionId);
+      const defenderFaction = normalizeFactionId(targetPlayer.factionId);
+      if (!canFactionsFight(attackerFaction, defenderFaction)) {
+        this.sendCombatLog(session, "No podés atacar a un ciudadano.");
+        return;
+      }
       session.nextAttackAt = now + ATTACK_COOLDOWN_MS;
       const roll = rollAttackDamage(session.attackMin, session.attackMax, {
         canCrit: session.canCrit,
@@ -1357,6 +1432,12 @@ export class WorldInstance {
     if (targetPlayer && (spell.danioMax > 0 || spell.danioMin > 0)) {
       if (this.isInSafeZone(session) || this.isInSafeZone(targetPlayer)) {
         this.sendCombatLog(session, "Esta es zona segura.");
+        return;
+      }
+      const attackerFaction = normalizeFactionId(session.factionId);
+      const defenderFaction = normalizeFactionId(targetPlayer.factionId);
+      if (!canFactionsFight(attackerFaction, defenderFaction)) {
+        this.sendCombatLog(session, "No podés atacar a un ciudadano.");
         return;
       }
       const base = rollInt(spell.danioMin, spell.danioMax);
@@ -1505,6 +1586,9 @@ export class WorldInstance {
   }
 
   private handlePlayerKilled(killer: PlayerSession, victim: PlayerSession) {
+    this.dropPlayerDeathLoot(victim);
+    this.sendInventoryUpdated(victim);
+
     this.broadcastCombatLog(
       victim.mapId,
       victim.tileX,
@@ -1947,6 +2031,130 @@ export class WorldInstance {
       `Tiraste ${safeAmount.toLocaleString("es-AR")} de oro.`
     );
     void this.persistSession(session);
+  }
+
+  private findNearestWorldItemDropTile(
+    mapId: string,
+    originX: number,
+    originY: number
+  ): { tileX: number; tileY: number } | null {
+    const canDrop = (tileX: number, tileY: number) =>
+      isMapTileWalkable(mapId, tileX, tileY) &&
+      !this.worldItems.findAtTile(mapId, tileX, tileY);
+
+    if (canDrop(originX, originY)) {
+      return { tileX: originX, tileY: originY };
+    }
+
+    const maxDistance = 24;
+    for (let distance = 1; distance <= maxDistance; distance += 1) {
+      for (let dy = -distance; dy <= distance; dy += 1) {
+        for (let dx = -distance; dx <= distance; dx += 1) {
+          if (Math.abs(dx) + Math.abs(dy) !== distance) continue;
+          const tileX = originX + dx;
+          const tileY = originY + dy;
+          if (canDrop(tileX, tileY)) {
+            return { tileX, tileY };
+          }
+        }
+      }
+    }
+    return null;
+  }
+
+  private spawnDeathLootAt(
+    session: PlayerSession,
+    itemId: string,
+    count: number
+  ): void {
+    if (!MULTIPLAYER_SERVER_MAP_IDS.has(session.mapId) || count <= 0) {
+      return;
+    }
+
+    const dropTile = this.findNearestWorldItemDropTile(
+      session.mapId,
+      session.tileX,
+      session.tileY
+    );
+    if (!dropTile) {
+      return;
+    }
+
+    const before = this.worldItems.findAtTile(
+      session.mapId,
+      dropTile.tileX,
+      dropTile.tileY
+    );
+    const record = this.worldItems.spawn(
+      session.mapId,
+      itemId,
+      dropTile.tileX,
+      dropTile.tileY,
+      count
+    );
+    if (!record) {
+      return;
+    }
+
+    const kind = before?.id === record.id ? "updated" : "spawned";
+    this.broadcastWorldItemState(
+      session.mapId,
+      dropTile.tileX,
+      dropTile.tileY,
+      record,
+      kind
+    );
+  }
+
+  private dropPlayerDeathLoot(session: PlayerSession) {
+    if (!MULTIPLAYER_SERVER_MAP_IDS.has(session.mapId)) {
+      return;
+    }
+
+    const equipmentSlots: EquipmentSlot[] = ["weapon", "shield", "helmet", "armor"];
+
+    for (const slot of session.inventorySlots) {
+      if (!slot.itemId || slot.amount <= 0) continue;
+      if (!isKnownItemId(slot.itemId)) {
+        slot.itemId = null;
+        slot.amount = 0;
+        slot.isEquipped = false;
+        continue;
+      }
+
+      const item = getItemDefinition(slot.itemId as ItemId);
+      if (!itemDropsOnDeath(item)) {
+        continue;
+      }
+
+      this.spawnDeathLootAt(session, slot.itemId, slot.amount);
+      slot.itemId = null;
+      slot.amount = 0;
+      slot.isEquipped = false;
+    }
+
+    for (const equipSlot of equipmentSlots) {
+      const itemId = session.equipment[`${equipSlot}Id`];
+      if (!itemId || !isKnownItemId(itemId)) continue;
+
+      const item = getItemDefinition(itemId as ItemId);
+      if (!itemDropsOnDeath(item)) {
+        const { added } = addToServerInventory(session.inventorySlots, itemId, 1);
+        if (added > 0) {
+          session.equipment[`${equipSlot}Id`] = null;
+        }
+        continue;
+      }
+
+      this.spawnDeathLootAt(session, itemId, 1);
+      session.equipment[`${equipSlot}Id`] = null;
+    }
+
+    session.equipment.equippedOutfit =
+      outfitForArmorItemId(session.equipment.armorId) ?? "base";
+    this.syncInventoryEquippedFlags(session);
+    session.recalcDefenseStats();
+    session.recalcAttackStats();
   }
 
   private handlePickupWorldItem(session: PlayerSession) {
