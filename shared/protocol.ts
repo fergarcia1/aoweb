@@ -118,6 +118,16 @@ export type ClientPickupWorldItemMessage = {
   type: "pickup_world_item";
 };
 
+export type ClientReviveMessage = {
+  type: "revive";
+  /** priest = sacerdote (/hogar o NPC); ally = revivir de aliado. */
+  source: "priest" | "ally";
+  /** Posición del cliente al revivir (sacerdote / hogar). */
+  tileX?: number;
+  tileY?: number;
+  mapId?: string;
+};
+
 export type ClientMessage =
   | ClientJoinMessage
   | ClientMoveMessage
@@ -130,7 +140,8 @@ export type ClientMessage =
   | ClientSyncInventoryMessage
   | ClientDropItemMessage
   | ClientDropGoldMessage
-  | ClientPickupWorldItemMessage;
+  | ClientPickupWorldItemMessage
+  | ClientReviveMessage;
 
 export type NetInventorySlotState = {
   slotIndex: number;

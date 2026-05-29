@@ -58,6 +58,7 @@ export type GameSceneCombatDeps = {
 
   sendAttackToServer: (facing: Facing) => void;
   sendCastSpellToServer: (spellId: number, tileX: number, tileY: number) => void;
+  ensureServerAliveForCombat?: () => void;
 
   getDummyInAttackRange: () => DummyState | null;
   getDummyHitTile: (dummy: DummyState) => { x: number; y: number };
@@ -160,6 +161,7 @@ export class GameSceneCombatController {
       if (!this.canAffordSpellMana(spell)) {
         return;
       }
+      this.deps.ensureServerAliveForCombat?.();
       const tile = this.deps.getPlayerTile();
       this.playLocalSpellFx(spell.idSpell, tile.x, tile.y);
       this.deps.sendCastSpellToServer(spell.idSpell, tile.x, tile.y);
@@ -228,6 +230,7 @@ export class GameSceneCombatController {
       if (!this.canAffordSpellMana(spell)) {
         return;
       }
+      this.deps.ensureServerAliveForCombat?.();
       this.playLocalSpellFx(spell.idSpell, dummy.tileX, dummy.tileY);
       this.deps.sendCastSpellToServer(spell.idSpell, dummy.tileX, dummy.tileY);
       this.cancelSpellTargeting(`${spell.nombre} lanzado.`);
@@ -286,6 +289,7 @@ export class GameSceneCombatController {
       return;
     }
     if (this.deps.isMultiplayerActive()) {
+      this.deps.ensureServerAliveForCombat?.();
       this.deps.sendAttackToServer(this.deps.getFacing());
       return;
     }
@@ -507,6 +511,17 @@ export class GameSceneCombatController {
     }
     const damageApplied = Math.max(0, Math.floor(rawDamage));
     dummy.hp = Math.max(0, dummy.hp - damageApplied);
+    if (dummy.behavior === "aggressive" && dummy.attackDamage > 0) {
+      dummy.isAggroed = true;
+      const playerTile = this.deps.getPlayerTile();
+      dummy.facing = this.resolveFacingTowards(
+        dummy.tileX,
+        dummy.tileY,
+        playerTile.x,
+        playerTile.y,
+        dummy.facing
+      );
+    }
     this.showDamageNumber(dummy.sprite.x, dummy.sprite.y - 38, damageApplied, "player");
 
     if (dummy.hp > 0) {
@@ -518,6 +533,24 @@ export class GameSceneCombatController {
 
     this.deps.killDummy(dummy);
     return { damageApplied, killed: true };
+  }
+
+  private resolveFacingTowards(
+    fromTileX: number,
+    fromTileY: number,
+    toTileX: number,
+    toTileY: number,
+    fallbackFacing: Facing
+  ): Facing {
+    const dx = toTileX - fromTileX;
+    const dy = toTileY - fromTileY;
+    if (dx === 0 && dy === 0) {
+      return fallbackFacing;
+    }
+    if (Math.abs(dx) >= Math.abs(dy)) {
+      return dx >= 0 ? "right" : "left";
+    }
+    return dy >= 0 ? "down" : "up";
   }
 
   private getSpellTargetHint(spell: SpellCastRequest): string {

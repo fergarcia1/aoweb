@@ -32,6 +32,7 @@ export function buildSnapshotFromPlayerSession(
     hpMax: session.hpMax,
     mp: session.mp,
     mpMax: session.mpMax,
+    gold: session.gold,
     equipment: {
       weaponItemId: session.equipment.weaponId,
       shieldItemId: session.equipment.shieldId,
@@ -75,6 +76,7 @@ export function mapCharacterSnapshotToRow(snapshot: CharacterSnapshot): Characte
     hp_max: snapshot.hpMax,
     mp: snapshot.mp,
     mp_max: snapshot.mpMax,
+    gold: snapshot.gold,
     weapon_item_id: snapshot.equipment.weaponItemId,
     shield_item_id: snapshot.equipment.shieldItemId,
     helmet_item_id: snapshot.equipment.helmetItemId,
@@ -107,6 +109,7 @@ export function mapCharacterRowToSnapshot(row: CharacterRow): PersistedCharacter
       hpMax: row.hp_max,
       mp: row.mp,
       mpMax: row.mp_max,
+      gold: row.gold,
       equipment: {
         weaponItemId: row.weapon_item_id,
         shieldItemId: row.shield_item_id,

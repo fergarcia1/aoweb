@@ -10,3 +10,6 @@ export * from "./GameSceneMobController";
 export * from "./GameSceneMapController";
 export * from "./GameSceneInventoryController";
 export * from "./GameSceneCombatController";
+export * from "./GameSceneLocalPlayerSync";
+export * from "./GameSceneConsumableController";
+export * from "./characterProgressApply";

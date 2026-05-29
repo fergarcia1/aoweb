@@ -42,11 +42,17 @@ export type DummyState = {
   fixedSpawnTile?: { x: number; y: number };
   facing: Facing;
   isMoving: boolean;
+  /** Tile destino del tween de red (evita reiniciar animación a mitad de paso). */
+  netMoveTargetTile?: { x: number; y: number };
+  /** Pasos pendientes del servidor para movimiento fluido en MP. */
+  netMoveQueue?: Array<{ x: number; y: number; facing: Facing }>;
   wasAdjacentToPlayer: boolean;
   sprite: Phaser.GameObjects.Sprite;
   face?: Phaser.GameObjects.Sprite;
   hpLabel: Phaser.GameObjects.Text;
   alive: boolean;
+  /** Timer de respawn local (solo modo solo; cancelar si el servidor revive el mob). */
+  respawnTimer?: Phaser.Time.TimerEvent;
   /** Exhibición en caja de arena: circuito S→D→W→A sin IA de combate. */
   isShowcase?: boolean;
   showcaseStepIndex?: number;

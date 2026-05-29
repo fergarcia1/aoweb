@@ -1,6 +1,10 @@
 import { randomUUID } from "node:crypto";
 import type { WebSocket } from "ws";
 import { isInAoi } from "../../shared/aoi";
+import {
+  resolveJoinFallbackGold,
+  resolveJoinGoldFromMessage,
+} from "../../shared/joinSession";
 import { DEFAULT_MAP_ID, SAFE_ZONE_MAP_IDS, WORLD_TICK_MS } from "../../shared/constants";
 import {
   clampPlayerLevel,
@@ -20,7 +24,10 @@ import {
   rollInt,
 } from "../../shared/combat";
 import { mobFootprintOccupiesTile } from "../../shared/mobFootprint";
-import { buildAllInitialMobPlacements } from "../../shared/mobSpawns";
+import {
+  buildAllInitialMobPlacements,
+  pickRandomMobSpawnTile,
+} from "../../shared/mobSpawns";
 import {
   expireAttributeBuffs,
   tryUseConsumableOnVitals,
@@ -44,6 +51,10 @@ import {
   getMapSpawnTile,
   isMapTileWalkable,
 } from "../../shared/mapWalkability";
+import { MOB_MODELS, MOB_SPAWNS, type MobModelId } from "../../src/data/mobs";
+import { MOB_DEFAULT_MOVE_SPEED_RATIO } from "../../src/game/mobs/mobVisualConfig";
+import { STEP_DURATION_MS } from "../../game-data/constants";
+import type { Facing } from "../../shared/types";
 import { getMap } from "../../src/maps/index";
 import { getMapObjectDefinition } from "../../src/maps/mapObjectDefinitions";
 import type { MapObjectPlacement } from "../../src/maps/types";
@@ -63,6 +74,11 @@ import {
 const INMOVILIZADO_MS = 6000;
 const JOIN_TIMEOUT_MS = 15_000;
 const AUTOSAVE_INTERVAL_MS = 30_000;
+
+function getMobStepDurationMs(modelId: MobModelId): number {
+  const ratio = MOB_MODELS[modelId]?.moveSpeedRatio ?? MOB_DEFAULT_MOVE_SPEED_RATIO;
+  return Math.max(200, Math.ceil(STEP_DURATION_MS / ratio));
+}
 
 function isTileBlockedByMapObject(
   objects: MapObjectPlacement[] | undefined,
@@ -98,7 +114,35 @@ export class WorldInstance {
   }
 
   private initAllMobs() {
+    this.applyFreshMobPlacements();
+  }
+
+  private countJoinedPlayers(): number {
+    let count = 0;
+    for (const player of this.players.values()) {
+      if (player.joined) {
+        count += 1;
+      }
+    }
+    return count;
+  }
+
+  /** Nuevas posiciones aleatorias para todos los mobs (sin repetir tiles en el mapa). */
+  private applyFreshMobPlacements() {
     for (const placement of buildAllInitialMobPlacements()) {
+      const spawn = MOB_SPAWNS.find((entry) => entry.id === placement.spawnId);
+      const existing = this.mobs.get(placement.spawnId);
+      if (existing) {
+        existing.tileX = placement.tileX;
+        existing.tileY = placement.tileY;
+        existing.alive = true;
+        existing.hp = existing.maxHp;
+        existing.respawnAt = 0;
+        continue;
+      }
+      if (!spawn) {
+        continue;
+      }
       this.mobs.set(
         placement.spawnId,
         new MobEntity({
@@ -113,9 +157,70 @@ export class WorldInstance {
           hitboxOffsetY: placement.hitboxOffsetY,
           hitboxWidthTiles: placement.hitboxWidthTiles,
           hitboxHeightTiles: placement.hitboxHeightTiles,
+          detectionRangeTiles: spawn.detectionRangeTiles,
+          leashRangeTiles: spawn.leashRangeTiles,
+          attackDamage: spawn.attackDamage,
+          attackCooldownMs: spawn.attackCooldownMs,
+          respawnMs: spawn.respawnMs,
+          aiMoveCooldownMs: getMobStepDurationMs(spawn.modelId),
         })
       );
     }
+  }
+
+  private aggroMobOnPlayerHit(mob: MobEntity, attacker: PlayerSession) {
+    if (!mob.alive || mob.behavior !== "aggressive" || mob.attackDamage <= 0) {
+      return;
+    }
+    mob.isAggroed = true;
+    mob.facing = this.facingTowards(mob.tileX, mob.tileY, attacker.tileX, attacker.tileY);
+  }
+
+  private maybeRerollMobPlacementsForNewSession() {
+    if (this.countJoinedPlayers() > 0) {
+      return;
+    }
+    this.applyFreshMobPlacements();
+  }
+
+  private isTileBlockedForMobSpawn(
+    mapId: string,
+    tileX: number,
+    tileY: number,
+    excludeMobId?: string
+  ): boolean {
+    if (!isMapTileWalkable(mapId, tileX, tileY)) {
+      return true;
+    }
+    if (isTileBlockedByMapObject(getMap(mapId).objects, tileX, tileY)) {
+      return true;
+    }
+    if (getNpcOccupiedTiles(mapId).some((tile) => tile.x === tileX && tile.y === tileY)) {
+      return true;
+    }
+    for (const mob of this.mobs.values()) {
+      if (mob.id === excludeMobId || mob.mapId !== mapId || !mob.alive) {
+        continue;
+      }
+      if (mob.tileX === tileX && mob.tileY === tileY) {
+        return true;
+      }
+    }
+    for (const player of this.players.values()) {
+      if (!player.joined || player.mapId !== mapId) {
+        continue;
+      }
+      if (player.tileX === tileX && player.tileY === tileY) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  private pickRandomMobSpawnTileForMap(mapId: string, excludeMobId?: string) {
+    return pickRandomMobSpawnTile(mapId, (tileX, tileY) =>
+      this.isTileBlockedForMobSpawn(mapId, tileX, tileY, excludeMobId)
+    );
   }
 
   start() {
@@ -136,6 +241,7 @@ export class WorldInstance {
       this.broadcastMobUpdated(mob);
     }
     this.processMobWander();
+    this.processMobCombat();
     this.autosavePlayersIfDue();
   }
 
@@ -161,6 +267,169 @@ export class WorldInstance {
       this.tryWanderMob(mob);
       mob.scheduleNextWander();
     }
+  }
+
+  private processMobCombat() {
+    const now = Date.now();
+
+    for (const mob of this.mobs.values()) {
+      if (!mob.alive) continue;
+      if (mob.behavior !== "aggressive") continue;
+      if (mob.attackDamage <= 0) continue;
+      if (mob.isImmobilized(now)) continue;
+
+      const target = this.findClosestPlayerForMob(mob);
+      if (!target || target.hp <= 0) {
+        mob.isAggroed = false;
+        continue;
+      }
+
+      const distance =
+        Math.abs(target.tileX - mob.tileX) + Math.abs(target.tileY - mob.tileY);
+
+      if (distance > mob.leashRangeTiles) {
+        mob.isAggroed = false;
+        continue;
+      }
+
+      if (!mob.isAggroed && distance <= mob.detectionRangeTiles) {
+        mob.isAggroed = true;
+      }
+
+      if (!mob.isAggroed) continue;
+
+      if (distance === 1) {
+        if (now >= mob.nextAttackAt) {
+          mob.nextAttackAt = now + mob.attackCooldownMs;
+          mob.facing = this.facingTowards(mob.tileX, mob.tileY, target.tileX, target.tileY);
+          this.applyMobDamageToPlayer(mob, target, mob.attackDamage);
+          this.broadcastMobUpdated(mob);
+        }
+        continue;
+      }
+
+      if (now < mob.nextMoveAt) continue;
+
+      const step = this.pickMobStepTowards(mob, target.tileX, target.tileY);
+      if (!step) continue;
+
+      mob.tileX = step.x;
+      mob.tileY = step.y;
+      mob.facing = step.facing;
+      mob.nextMoveAt = now + mob.aiMoveCooldownMs;
+      this.broadcastMobUpdated(mob);
+    }
+  }
+
+  private findClosestPlayerForMob(mob: MobEntity): PlayerSession | null {
+    let closest: PlayerSession | null = null;
+    let closestDistance = Number.POSITIVE_INFINITY;
+
+    for (const player of this.players.values()) {
+      if (!player.joined || player.mapId !== mob.mapId || player.hp <= 0) continue;
+      const distance =
+        Math.abs(player.tileX - mob.tileX) + Math.abs(player.tileY - mob.tileY);
+      if (distance < closestDistance) {
+        closestDistance = distance;
+        closest = player;
+      }
+    }
+
+    return closest;
+  }
+
+  private pickMobStepTowards(
+    mob: MobEntity,
+    targetTileX: number,
+    targetTileY: number
+  ): { x: number; y: number; facing: Facing } | null {
+    const dx = targetTileX - mob.tileX;
+    const dy = targetTileY - mob.tileY;
+    const stepX = Math.sign(dx);
+    const stepY = Math.sign(dy);
+    const prioritizeX = Math.abs(dx) >= Math.abs(dy);
+
+    const candidates: Array<{ x: number; y: number; facing: Facing }> = prioritizeX
+      ? [
+          { x: mob.tileX + stepX, y: mob.tileY, facing: stepX < 0 ? "left" : stepX > 0 ? "right" : mob.facing },
+          { x: mob.tileX, y: mob.tileY + stepY, facing: stepY < 0 ? "up" : stepY > 0 ? "down" : mob.facing },
+        ]
+      : [
+          { x: mob.tileX, y: mob.tileY + stepY, facing: stepY < 0 ? "up" : stepY > 0 ? "down" : mob.facing },
+          { x: mob.tileX + stepX, y: mob.tileY, facing: stepX < 0 ? "left" : stepX > 0 ? "right" : mob.facing },
+        ];
+
+    for (const candidate of candidates) {
+      if (candidate.x === mob.tileX && candidate.y === mob.tileY) continue;
+      if (!isMapTileWalkable(mob.mapId, candidate.x, candidate.y)) continue;
+      if (this.isTileOccupiedByMobOrPlayer(candidate.x, candidate.y, mob.mapId, mob.id)) {
+        continue;
+      }
+      return candidate;
+    }
+
+    return null;
+  }
+
+  private facingTowards(
+    fromX: number,
+    fromY: number,
+    toX: number,
+    toY: number
+  ): Facing {
+    const dx = toX - fromX;
+    const dy = toY - fromY;
+    if (Math.abs(dx) >= Math.abs(dy)) {
+      return dx < 0 ? "left" : dx > 0 ? "right" : "down";
+    }
+    return dy < 0 ? "up" : dy > 0 ? "down" : "down";
+  }
+
+  private applyMobDamageToPlayer(mob: MobEntity, victim: PlayerSession, rawDamage: number) {
+    if (victim.hp <= 0) return;
+
+    const mitigated = Math.max(
+      1,
+      Math.floor(rawDamage * (1 - victim.damageReductionPercent))
+    );
+    victim.hp = Math.max(0, victim.hp - mitigated);
+
+    this.broadcastGameEvent(victim.mapId, victim.tileX, victim.tileY, {
+      kind: "damage",
+      targetKind: "player",
+      targetId: victim.id,
+      amount: mitigated,
+      tileX: victim.tileX,
+      tileY: victim.tileY,
+    });
+
+    this.broadcastToAoi(victim.mapId, victim.tileX, victim.tileY, {
+      type: "player_updated",
+      player: victim.toNetState(),
+    });
+    this.send(victim, { type: "player_updated", player: victim.toNetState() });
+    this.sendCombatLog(victim, `${mob.name} te golpea por ${mitigated}.`);
+
+    if (victim.hp <= 0) {
+      this.handlePlayerKilledByMob(mob, victim);
+    }
+  }
+
+  private handlePlayerKilledByMob(mob: MobEntity, victim: PlayerSession) {
+    this.broadcastCombatLog(
+      victim.mapId,
+      victim.tileX,
+      victim.tileY,
+      `${mob.name} ha matado a ${victim.name}.`
+    );
+
+    const diedMsg: ServerMessage = {
+      type: "player_died",
+      playerId: victim.id,
+      killerName: mob.name,
+    };
+    this.send(victim, diedMsg);
+    this.broadcastToAoi(victim.mapId, victim.tileX, victim.tileY, diedMsg, victim.id);
   }
 
   private tryWanderMob(mob: MobEntity) {
@@ -200,15 +469,19 @@ export class WorldInstance {
     return false;
   }
 
-  /** Respawns pendientes; cada uno se anuncia con `mob_updated` (sin snapshot global). */
+  /** Respawns pendientes; cada uno reaparece en un tile aleatorio del mapa. */
   private processMobRespawns(): MobEntity[] {
     const respawned: MobEntity[] = [];
     const now = Date.now();
     for (const mob of this.mobs.values()) {
       if (mob.alive || now < mob.respawnAt) continue;
+      const tile = this.pickRandomMobSpawnTileForMap(mob.mapId, mob.id);
+      mob.tileX = tile.x;
+      mob.tileY = tile.y;
       mob.alive = true;
       mob.hp = mob.maxHp;
       mob.respawnAt = 0;
+      mob.isAggroed = false;
       respawned.push(mob);
     }
     return respawned;
@@ -326,7 +599,76 @@ export class WorldInstance {
     }
     if (message.type === "pickup_world_item") {
       this.handlePickupWorldItem(session);
+      return;
     }
+    if (message.type === "revive") {
+      this.handleRevive(
+        session,
+        message.source,
+        message.tileX,
+        message.tileY,
+        message.mapId
+      );
+    }
+  }
+
+  private handleRevive(
+    session: PlayerSession,
+    source: "priest" | "ally",
+    tileX?: number,
+    tileY?: number,
+    mapId?: string
+  ) {
+    if (!session.joined) {
+      return;
+    }
+
+    if (source === "priest") {
+      session.hp = session.hpMax;
+      this.applyRevivePosition(session, tileX, tileY, mapId);
+    } else {
+      session.hp = Math.max(1, Math.floor(session.hpMax * 0.35));
+    }
+
+    this.sendPlayerState(session);
+    this.send(session, {
+      type: "player_moved",
+      player: session.toNetState(),
+    });
+    this.broadcastPlayerMoved(session);
+    void this.persistSession(session).catch((error) => {
+      console.error("[revive] persist failed:", error);
+    });
+  }
+
+  /** Aplica tile de revive del cliente si es caminable y no está ocupado. */
+  private applyRevivePosition(
+    session: PlayerSession,
+    tileX?: number,
+    tileY?: number,
+    mapId?: string
+  ) {
+    if (
+      typeof tileX !== "number" ||
+      typeof tileY !== "number" ||
+      !Number.isFinite(tileX) ||
+      !Number.isFinite(tileY)
+    ) {
+      return;
+    }
+    const targetMapId =
+      typeof mapId === "string" && mapId.trim() ? mapId.trim() : session.mapId;
+    const nextX = Math.floor(tileX);
+    const nextY = Math.floor(tileY);
+    if (!isMapTileWalkable(targetMapId, nextX, nextY)) {
+      return;
+    }
+    if (this.isTileOccupied(nextX, nextY, targetMapId, session.id)) {
+      return;
+    }
+    session.mapId = targetMapId;
+    session.tileX = nextX;
+    session.tileY = nextY;
   }
 
   private handleSyncInventory(
@@ -428,6 +770,7 @@ export class WorldInstance {
       message: result.message,
     });
     this.sendPlayerState(session);
+    this.sendInventoryUpdated(session);
     void this.persistSession(session).catch((error) => {
       console.error("[use_item] persist failed:", error);
     });
@@ -576,10 +919,7 @@ export class WorldInstance {
     session.hp = hpPair.current;
     session.mpMax = mpPair.max;
     session.mp = mpPair.current;
-    session.gold =
-      typeof message.gold === "number" && Number.isFinite(message.gold)
-        ? Math.max(0, Math.floor(message.gold))
-        : 0;
+    session.gold = resolveJoinFallbackGold(message.gold);
     session.facing = normalizeFacing(message.facing);
 
     const requestedTile =
@@ -610,6 +950,7 @@ export class WorldInstance {
       session.tileY = spawn.tileY;
     }
 
+    this.maybeRerollMobPlacementsForNewSession();
     session.joined = true;
 
     this.sendWelcome(session);
@@ -631,7 +972,7 @@ export class WorldInstance {
       return;
     }
     this.applyPersistedSnapshot(session, persisted);
-    this.applyJoinClientOverrides(session, message);
+    this.applyJoinClientOverrides(session, message, { trustPersistedInventory: true });
     this.finalizeJoinFromSession(session, message.mapId);
   }
 
@@ -664,6 +1005,7 @@ export class WorldInstance {
     session.hpMax = Math.max(1, Math.floor(c.hpMax));
     session.mp = Math.max(0, Math.floor(c.mp));
     session.mpMax = Math.max(0, Math.floor(c.mpMax));
+    session.gold = Math.max(0, Math.floor(c.gold));
     session.attributeBuffs = {
       strength: Math.max(0, Math.floor(c.attributeBuffs.strengthBonus)),
       agility: Math.max(0, Math.floor(c.attributeBuffs.agilityBonus)),
@@ -686,11 +1028,26 @@ export class WorldInstance {
    */
   private applyJoinClientOverrides(
     session: PlayerSession,
-    message: Extract<ClientMessage, { type: "join" }>
+    message: Extract<ClientMessage, { type: "join" }>,
+    options?: { trustPersistedInventory?: boolean }
   ) {
     session.equipment = sanitizeJoinEquipment(message.equipment);
-    session.inventorySlots = sanitizeJoinInventory(message.inventory);
+    if (!options?.trustPersistedInventory) {
+      session.inventorySlots = sanitizeJoinInventory(message.inventory);
+    }
     this.syncInventoryEquippedFlags(session);
+
+    const hpPair = clampVitalPair(message.hp, message.hpMax, session.hpMax);
+    const mpPair = clampVitalPair(message.mp, message.mpMax, session.mpMax);
+    session.hpMax = hpPair.max;
+    session.hp = hpPair.current;
+    session.mpMax = mpPair.max;
+    session.mp = mpPair.current;
+    if (typeof message.level === "number" && Number.isFinite(message.level)) {
+      session.level = clampPlayerLevel(message.level);
+    }
+    session.gold = resolveJoinGoldFromMessage(message.gold, session.gold);
+
     session.recalcDefenseStats();
     session.recalcAttackStats();
   }
@@ -719,6 +1076,7 @@ export class WorldInstance {
       session.tileY = spawn.tileY;
     }
 
+    this.maybeRerollMobPlacementsForNewSession();
     session.joined = true;
 
     this.sendWelcome(session);
@@ -853,6 +1211,11 @@ export class WorldInstance {
   }
 
   private handleAttack(session: PlayerSession) {
+    if (session.hp <= 0) {
+      this.sendCombatLog(session, "Estás muerto.");
+      return;
+    }
+
     const now = Date.now();
     if (!validateAttackIntent(now, session.nextAttackAt).ok) return;
 
@@ -905,6 +1268,11 @@ export class WorldInstance {
     targetTileX: number,
     targetTileY: number
   ) {
+    if (session.hp <= 0) {
+      this.sendCombatLog(session, "Estás muerto.");
+      return;
+    }
+
     const spell = getSpellDefinition(spellId);
     if (!spell) {
       this.sendCombatLog(session, "Hechizo desconocido.");
@@ -1024,12 +1392,13 @@ export class WorldInstance {
     rawDamage: number,
     spellName?: string
   ) {
+    this.aggroMobOnPlayerHit(mob, session);
     const damage = Math.max(0, Math.floor(rawDamage));
     mob.hp = Math.max(0, mob.hp - damage);
 
     if (mob.hp <= 0) {
       mob.alive = false;
-      mob.respawnAt = Date.now() + 10_000;
+      mob.respawnAt = Date.now() + mob.respawnMs;
     }
 
     this.broadcastGameEvent(session.mapId, mob.tileX, mob.tileY, {

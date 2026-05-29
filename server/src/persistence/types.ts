@@ -33,6 +33,7 @@ export type CharacterSnapshot = {
   hpMax: number;
   mp: number;
   mpMax: number;
+  gold: number;
   equipment: EquipmentSnapshot;
   attributeBuffs: AttributeBuffSnapshot;
 };
@@ -86,6 +87,7 @@ export type CharacterRow = {
   hp_max: number;
   mp: number;
   mp_max: number;
+  gold: number;
   weapon_item_id: string | null;
   shield_item_id: string | null;
   helmet_item_id: string | null;

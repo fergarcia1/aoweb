@@ -12,6 +12,12 @@ export class MobEntity {
   readonly hitboxWidthTiles: number;
   readonly hitboxHeightTiles: number;
   readonly hitboxOffsetTiles: number;
+  readonly detectionRangeTiles: number;
+  readonly leashRangeTiles: number;
+  readonly attackDamage: number;
+  readonly attackCooldownMs: number;
+  readonly aiMoveCooldownMs: number;
+  readonly respawnMs: number;
   tileX: number;
   tileY: number;
   facing: Facing = "down";
@@ -21,6 +27,9 @@ export class MobEntity {
   immobilizedUntil = 0;
   respawnAt = 0;
   nextWanderAt = 0;
+  nextAttackAt = 0;
+  nextMoveAt = 0;
+  isAggroed = false;
 
   constructor(config: {
     id: string;
@@ -34,6 +43,12 @@ export class MobEntity {
     hitboxOffsetY: number;
     hitboxWidthTiles: number;
     hitboxHeightTiles: number;
+    detectionRangeTiles?: number;
+    leashRangeTiles?: number;
+    attackDamage?: number;
+    attackCooldownMs?: number;
+    aiMoveCooldownMs?: number;
+    respawnMs?: number;
   }) {
     this.id = config.id;
     this.mobId = config.mobId;
@@ -47,6 +62,12 @@ export class MobEntity {
     this.tileY = config.tileY;
     this.maxHp = config.maxHp;
     this.hp = config.maxHp;
+    this.detectionRangeTiles = Math.max(0, config.detectionRangeTiles ?? 0);
+    this.leashRangeTiles = Math.max(1, config.leashRangeTiles ?? 20);
+    this.attackDamage = Math.max(0, config.attackDamage ?? 0);
+    this.attackCooldownMs = Math.max(200, config.attackCooldownMs ?? 1000);
+    this.aiMoveCooldownMs = Math.max(200, config.aiMoveCooldownMs ?? 450);
+    this.respawnMs = Math.max(500, config.respawnMs ?? 10_000);
     this.nextWanderAt = Date.now() + randomWanderDelay();
   }
 

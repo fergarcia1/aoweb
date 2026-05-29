@@ -15,6 +15,10 @@ import type {
 } from "../../../shared/types";
 import type { Facing } from "../../player/playerSprites";
 import type { MoveDirection } from "./types";
+import {
+  buildJoinInventorySlots,
+  buildMultiplayerJoinPayload,
+} from "./multiplayerJoinPayload";
 
 export type GameSceneMultiplayerDeps = {
   scene: Phaser.Scene;
@@ -42,6 +46,7 @@ export type GameSceneMultiplayerDeps = {
     hpMax: number;
     mp: number;
     mpMax: number;
+    gold: number;
   };
   getEquipment: () => {
     weapon: ItemId | null;
@@ -81,6 +86,7 @@ export type GameSceneMultiplayerDeps = {
   getLocalPlayerStepDurationMs: () => number;
   getPlayerFeetWorldForTile: (tileX: number, tileY: number) => { x: number; y: number };
   killAllLocalMobs: () => void;
+  restoreLocalMobsAfterDisconnect: () => void;
 
   applyIncomingDamage: (amount: number, type: "physical" | "magic") => number;
   showDamageNumber: (
@@ -196,26 +202,30 @@ export class GameSceneMultiplayerController {
           this.deps.applyWorldItemUpdated(mapId, item),
         onWorldItemRemoved: (mapId, worldItemId) =>
           this.deps.applyWorldItemRemoved(mapId, worldItemId),
-        getJoinPayload: () => ({
-          name: this.deps.getPlayerName(),
-          characterId: this.deps.getCharacterId(),
-          mapId: this.deps.getCurrentMapId(),
-          raceId: this.deps.getSelectedRace(),
-          genderId: this.deps.getSelectedGender(),
-          classId: this.deps.getSelectedClass(),
-          factionId: this.deps.getSelectedFaction(),
-          faceIndex: this.deps.getSelectedFaceIndex(),
-          tileX: this.deps.getPlayerTile().x,
-          tileY: this.deps.getPlayerTile().y,
-          facing: this.deps.getFacing(),
-          level: this.deps.getPlayerProgress().level,
-          hp: this.deps.getPlayerProgress().hp,
-          hpMax: this.deps.getPlayerProgress().hpMax,
-          mp: this.deps.getPlayerProgress().mp,
-          mpMax: this.deps.getPlayerProgress().mpMax,
-          equipment: this.buildJoinEquipmentPayload(),
-          inventory: this.buildJoinInventoryPayload(),
-        }),
+        getJoinPayload: () => {
+          const progress = this.deps.getPlayerProgress();
+          return buildMultiplayerJoinPayload({
+            name: this.deps.getPlayerName(),
+            characterId: this.deps.getCharacterId(),
+            mapId: this.deps.getCurrentMapId(),
+            raceId: this.deps.getSelectedRace(),
+            genderId: this.deps.getSelectedGender(),
+            classId: this.deps.getSelectedClass(),
+            factionId: this.deps.getSelectedFaction(),
+            faceIndex: this.deps.getSelectedFaceIndex(),
+            tileX: this.deps.getPlayerTile().x,
+            tileY: this.deps.getPlayerTile().y,
+            facing: this.deps.getFacing(),
+            level: progress.level,
+            hp: progress.hp,
+            hpMax: progress.hpMax,
+            mp: progress.mp,
+            mpMax: progress.mpMax,
+            gold: progress.gold,
+            equipment: this.buildJoinEquipmentPayload(),
+            inventory: buildJoinInventorySlots(this.deps.getInventory()),
+          });
+        },
       }
     );
     this.bridge.connect();
@@ -225,13 +235,14 @@ export class GameSceneMultiplayerController {
     this.networkMovePending = false;
     this.bridge?.disconnect();
     this.bridge = null;
+    this.deps.restoreLocalMobsAfterDisconnect();
   }
 
   syncServerInventoryIfActive(): void {
     if (!this.bridge?.isActive()) {
       return;
     }
-    this.bridge.sendSyncInventory(this.buildJoinInventoryPayload());
+    this.bridge.sendSyncInventory(buildJoinInventorySlots(this.deps.getInventory()));
   }
 
   tryNetworkStep(dir: MoveDirection): void {
@@ -327,6 +338,15 @@ export class GameSceneMultiplayerController {
 
   sendPickupWorldItem(): void {
     this.bridge?.sendPickupWorldItem();
+  }
+
+  sendRevive(
+    source: "priest" | "ally",
+    tileX?: number,
+    tileY?: number,
+    mapId?: string
+  ): void {
+    this.bridge?.sendRevive(source, tileX, tileY, mapId);
   }
 
   onPlayerMoved(player: NetPlayerState): void {
@@ -501,12 +521,4 @@ export class GameSceneMultiplayerController {
     };
   }
 
-  private buildJoinInventoryPayload() {
-    return this.deps.getInventory().map((slot, slotIndex) => ({
-      slotIndex,
-      itemId: slot?.itemId ?? null,
-      amount: slot?.count ?? 0,
-      isEquipped: false,
-    }));
-  }
 }

@@ -56,6 +56,13 @@ export type DeathCallbacks = {
   getCharacterSlotIndex(): number | null;
   refreshMapLocationLabel(): void;
   refreshMinimap(): void;
+  /** Sincroniza el revive con el servidor en multijugador. */
+  notifyServerRevive?: (
+    source: "priest" | "ally",
+    tileX: number,
+    tileY: number,
+    mapId: string
+  ) => void;
 };
 
 export class DeathSystem {
@@ -256,7 +263,9 @@ export class DeathSystem {
 
   acceptPriestRevival() {
     if (this.deathPhase === "alive") return;
-    this.teleportToHomePriest();
+    if (!this.isNearHomePriest()) {
+      this.teleportToHomePriest();
+    }
     this.reviveAtPriest();
   }
 
@@ -265,8 +274,23 @@ export class DeathSystem {
       this.cb.addChatLine("Solo podés usar /hogar cuando estás muerto o en forma fantasma.");
       return;
     }
-    this.teleportToHomePriest();
+    if (!this.isNearHomePriest()) {
+      this.teleportToHomePriest();
+    }
     this.reviveAtPriest();
+  }
+
+  private isNearHomePriest(): boolean {
+    const priest = getPriestSpawnForHome(this.homeMapId);
+    if (priest.mapId !== this.cb.getCurrentMapId()) {
+      return false;
+    }
+    const tile = this.cb.getPlayerTile();
+    const distance = Math.max(
+      Math.abs(tile.x - priest.tileX),
+      Math.abs(tile.y - priest.tileY)
+    );
+    return distance <= PRIEST_REVIVE_MAX_TILE_DISTANCE;
   }
 
   teleportToHomePriest() {
@@ -330,6 +354,8 @@ export class DeathSystem {
     const progress = this.cb.getPlayerProgress();
     this.cb.setPlayerHp(progress.hpMax);
     this.cb.refreshHud();
+    const tile = this.cb.getPlayerTile();
+    this.cb.notifyServerRevive?.("priest", tile.x, tile.y, this.cb.getCurrentMapId());
     this.cb.scheduleProgressSave();
     this.cb.addCombatLine("El sacerdote te devolvió la vida.");
     this.cb.addChatLine(`Fuiste revivido por el sacerdote en ${getMap(this.homeMapId).name}.`);
@@ -344,6 +370,8 @@ export class DeathSystem {
     const progress = this.cb.getPlayerProgress();
     this.cb.setPlayerHp(Math.max(1, Math.floor(progress.hpMax * 0.35)));
     this.cb.refreshHud();
+    const tile = this.cb.getPlayerTile();
+    this.cb.notifyServerRevive?.("ally", tile.x, tile.y, this.cb.getCurrentMapId());
     this.cb.scheduleProgressSave();
     this.cb.addCombatLine("Un aliado te revivió.");
     this.cb.playSpawnEffect();

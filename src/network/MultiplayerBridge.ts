@@ -196,6 +196,10 @@ export class MultiplayerBridge {
     this.networkClient?.sendCastSpell(spellId, tileX, tileY);
   }
 
+  sendRevive(source: "priest" | "ally", tileX?: number, tileY?: number, mapId?: string) {
+    this.networkClient?.sendRevive(source, tileX, tileY, mapId);
+  }
+
   sendAdminCommand(command: string, args: string[]) {
     this.networkClient?.sendAdminCommand(command, args);
   }

@@ -7,6 +7,7 @@ import { getMapSpawnTile, isMapTileWalkable } from "./mapWalkability";
 export const TRAINING_DUMMY_ID = "training_dummy_spawn";
 export const TRAINING_DUMMY_HP = 10_000;
 /** Hitbox del muñeco de entrenamiento (debe coincidir con el cliente). */
+export const TRAINING_DUMMY_HITBOX_OFFSET_Y = -32;
 export const TRAINING_DUMMY_HITBOX_WIDTH_TILES = 1;
 export const TRAINING_DUMMY_HITBOX_HEIGHT_TILES = 2;
 
@@ -150,7 +151,7 @@ export function buildInitialMobPlacements(mapId: string): MobPlacement[] {
       tileY: trainingTile.y,
       mapId,
       behavior: "static",
-      hitboxOffsetY: -32,
+      hitboxOffsetY: TRAINING_DUMMY_HITBOX_OFFSET_Y,
       hitboxWidthTiles: TRAINING_DUMMY_HITBOX_WIDTH_TILES,
       hitboxHeightTiles: TRAINING_DUMMY_HITBOX_HEIGHT_TILES,
     });

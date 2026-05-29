@@ -21,6 +21,7 @@
     "extract:citizen-icon": "node tools/ao-export/extract-catalog-icon.mjs --in \"C:/Users/imaga/Desktop/input Script/1005.png\" --block 0 --icon-x 0 --icon-y 0 --out citizenClothesBajos_icon.png",
     "ref:frames": "node tools/extract-ao-reference-frames.mjs",
     "test": "vitest run",
+    "test:smoke": "vitest run tests/shared/joinSession.test.ts tests/shared/characterDeathState.test.ts tests/game/progressPersistGuard.test.ts tests/game/characterProgressIsolation.test.ts tests/game/characterProgressApply.test.ts tests/scenes/multiplayerJoinPayload.test.ts",
     "test:watch": "vitest"
   },
   "devDependencies": {

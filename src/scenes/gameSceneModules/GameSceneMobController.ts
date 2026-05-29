@@ -3,6 +3,9 @@ import { TILE_SIZE } from "../../config";
 import { getMap } from "../../maps";
 import {
   buildAllInitialMobPlacements,
+  TRAINING_DUMMY_HITBOX_HEIGHT_TILES,
+  TRAINING_DUMMY_HITBOX_OFFSET_Y,
+  TRAINING_DUMMY_HITBOX_WIDTH_TILES,
   TRAINING_DUMMY_HP,
   TRAINING_DUMMY_ID,
 } from "../../../shared/mobSpawns";
@@ -27,6 +30,8 @@ import {
   clearMobHitboxOverrides,
   exportMobHitboxOverridesToConsole,
   getMobHitboxOverrides,
+  persistMobHitboxOverrideForDummy,
+  resolveMobHitbox,
   saveMobHitboxOverridesFromDummies,
 } from "./mobHitboxOverrides";
 import {
@@ -55,6 +60,12 @@ export type GameSceneMobDeps = {
   addChatLine: (text: string) => void;
   refreshInspectedDummyLabel: () => void;
   killDummy: (dummy: DummyState) => void;
+  applyMobDeathFromServer: (dummy: DummyState) => void;
+  applyMobReviveFromServer: (
+    dummy: DummyState,
+    netMob: Pick<import("../../../shared/types").NetMobState, "hp" | "hpMax" | "tileX" | "tileY" | "facing">
+  ) => void;
+  restoreLocalMobsAfterDisconnect: () => void;
 
   getMobFeetWorld: (modelId: MobModelId, tileX: number, tileY: number) => { x: number; y: number };
   getMobStepDurationMs: (modelId: MobModelId) => number;
@@ -89,6 +100,18 @@ export class GameSceneMobController {
 
   constructor(private readonly deps: GameSceneMobDeps) {}
 
+  /** Objetos de mob solo en cámara de mundo (no fijos en viewport UI). */
+  private registerMobWorldCamera(...objects: Phaser.GameObjects.GameObject[]) {
+    const uiCamera = this.deps.getUiCamera();
+    if (!uiCamera) {
+      return;
+    }
+    const valid = objects.filter((obj): obj is Phaser.GameObjects.GameObject => Boolean(obj));
+    if (valid.length > 0) {
+      uiCamera.ignore(valid);
+    }
+  }
+
   getDummies(): DummyState[] {
     return this.dummies;
   }
@@ -101,6 +124,7 @@ export class GameSceneMobController {
     if (this.dummies.length > 0) {
       this.syncVisibilityForCurrentMap();
       this.createShowcaseIfNeeded();
+      this.applyHitboxOverrides();
       return;
     }
 
@@ -121,6 +145,18 @@ export class GameSceneMobController {
     this.syncVisibilityForCurrentMap();
     this.createShowcaseIfNeeded();
     this.applyHitboxOverrides();
+    this.reregisterAllMobWorldCamera();
+  }
+
+  /** Tras recrear mobs (p. ej. desconexión MP) hay que volver a ignorarlos en la UI cam. */
+  reregisterAllMobWorldCamera(): void {
+    for (const dummy of this.dummies) {
+      this.registerMobWorldCamera(
+        dummy.sprite,
+        dummy.hpLabel,
+        ...(dummy.face ? [dummy.face] : [])
+      );
+    }
   }
 
   destroyAll(): void {
@@ -141,6 +177,8 @@ export class GameSceneMobController {
     for (const netMob of mobs) {
       this.applyNetState(netMob);
     }
+    this.applyHitboxOverrides();
+    this.reregisterAllMobWorldCamera();
   }
 
   applyNetState(netMob: NetMobState): void {
@@ -156,72 +194,148 @@ export class GameSceneMobController {
     dummy.maxHp = netMob.hpMax;
 
     if (!netMob.alive && dummy.alive) {
-      this.deps.killDummy(dummy);
+      this.deps.applyMobDeathFromServer(dummy);
       return;
     }
 
     if (netMob.alive && !dummy.alive) {
-      dummy.alive = true;
-      dummy.hp = netMob.hp;
-      dummy.sprite.setVisible(true);
-      dummy.hpLabel.setVisible(false);
+      this.deps.applyMobReviveFromServer(dummy, netMob);
     } else if (netMob.alive) {
       dummy.sprite.setVisible(true);
     }
 
-    if (dummy.tileX !== netMob.tileX || dummy.tileY !== netMob.tileY) {
+    const tileChanged =
+      dummy.tileX !== netMob.tileX || dummy.tileY !== netMob.tileY;
+    const facingChanged = netMob.facing !== dummy.facing;
+
+    if (tileChanged) {
       const prevTileX = dummy.tileX;
       const prevTileY = dummy.tileY;
       dummy.tileX = netMob.tileX;
       dummy.tileY = netMob.tileY;
+      const dist =
+        Math.abs(netMob.tileX - prevTileX) + Math.abs(netMob.tileY - prevTileY);
+
+      if (dist > 2) {
+        this.snapNetMobToTile(dummy, netMob.tileX, netMob.tileY, netMob.facing);
+      } else if (dist > 0) {
+        this.enqueueNetMobStep(dummy, netMob.tileX, netMob.tileY, netMob.facing);
+      }
+    } else if (facingChanged) {
       dummy.facing = netMob.facing;
-
-      const target = this.deps.getMobFeetWorld(dummy.modelId, netMob.tileX, netMob.tileY);
-      const dist = Math.abs(netMob.tileX - prevTileX) + Math.abs(netMob.tileY - prevTileY);
-
-      if (dist <= 2) {
-        const stepMs = this.deps.getMobStepDurationMs(dummy.modelId);
-        this.deps.tweens.killTweensOf(dummy.sprite);
-        this.deps.setMobAnimationState(dummy, "walk");
-        dummy.isMoving = true;
-
-        this.deps.tweens.add({
-          targets: dummy.sprite,
-          x: target.x,
-          y: target.y,
-          duration: stepMs,
-          ease: "Linear",
-          onUpdate: () => {
-            dummy!.hpLabel.setPosition(dummy!.sprite.x, dummy!.sprite.y - 30);
-            dummy!.sprite.setDepth(this.deps.depthFromFeetY(dummy!.sprite.y));
-            if (dummy!.face) {
-              this.deps.syncMobFaceForDummy(dummy!);
-            }
-          },
-          onComplete: () => {
-            dummy!.isMoving = false;
-            dummy!.sprite.setPosition(target.x, target.y);
-            this.deps.setMobAnimationState(dummy!, "idle");
-            if (dummy!.face) {
-              this.deps.syncMobFaceForDummy(dummy!);
-            }
-          },
-        });
+      if (dummy.isMoving) {
+        this.deps.syncMobFaceForDummy(dummy);
       } else {
-        this.deps.tweens.killTweensOf(dummy.sprite);
-        dummy.sprite.setPosition(target.x, target.y);
-        dummy.isMoving = false;
-        this.deps.syncDummyWorldPosition(dummy);
         this.deps.setMobAnimationState(dummy, "idle");
       }
-    } else if (netMob.facing !== dummy.facing) {
-      dummy.facing = netMob.facing;
-      this.deps.setMobAnimationState(dummy, "idle");
     }
 
     if (dummy.id === this.deps.getInspectedDummyId()) {
       this.deps.refreshInspectedDummyLabel();
     }
+  }
+
+  private snapNetMobToTile(
+    dummy: DummyState,
+    tileX: number,
+    tileY: number,
+    facing: Facing
+  ): void {
+    this.deps.tweens.killTweensOf(dummy.sprite);
+    dummy.netMoveQueue = [];
+    dummy.isMoving = false;
+    dummy.netMoveTargetTile = undefined;
+    dummy.tileX = tileX;
+    dummy.tileY = tileY;
+    dummy.facing = facing;
+    const feet = this.deps.getMobFeetWorld(dummy.modelId, tileX, tileY);
+    dummy.sprite.setPosition(feet.x, feet.y);
+    this.deps.syncDummyWorldPosition(dummy);
+    this.deps.setMobAnimationState(dummy, "idle");
+  }
+
+  private enqueueNetMobStep(
+    dummy: DummyState,
+    tileX: number,
+    tileY: number,
+    facing: Facing
+  ): void {
+    if (!dummy.netMoveQueue) {
+      dummy.netMoveQueue = [];
+    }
+
+    const lastQueued = dummy.netMoveQueue[dummy.netMoveQueue.length - 1];
+    if (lastQueued?.x === tileX && lastQueued?.y === tileY) {
+      lastQueued.facing = facing;
+      return;
+    }
+
+    if (
+      dummy.isMoving &&
+      dummy.netMoveTargetTile?.x === tileX &&
+      dummy.netMoveTargetTile?.y === tileY
+    ) {
+      dummy.facing = facing;
+      this.deps.syncMobFaceForDummy(dummy);
+      return;
+    }
+
+    dummy.netMoveQueue.push({ x: tileX, y: tileY, facing });
+    this.pumpNetMobStep(dummy);
+  }
+
+  private pumpNetMobStep(dummy: DummyState): void {
+    if (dummy.isMoving || !dummy.netMoveQueue?.length) {
+      return;
+    }
+
+    const next = dummy.netMoveQueue.shift()!;
+    dummy.facing = next.facing;
+    dummy.netMoveTargetTile = { x: next.x, y: next.y };
+
+    const target = this.deps.getMobFeetWorld(dummy.modelId, next.x, next.y);
+    const stepMs = this.deps.getMobStepDurationMs(dummy.modelId);
+    const distPx = Phaser.Math.Distance.Between(
+      dummy.sprite.x,
+      dummy.sprite.y,
+      target.x,
+      target.y
+    );
+    const duration = Math.max(
+      80,
+      Math.min(stepMs, Math.round(stepMs * (distPx / TILE_SIZE)))
+    );
+
+    dummy.isMoving = true;
+    this.deps.setMobAnimationState(dummy, "walk");
+
+    this.deps.tweens.add({
+      targets: dummy.sprite,
+      x: target.x,
+      y: target.y,
+      duration,
+      ease: "Linear",
+      onUpdate: () => {
+        dummy.hpLabel.setPosition(dummy.sprite.x, dummy.sprite.y - 30);
+        dummy.sprite.setDepth(this.deps.depthFromFeetY(dummy.sprite.y));
+        if (dummy.face) {
+          this.deps.syncMobFaceForDummy(dummy);
+        }
+      },
+      onComplete: () => {
+        dummy.isMoving = false;
+        dummy.netMoveTargetTile = undefined;
+        dummy.sprite.setPosition(target.x, target.y);
+        if (dummy.face) {
+          this.deps.syncMobFaceForDummy(dummy);
+        }
+        if (dummy.netMoveQueue && dummy.netMoveQueue.length > 0) {
+          this.pumpNetMobStep(dummy);
+        } else {
+          this.deps.setMobAnimationState(dummy, "idle");
+        }
+      },
+    });
   }
 
   applyNetLeft(mobId: string): void {
@@ -401,13 +515,6 @@ export class GameSceneMobController {
   }
 
   handleMobEditCommand(normalized: string): boolean {
-    if (this.deps.isMultiplayerActive()) {
-      this.deps.addChatLine(
-        "En multiplayer /mob es local y puede desincronizar. Editá mobs.json y reiniciá server."
-      );
-      return true;
-    }
-
     const args = normalized.slice("/mob ".length).trim().split(/\s+/);
     const sub = args[0];
 
@@ -437,14 +544,32 @@ export class GameSceneMobController {
       this.deps.addChatLine("Overrides borrados. Recargá para volver a los valores de mobs.json.");
       return true;
     }
+    if (sub === "keys") {
+      const overrides = getMobHitboxOverrides();
+      const keys = Object.keys(overrides);
+      if (keys.length === 0) {
+        this.deps.addChatLine("No hay overrides en localStorage.");
+        return true;
+      }
+      this.deps.addChatLine(`Overrides guardados (${keys.length}):`);
+      for (const key of keys) {
+        const vals = overrides[key];
+        this.deps.addChatLine(
+          `${key}: oy=${vals.hitboxOffsetY} h=${vals.hitboxHeightTiles} w=${vals.hitboxWidthTiles}`
+        );
+      }
+      return true;
+    }
     if (sub === "help") {
       this.deps.addChatLine("/mob oy <px> — offset Y en pixels");
       this.deps.addChatLine("/mob h <tiles> — alto en tiles");
       this.deps.addChatLine("/mob w <tiles> — ancho en tiles");
       this.deps.addChatLine("/mob info — ver valores actuales");
-      this.deps.addChatLine("/mob save — guardar cambios (persiste al recargar)");
+      this.deps.addChatLine("/mob save — guardar todos los mobs visibles");
+      this.deps.addChatLine("/mob keys — listar overrides en localStorage");
       this.deps.addChatLine("/mob export — copiar valores para mobs.json");
       this.deps.addChatLine("/mob reset — borrar overrides guardados");
+      this.deps.addChatLine("Los cambios se guardan por id de spawn (ej. lobo_pueblo_1).");
       return true;
     }
 
@@ -467,6 +592,7 @@ export class GameSceneMobController {
         return true;
       }
       dummy.hitboxOffsetY = val;
+      persistMobHitboxOverrideForDummy(dummy);
       this.rebuildHitbox(dummy);
       this.deps.addChatLine(`${dummy.name} hitboxOffsetY = ${val}px`);
       return true;
@@ -479,6 +605,7 @@ export class GameSceneMobController {
         return true;
       }
       dummy.hitboxHeightTiles = val;
+      persistMobHitboxOverrideForDummy(dummy);
       this.rebuildHitbox(dummy);
       this.deps.addChatLine(`${dummy.name} hitboxHeightTiles = ${val}`);
       return true;
@@ -491,6 +618,7 @@ export class GameSceneMobController {
         return true;
       }
       dummy.hitboxWidthTiles = val;
+      persistMobHitboxOverrideForDummy(dummy);
       this.rebuildHitbox(dummy);
       this.deps.addChatLine(`${dummy.name} hitboxWidthTiles = ${val}`);
       return true;
@@ -498,7 +626,7 @@ export class GameSceneMobController {
 
     if (sub === "info" || sub === "i") {
       this.deps.addChatLine(
-        `[${dummy.spawnConfig.mobId}] offsetY=${dummy.hitboxOffsetY}px  h=${dummy.hitboxHeightTiles}  w=${dummy.hitboxWidthTiles}`
+        `[${dummy.id}] offsetY=${dummy.hitboxOffsetY}px  h=${dummy.hitboxHeightTiles}  w=${dummy.hitboxWidthTiles}`
       );
       return true;
     }
@@ -523,26 +651,17 @@ export class GameSceneMobController {
       dummy.sprite.setInteractive(hitArea, Phaser.Geom.Rectangle.Contains);
       dummy.sprite.input!.cursor = "pointer";
     }
-
-    if (!this.deps.isHitboxDebugEnabled()) {
-      this.deps.setHitboxDebugEnabled(true);
-    }
   }
 
   applyHitboxOverrides(): void {
     const overrides = getMobHitboxOverrides();
-    if (Object.keys(overrides).length === 0) return;
+    if (Object.keys(overrides).length === 0) {
+      return;
+    }
 
     for (const dummy of this.dummies) {
-      const override = applyMobHitboxOverrideToDummy(dummy, overrides);
-      if (!override) continue;
-      dummy.sprite.removeInteractive();
-      this.deps.setupMobHitboxInteraction(
-        dummy.sprite,
-        dummy.hitboxHeightTiles,
-        dummy.hitboxWidthTiles,
-        dummy.hitboxOffsetY
-      );
+      applyMobHitboxOverrideToDummy(dummy);
+      this.rebuildHitbox(dummy);
     }
   }
 
@@ -551,13 +670,20 @@ export class GameSceneMobController {
     spawnTile: { x: number; y: number },
     hp: number
   ): DummyState {
+    const hitbox = resolveMobHitbox({
+      id: spawn.id,
+      mobId: spawn.mobId,
+      hitboxOffsetY: spawn.hitboxOffsetY,
+      hitboxHeightTiles: spawn.hitboxHeightTiles,
+      hitboxWidthTiles: spawn.hitboxWidthTiles,
+    });
     const spawnFeet = this.deps.getMobFeetWorld(spawn.modelId, spawnTile.x, spawnTile.y);
     const sprite = createMobSprite(this.deps.scene, spawn.modelId, spawnFeet.x, spawnFeet.y, "down");
     this.deps.setupMobHitboxInteraction(
       sprite,
-      spawn.hitboxHeightTiles,
-      spawn.hitboxWidthTiles,
-      spawn.hitboxOffsetY
+      hitbox.hitboxHeightTiles,
+      hitbox.hitboxWidthTiles,
+      hitbox.hitboxOffsetY
     );
 
     const hpLabel = this.deps.scene.add.text(
@@ -576,6 +702,7 @@ export class GameSceneMobController {
     hpLabel.setOrigin(0.5, 1);
     hpLabel.setDepth(12);
     hpLabel.setVisible(false);
+    this.registerMobWorldCamera(sprite, hpLabel);
 
     const dummy: DummyState = {
       spawnConfig: spawn,
@@ -586,9 +713,9 @@ export class GameSceneMobController {
       mapId: spawn.mapId,
       tileX: spawnTile.x,
       tileY: spawnTile.y,
-      hitboxOffsetY: spawn.hitboxOffsetY,
-      hitboxHeightTiles: spawn.hitboxHeightTiles,
-      hitboxWidthTiles: spawn.hitboxWidthTiles,
+      hitboxOffsetY: hitbox.hitboxOffsetY,
+      hitboxHeightTiles: hitbox.hitboxHeightTiles,
+      hitboxWidthTiles: hitbox.hitboxWidthTiles,
       sizeTiles: spawn.sizeTiles,
       hp,
       maxHp: spawn.maxHp,
@@ -637,6 +764,13 @@ export class GameSceneMobController {
       trainingDummyTileX,
       trainingDummyTileY
     );
+    const trainingHitbox = resolveMobHitbox({
+      id: TRAINING_DUMMY_ID,
+      mobId: "gallina",
+      hitboxOffsetY: TRAINING_DUMMY_HITBOX_OFFSET_Y,
+      hitboxHeightTiles: TRAINING_DUMMY_HITBOX_HEIGHT_TILES,
+      hitboxWidthTiles: TRAINING_DUMMY_HITBOX_WIDTH_TILES,
+    });
     const trainingSprite = createMobSprite(
       this.deps.scene,
       trainingDummyModelId,
@@ -646,9 +780,9 @@ export class GameSceneMobController {
     );
     this.deps.setupMobHitboxInteraction(
       trainingSprite,
-      DEFAULT_MOB_HITBOX_HEIGHT_TILES,
-      DEFAULT_MOB_HITBOX_WIDTH_TILES,
-      DEFAULT_MOB_HITBOX_OFFSET_Y
+      trainingHitbox.hitboxHeightTiles,
+      trainingHitbox.hitboxWidthTiles,
+      trainingHitbox.hitboxOffsetY
     );
 
     const trainingHpLabel = this.deps.scene.add.text(
@@ -667,6 +801,7 @@ export class GameSceneMobController {
     trainingHpLabel.setOrigin(0.5, 1);
     trainingHpLabel.setDepth(12);
     trainingHpLabel.setVisible(false);
+    this.registerMobWorldCamera(trainingSprite, trainingHpLabel);
 
     const trainingSpawnConfig: MobSpawnConfig = {
       id: TRAINING_DUMMY_ID,
@@ -674,9 +809,9 @@ export class GameSceneMobController {
       name: TRAINING_DUMMY_NAME,
       behavior: "peaceful",
       mapId: trainingDummyMapId,
-      hitboxOffsetY: DEFAULT_MOB_HITBOX_OFFSET_Y,
-      hitboxHeightTiles: DEFAULT_MOB_HITBOX_HEIGHT_TILES,
-      hitboxWidthTiles: DEFAULT_MOB_HITBOX_WIDTH_TILES,
+      hitboxOffsetY: TRAINING_DUMMY_HITBOX_OFFSET_Y,
+      hitboxHeightTiles: TRAINING_DUMMY_HITBOX_HEIGHT_TILES,
+      hitboxWidthTiles: TRAINING_DUMMY_HITBOX_WIDTH_TILES,
       sizeTiles: 1,
       modelId: trainingDummyModelId,
       maxHp: TRAINING_DUMMY_HP,
@@ -698,9 +833,9 @@ export class GameSceneMobController {
       mapId: trainingDummyMapId,
       tileX: trainingDummyTileX,
       tileY: trainingDummyTileY,
-      hitboxOffsetY: DEFAULT_MOB_HITBOX_OFFSET_Y,
-      hitboxHeightTiles: DEFAULT_MOB_HITBOX_HEIGHT_TILES,
-      hitboxWidthTiles: DEFAULT_MOB_HITBOX_WIDTH_TILES,
+      hitboxOffsetY: trainingHitbox.hitboxOffsetY,
+      hitboxHeightTiles: trainingHitbox.hitboxHeightTiles,
+      hitboxWidthTiles: trainingHitbox.hitboxWidthTiles,
       sizeTiles: 1,
       hp: TRAINING_DUMMY_HP,
       maxHp: TRAINING_DUMMY_HP,
@@ -728,6 +863,7 @@ export class GameSceneMobController {
     trainingDummy.aiMoveCooldownMs = this.deps.getMobStepDurationMs(trainingDummy.modelId);
     this.deps.syncDummyWorldPosition(trainingDummy);
     this.deps.setMobAnimationState(trainingDummy, "idle");
+    this.rebuildHitbox(trainingDummy);
     this.dummies.push(trainingDummy);
   }
 
@@ -739,13 +875,20 @@ export class GameSceneMobController {
       return null;
     }
 
+    const hitbox = resolveMobHitbox({
+      id: netMob.id,
+      mobId: spawn.mobId,
+      hitboxOffsetY: spawn.hitboxOffsetY,
+      hitboxHeightTiles: spawn.hitboxHeightTiles,
+      hitboxWidthTiles: spawn.hitboxWidthTiles,
+    });
     const feet = this.deps.getMobFeetWorld(spawn.modelId, netMob.tileX, netMob.tileY);
     const sprite = createMobSprite(this.deps.scene, spawn.modelId, feet.x, feet.y, netMob.facing);
     this.deps.setupMobHitboxInteraction(
       sprite,
-      spawn.hitboxHeightTiles,
-      spawn.hitboxWidthTiles,
-      spawn.hitboxOffsetY
+      hitbox.hitboxHeightTiles,
+      hitbox.hitboxWidthTiles,
+      hitbox.hitboxOffsetY
     );
 
     const hpLabel = this.deps.scene.add.text(feet.x, feet.y - 30, "", {
@@ -759,10 +902,7 @@ export class GameSceneMobController {
     hpLabel.setOrigin(0.5, 1);
     hpLabel.setDepth(12);
     hpLabel.setVisible(false);
-    const uiCamera = this.deps.getUiCamera();
-    if (uiCamera) {
-      uiCamera.ignore([sprite, hpLabel]);
-    }
+    this.registerMobWorldCamera(sprite, hpLabel);
 
     const dummy: DummyState = {
       spawnConfig: spawn,
@@ -773,9 +913,9 @@ export class GameSceneMobController {
       mapId: netMob.mapId,
       tileX: netMob.tileX,
       tileY: netMob.tileY,
-      hitboxOffsetY: spawn.hitboxOffsetY,
-      hitboxHeightTiles: spawn.hitboxHeightTiles,
-      hitboxWidthTiles: spawn.hitboxWidthTiles,
+      hitboxOffsetY: hitbox.hitboxOffsetY,
+      hitboxHeightTiles: hitbox.hitboxHeightTiles,
+      hitboxWidthTiles: hitbox.hitboxWidthTiles,
       sizeTiles: spawn.sizeTiles,
       hp: netMob.hp,
       maxHp: netMob.hpMax,
@@ -801,7 +941,6 @@ export class GameSceneMobController {
       alive: netMob.alive,
     };
 
-    applyMobHitboxOverrideToDummy(dummy, getMobHitboxOverrides());
     this.deps.syncDummyWorldPosition(dummy);
     this.deps.attachMobFaceIfNeeded(dummy);
     this.deps.setMobAnimationState(dummy, "idle");

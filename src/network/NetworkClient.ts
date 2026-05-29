@@ -126,6 +126,10 @@ export class NetworkClient {
     this.send({ type: "cast_spell", spellId, targetTileX, targetTileY });
   }
 
+  sendRevive(source: "priest" | "ally", tileX?: number, tileY?: number, mapId?: string) {
+    this.send({ type: "revive", source, tileX, tileY, mapId });
+  }
+
   sendAdminCommand(command: string, args: string[]) {
     this.send({ type: "admin_command", command, args });
   }

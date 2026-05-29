@@ -182,7 +182,6 @@ import {
   spellEffectAnimKey,
   SPELL_EFFECTS,
 } from "../spells/spellEffects";
-import type { NetInventorySlotState, ServerUseItemAckMessage } from "../../shared/protocol";
 import type {
   GameEvent,
   NetMobState,
@@ -232,6 +231,10 @@ import {
   GameSceneMapController,
   GameSceneInventoryController,
   GameSceneCombatController,
+  GameSceneLocalPlayerSync,
+  GameSceneConsumableController,
+  applySavedProgressToSceneState,
+  resetDeathStateForCharacterSwitch as freshDeathStateForSwitch,
   applyMobHitboxOverrideToDummy,
   clearMobHitboxOverrides,
   getMobHitboxOverrides,
@@ -327,6 +330,9 @@ export class GameScene extends Phaser.Scene {
   private chatCommands!: GameSceneChatCommands;
   private mpController!: GameSceneMultiplayerController;
   private mobController!: GameSceneMobController;
+  private localPlayerSync!: GameSceneLocalPlayerSync;
+  private consumableController!: GameSceneConsumableController;
+  private serverReviveSyncPending = false;
 
   /**
    * Cara elegida.
@@ -386,6 +392,7 @@ export class GameScene extends Phaser.Scene {
   private mobAiSystem!: MobAiSystem;
   private hitboxDebugEnabled = false;
   private hitboxDebugGraphics?: Phaser.GameObjects.Graphics;
+  /** Evita spamear revive al servidor mientras se resuelve desync de HP. */
   private deathSystem!: DeathSystem;
   private _homeMapIdBackup = DEFAULT_HOME_MAP_ID;
   private _bankStateBackup: BankState = { slots: Array(20).fill(null), gold: 0 };
@@ -491,9 +498,9 @@ export class GameScene extends Phaser.Scene {
       },
       syncServerInventory: () => this.syncServerInventoryIfMultiplayer(),
       sendDropItemToServer: (slot, amount) =>
-        this.mpController.sendDropItem(slot, amount),
-      sendDropGoldToServer: (amount) => this.mpController.sendDropGold(amount),
-      sendPickupWorldItemToServer: () => this.mpController.sendPickupWorldItem(),
+        this.mpController?.sendDropItem(slot, amount),
+      sendDropGoldToServer: (amount) => this.mpController?.sendDropGold(amount),
+      sendPickupWorldItemToServer: () => this.mpController?.sendPickupWorldItem(),
       createWorldItem: (itemId, tx, ty, count) =>
         this.createWorldItem(itemId, tx, ty, count),
       createWorldGold: (tx, ty, count) => this.createWorldGold(tx, ty, count),
@@ -538,6 +545,7 @@ export class GameScene extends Phaser.Scene {
       sendAttackToServer: (facing) => this.multiplayer!.sendAttack(facing),
       sendCastSpellToServer: (spellId, tileX, tileY) =>
         this.multiplayer!.sendCastSpell(spellId, tileX, tileY),
+      ensureServerAliveForCombat: () => this.localPlayerSync.ensureServerReviveSynced(),
       getDummyInAttackRange: () => this.getDummyInAttackRange(),
       getDummyHitTile: (dummy) => this.getDummyHitTile(dummy),
       killDummy: (dummy) => this.killDummy(dummy),
@@ -565,6 +573,100 @@ export class GameScene extends Phaser.Scene {
       isServerAuthoritative: () => this.isMultiplayerActive(),
       onPersist: () => this.scheduleCharacterProgressSave(),
       onInspect: (entry) => this.inspectWorldItem(entry),
+    });
+  }
+
+  private initLocalPlayerSync(): void {
+    this.localPlayerSync = new GameSceneLocalPlayerSync({
+      getDeathPhase: () => this.deathPhase,
+      getPlayerProgress: () => this.playerProgress,
+      setPlayerProgressFromServer: (patch) => {
+        this.playerProgress.hp = patch.hp;
+        this.playerProgress.hpMax = patch.hpMax;
+        this.playerProgress.mp = patch.mp;
+        this.playerProgress.mpMax = patch.mpMax;
+        this.playerProgress.level = patch.level;
+      },
+      setPlayerHp: (hp) => {
+        this.playerProgress.hp = hp;
+      },
+      getEquipment: () => this.equipment,
+      setEquipmentFromServer: (equipment) => {
+        if (!equipment) return;
+        this.equipment.weapon = (equipment.weaponId as ItemId | null) ?? null;
+        this.equipment.shield = (equipment.shieldId as ItemId | null) ?? null;
+        this.equipment.helmet = (equipment.helmetId as ItemId | null) ?? null;
+        this.equipment.armor = (equipment.armorId as ItemId | null) ?? null;
+      },
+      getInventory: () => this.inventory,
+      setInventoryFromServer: (slots) => {
+        this.inventory = slots;
+      },
+      setGoldFromServer: (gold) => {
+        this.playerProgress.gold = gold;
+      },
+      refreshHud: () => this.refreshHud(),
+      refreshInventoryUi: () => this.refreshInventoryUi(),
+      syncEquippedArmorOutfit: () => this.syncEquippedArmorOutfit(),
+      syncEquippedHeldItemVisuals: () => this.syncEquippedHeldItemVisuals(),
+      setEquippedItemIdsOnUi: (ids) => this.gameUi.setEquippedItemIds(ids),
+      isMultiplayerActive: () => this.isMultiplayerActive(),
+      getCurrentMapId: () => this.currentMapId,
+      getWorldItemManager: () => this.worldItemManager,
+      requestServerRevive: (source, tileX, tileY, mapId) =>
+        this.mpController.sendRevive(source, tileX, tileY, mapId),
+      getPlayerTile: () => ({ x: this.playerTileX, y: this.playerTileY }),
+      onLocalPlayerDeath: () => this.handlePlayerDeath(),
+      addCombatLine: (text) => this.gameUi.addCombatLine(text),
+      setRemotePlayerGhost: (playerId) =>
+        this.multiplayer?.getRemotePlayers()?.setPlayerGhost(playerId),
+      updateRemotePlayer: (state, mapId) =>
+        this.multiplayer?.updateRemote(state, mapId),
+      getLocalPlayerId: () => this.mpController.getPlayerId(),
+      clearServerReviveSyncPending: () => {
+        this.serverReviveSyncPending = false;
+      },
+      isServerReviveSyncPending: () => this.serverReviveSyncPending,
+      setServerReviveSyncPending: (value) => {
+        this.serverReviveSyncPending = value;
+      },
+    });
+  }
+
+  private initConsumableController(): void {
+    this.consumableController = new GameSceneConsumableController({
+      getSelectedClass: () => this.selectedClass,
+      getSelectedRace: () => this.selectedRace,
+      getPlayerProgress: () => this.playerProgress,
+      getInventory: () => this.inventory,
+      getAttributeBuffs: () => this.attributeBuffs,
+      setAttributeBuffs: (buffs) => {
+        this.attributeBuffs = buffs;
+      },
+      getAttributeBuffExpiresAt: () => this.attributeBuffExpiresAt,
+      setAttributeBuffExpiresAt: (ms) => {
+        this.attributeBuffExpiresAt = ms;
+      },
+      getMagicSkillLevel: () => this.getMagicSkillLevel(),
+      hasLearnedSpell: (id) => this.learnedSpellIds.has(id),
+      learnSpell: (id) => this.learnedSpellIds.add(id),
+      addChatLine: (text) => this.gameUi.addChatLine(text),
+      refreshHud: () => this.refreshHud(),
+      refreshSkillsUi: () => this.refreshSkillsUi(),
+      refreshKnownSpellsUi: () => this.refreshKnownSpellsUi(),
+      getCoreStats: () => this.getCoreStats(),
+      clearInventorySlotUi: (slotIndex) => this.gameUi.clearInventorySlot(slotIndex),
+      setInventorySlotUi: (slotIndex, textureKey, count, itemId) =>
+        this.gameUi.setInventorySlot(slotIndex, textureKey, count, itemId),
+      isMultiplayerActive: () => this.isMultiplayerActive(),
+      isMultiplayerConnected: () => Boolean(this.multiplayer?.isConnected()),
+      isSpawnSynced: () => Boolean(this.multiplayer?.getSpawnSynced()),
+      sendUseItemToServer: (itemId, slotIndex) =>
+        this.multiplayer!.sendUseItem(itemId, slotIndex),
+      persistProgress: () => this.persistCharacterProgress(),
+      cancelScheduledPersist: () => this.progressService?.cancelScheduledPersist(),
+      resetAttributeBuffTimer: () => this.resetAttributePotionTimer(),
+      getTimeNow: () => this.time.now,
     });
   }
 
@@ -618,6 +720,13 @@ export class GameScene extends Phaser.Scene {
       addChatLine: (text) => this.gameUi.addChatLine(text),
       refreshInspectedDummyLabel: () => this.refreshInspectedDummyLabel(),
       killDummy: (dummy) => this.killDummy(dummy),
+      applyMobDeathFromServer: (dummy) => this.applyMobDeathFromServer(dummy),
+      applyMobReviveFromServer: (dummy, netMob) =>
+        this.applyMobReviveFromServer(dummy, netMob),
+      restoreLocalMobsAfterDisconnect: () => {
+        this.mobController.destroyAll();
+        this.mobController.createAllIfNeeded();
+      },
       getMobFeetWorld: (modelId, tileX, tileY) =>
         this.getMobFeetWorld(modelId, tileX, tileY),
       getMobStepDurationMs: (modelId) => this.getMobStepDurationMs(modelId),
@@ -673,22 +782,26 @@ export class GameScene extends Phaser.Scene {
       setMultiplayerStatus: (message) => this.setMultiplayerStatus(message),
       addChatLine: (text) => this.gameUi.addChatLine(text),
       addCombatLine: (text) => this.gameUi.addCombatLine(text),
-      syncLocalVitalsFromServer: (state) => this.syncLocalVitalsFromServer(state),
-      syncLocalEquipmentFromServer: (state) => this.syncLocalEquipmentFromServer(state),
-      syncLocalInventoryFromServer: (slots) => this.syncLocalInventoryFromServer(slots),
-      syncLocalGoldFromServer: (gold) => this.syncLocalGoldFromServer(gold),
-      syncWorldItemsFromServer: (items) => this.syncWorldItemsFromServer(items),
-      applyWorldItemSpawned: (mapId, item) => this.applyWorldItemSpawned(mapId, item),
-      applyWorldItemUpdated: (mapId, item) => this.applyWorldItemUpdated(mapId, item),
+      syncLocalVitalsFromServer: (state) => this.localPlayerSync.syncLocalVitalsFromServer(state),
+      syncLocalEquipmentFromServer: (state) =>
+        this.localPlayerSync.syncLocalEquipmentFromServer(state),
+      syncLocalInventoryFromServer: (slots) =>
+        this.localPlayerSync.syncLocalInventoryFromServer(slots),
+      syncLocalGoldFromServer: (gold) => this.localPlayerSync.syncLocalGoldFromServer(gold),
+      syncWorldItemsFromServer: (items) => this.localPlayerSync.syncWorldItemsFromServer(items),
+      applyWorldItemSpawned: (mapId, item) =>
+        this.localPlayerSync.applyWorldItemSpawned(mapId, item),
+      applyWorldItemUpdated: (mapId, item) =>
+        this.localPlayerSync.applyWorldItemUpdated(mapId, item),
       applyWorldItemRemoved: (mapId, worldItemId) =>
-        this.applyWorldItemRemoved(mapId, worldItemId),
+        this.localPlayerSync.applyWorldItemRemoved(mapId, worldItemId),
       syncMobsFromServer: (mobs) => this.mobController.syncFromServer(mobs),
       applyNetMobState: (mob) => this.mobController.applyNetState(mob),
       applyNetMobLeft: (mobId) => this.mobController.applyNetLeft(mobId),
       handleServerPlayerDied: (playerId, killerName) =>
-        this.handleServerPlayerDied(playerId, killerName),
-      handleServerUseItemAck: (ack) => this.handleServerUseItemAck(ack),
-      handleServerPlayerUpdated: (state) => this.handleServerPlayerUpdated(state),
+        this.localPlayerSync.handleServerPlayerDied(playerId, killerName),
+      handleServerUseItemAck: (ack) => this.consumableController.handleServerUseItemAck(ack),
+      handleServerPlayerUpdated: (state) => this.localPlayerSync.handleServerPlayerUpdated(state),
       applyServerPlayerRole: (role) => {
         this.playerRole = this.resolvePlayerRole(role);
         this.syncPlayerNameLabelStyle();
@@ -702,6 +815,10 @@ export class GameScene extends Phaser.Scene {
       getLocalPlayerStepDurationMs: () => this.getLocalPlayerStepDurationMs(),
       getPlayerFeetWorldForTile: (tx, ty) => this.getPlayerFeetWorldForTile(tx, ty),
       killAllLocalMobs: () => this.mobController.destroyAll(),
+      restoreLocalMobsAfterDisconnect: () => {
+        this.mobController.destroyAll();
+        this.mobController.createAllIfNeeded();
+      },
       applyIncomingDamage: (amount, type) =>
         this.combatController.applyIncomingDamage(amount, type),
       showDamageNumber: (x, y, amount, source) =>
@@ -814,6 +931,10 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
+  /**
+   * Orden de init — ver docs/GAMESCENE_INIT.md antes de reordenar.
+   * Crítico: setupCameras → initWorldItemManager → initMpController → spawn/drops.
+   */
   create() {
     this.initShopBankSystem();
     this.initCombatController();
@@ -853,16 +974,14 @@ export class GameScene extends Phaser.Scene {
 
     this.mapController.drawMap(this.currentMap);
     this.createPlayer();
-    if (!this.hasLoadedCharacterProgress) {
-      this.spawnAllItemsNearSpawn(centerTileX, centerTileY);
-    }
     this.initMobController();
-    this.mobController.createAllIfNeeded();
-    this.time.delayedCall(200, () => this.playSpawnEffect());
 
     this.gameUi = new GameUi(this);
     this.gameUi.setMinimapRedrawHandler(() => this.refreshMinimap());
+    this.initConsumableController();
     this.initChatCommands();
+    this.mobController.createAllIfNeeded();
+    this.time.delayedCall(200, () => this.playSpawnEffect());
     this.gameUi.setChatSubmitHandler((message) => this.chatCommands.handleSubmit(message));
     this.gameUi.setInventoryHoverHandler((slotIndex) => this.buildInventoryHoverHint(slotIndex));
     this.gameUi.setMacroSlotClickHandler((slotIndex) => {
@@ -889,11 +1008,6 @@ export class GameScene extends Phaser.Scene {
       this.refreshKnownSpellsUi();
       this.refreshSkillsUi();
       this.refreshInventoryUi();
-      if (this.deathPhase !== "alive") {
-        this.applyGhostVisual();
-      } else {
-        this.syncEquippedArmorOutfit();
-      }
       this.validateEquippedArmorForRace();
       this.refreshHud();
     } else {
@@ -904,7 +1018,12 @@ export class GameScene extends Phaser.Scene {
     }
     this.mapController.setupCameras();
     this.initWorldItemManager();
+    this.initLocalPlayerSync();
+    this.initMpController();
     this.initInventoryController();
+    if (!this.hasLoadedCharacterProgress) {
+      this.spawnAllItemsNearSpawn(centerTileX, centerTileY);
+    }
     this.gameUi.setGoldClickHandler(() => this.tryDropGold());
     this.gameUi.setInventorySlotDoubleClickHandler((slotIndex) => {
       this.inventoryController.handleSlotDoubleClick(slotIndex);
@@ -920,8 +1039,8 @@ export class GameScene extends Phaser.Scene {
     );
     this.syncNpcsForCurrentMap();
     this.setupDeathOverlay();
-    if (this.hasLoadedCharacterProgress && this.deathPhase !== "alive") {
-      this.deathOverlay?.show(this.getGameViewportRect());
+    if (this.hasLoadedCharacterProgress) {
+      this.syncDeathUiFromState();
     }
     this.setupBankOverlay();
     this.setupShopOverlay();
@@ -951,7 +1070,6 @@ export class GameScene extends Phaser.Scene {
       this.mpController?.disconnect();
     });
 
-    this.initMpController();
     this.mpController.connect();
   }
 
@@ -965,7 +1083,10 @@ export class GameScene extends Phaser.Scene {
   };
 
   private handleSceneResume() {
+    this.progressService?.cancelScheduledPersist();
+
     const character = this.game.registry.get("activeCharacter") as SavedCharacter | undefined;
+    const slotIndex = this.game.registry.get("activeCharacterSlotIndex") as number | undefined;
     if (!character) {
       return;
     }
@@ -973,19 +1094,24 @@ export class GameScene extends Phaser.Scene {
       return;
     }
     this.applyActiveCharacter(character);
+    if (typeof slotIndex === "number" && Number.isFinite(slotIndex)) {
+      this.characterSlotIndex = slotIndex;
+    }
     this.game.registry.remove("activeCharacter");
     this.game.registry.remove("activeCharacterSlotIndex");
 
-    this.ensureProgressService().setCharacterId(character.id);
     const savedProgress = this.ensureProgressService().load(character.id);
     if (savedProgress) {
       this.applyCharacterProgress(savedProgress);
       this.hasLoadedCharacterProgress = true;
       this.applyWorldStateFromProgress();
     } else {
+      this.resetDeathStateForCharacterSwitch();
       this.syncCharacterVitalsAndSpells();
+      this.applyWorldStateFromProgress();
     }
 
+    this.syncDeathUiFromState();
     this.validateEquippedArmorForRace();
     this.refreshInventoryUsability();
     this.refreshKnownSpellsUi();
@@ -1180,37 +1306,52 @@ export class GameScene extends Phaser.Scene {
   }
 
   private applyCharacterProgress(progress: SavedCharacterProgress) {
-    this.currentMapId = progress.mapId;
-    this.playerTileX = progress.tileX;
-    this.playerTileY = progress.tileY;
-    this.facing = progress.facing;
-    this.inventory = progress.inventory.map((slot) =>
-      slot ? { itemId: slot.itemId, count: slot.count } : null
-    );
-    this.equipment = { ...progress.equipment };
-    // El outfit se deriva del slot armor en syncEquippedArmorOutfit (evita desync con el sprite).
-    this.equippedOutfit = "base";
-    this.equippedArmorVisual = undefined;
-    this.playerProgress = { ...progress.playerProgress };
-    this.skillLevels = { ...progress.skillLevels };
-    this.learnedSpellIds.clear();
-    progress.learnedSpellIds.forEach((spellId) => {
-      this.learnedSpellIds.add(spellId);
+    applySavedProgressToSceneState({
+      progress,
+      setMapPosition: (mapId, tileX, tileY, facing) => {
+        this.currentMapId = mapId;
+        this.playerTileX = tileX;
+        this.playerTileY = tileY;
+        this.facing = facing;
+      },
+      setInventory: (slots) => {
+        this.inventory = slots;
+      },
+      setEquipment: (equipment) => {
+        this.equipment = equipment;
+      },
+      setEquippedOutfit: (outfit) => {
+        this.equippedOutfit = outfit;
+      },
+      clearEquippedArmorVisual: () => {
+        this.equippedArmorVisual = undefined;
+      },
+      setPlayerProgress: (playerProgress) => {
+        this.playerProgress = playerProgress;
+      },
+      setSkillLevels: (levels) => {
+        this.skillLevels = levels;
+      },
+      setLearnedSpellIds: (ids) => {
+        this.learnedSpellIds.clear();
+        ids.forEach((spellId) => this.learnedSpellIds.add(spellId));
+      },
+      setMacroBindings: (bindings) => {
+        this.macroBindings = bindings.map((binding) => ({ ...binding }));
+      },
+      setKillStats: (stats) => {
+        this.killStats = stats;
+      },
+      setDeathState: (phase, useGhost) => {
+        this.deathPhase = phase;
+        this.useGhostAppearance = useGhost;
+      },
+      onWorldItemsStorageReload: () => {
+        if (this.worldItemManager) {
+          this.worldItemManager.loadSharedStorage();
+        }
+      },
     });
-    this.macroBindings = progress.macroBindings.map((binding) => ({
-      keyCode: binding.keyCode,
-      action: binding.action,
-      itemId: binding.itemId,
-      spellId: binding.spellId,
-    }));
-    this.killStats = { ...progress.killStats };
-    this.deathPhase = progress.deathPhase;
-    this.useGhostAppearance =
-      progress.deathPhase === "alive" ? false : progress.useGhostAppearance;
-    // Estado global por mapa compartido entre personajes en este cliente.
-    if (this.worldItemManager) {
-      this.worldItemManager.loadSharedStorage();
-    }
   }
 
   private cacheCurrentMapWorldItems() {
@@ -1247,13 +1388,7 @@ export class GameScene extends Phaser.Scene {
     if (!this.isMultiplayerActive()) {
       this.restoreWorldItemsForCurrentMap();
     }
-    if (this.deathPhase !== "alive") {
-      this.applyGhostVisual();
-    } else {
-      this.syncEquippedArmorOutfit();
-      this.syncEquippedHeldItemVisuals();
-      this.playFacingAnim("idle");
-    }
+    this.syncDeathUiFromState();
     this.refreshMapLocationLabel();
     this.refreshMinimap();
     this.refreshHud();
@@ -1279,6 +1414,29 @@ export class GameScene extends Phaser.Scene {
     const colors = getPlayerNameColors(this.selectedFaction, this.playerRole);
     this.playerNameLabel.setColor(colors.fill);
     this.playerNameLabel.setStroke(colors.stroke, WORLD_NAME_STROKE);
+  }
+
+  /** Alinea sprite fantasma y overlay de muerte con el deathPhase del personaje activo. */
+  private syncDeathUiFromState() {
+    if (this.deathPhase !== "alive") {
+      this.applyGhostVisual();
+      this.deathOverlay?.show(this.getGameViewportRect());
+      return;
+    }
+
+    this.deathOverlay?.hide();
+    this.deathOverlay?.hideDialog();
+    this.clearGhostVisual();
+    this.syncPlayerBodyAndFace();
+    this.syncEquippedArmorOutfit();
+    this.syncEquippedHeldItemVisuals();
+    this.playFacingAnim("idle");
+  }
+
+  private resetDeathStateForCharacterSwitch() {
+    const fresh = freshDeathStateForSwitch();
+    this.deathPhase = fresh.deathPhase;
+    this.useGhostAppearance = fresh.useGhostAppearance;
   }
 
   private getLocalPlayerStepDurationMs(): number {
@@ -1474,57 +1632,8 @@ export class GameScene extends Phaser.Scene {
     this.mpController.syncServerInventoryIfActive();
   }
 
-  private handleServerPlayerUpdated(state: NetPlayerState) {
-    const localId = this.mpController.getPlayerId();
-    if (!localId) return;
-    if (state.id === localId) {
-      this.syncLocalVitalsFromServer(state);
-      this.syncLocalEquipmentFromServer(state);
-      return;
-    }
-    this.multiplayer?.updateRemote(state, this.currentMapId);
-  }
-
-  private syncLocalVitalsFromServer(state: NetPlayerState | null | undefined) {
-    if (!state) {
-      return;
-    }
-    this.playerProgress.hp = state.hp;
-    this.playerProgress.hpMax = state.hpMax;
-    this.playerProgress.mp = state.mp;
-    this.playerProgress.mpMax = state.mpMax;
-    this.playerProgress.level = state.level;
-    this.refreshHud();
-  }
-
-  private syncLocalEquipmentFromServer(state: NetPlayerState | null | undefined) {
-    if (!state?.equipment) {
-      return;
-    }
-    this.equipment.weapon = (state.equipment.weaponId as ItemId | null) ?? null;
-    this.equipment.shield = (state.equipment.shieldId as ItemId | null) ?? null;
-    this.equipment.helmet = (state.equipment.helmetId as ItemId | null) ?? null;
-    this.equipment.armor = (state.equipment.armorId as ItemId | null) ?? null;
-    this.syncEquippedArmorOutfit();
-    this.syncEquippedHeldItemVisuals();
-    this.gameUi.setEquippedItemIds(
-      Object.values(this.equipment).filter((id): id is ItemId => id != null)
-    );
-    this.refreshInventoryUi();
-  }
-
-  private handleServerPlayerDied(playerId: string, killerName: string) {
-    if (playerId === this.mpController.getPlayerId()) {
-      this.playerProgress.hp = 0;
-      this.handlePlayerDeath();
-      this.gameUi.addCombatLine(`Has sido asesinado por ${killerName}.`);
-    } else {
-      this.multiplayer?.getRemotePlayers()?.setPlayerGhost(playerId);
-    }
-  }
-
   private isMultiplayerActive() {
-    return this.mpController.isActive();
+    return this.mpController?.isActive() ?? false;
   }
 
   private tryNetworkStep(dir: MoveDirection) {
@@ -1627,7 +1736,7 @@ export class GameScene extends Phaser.Scene {
     if (!enabled) {
       this.hitboxDebugGraphics?.clear().setVisible(false);
     }
-    this.gameUi.addChatLine(`Debug hitbox: ${enabled ? "ON" : "OFF"}`);
+    this.gameUi?.addChatLine(`Debug hitbox: ${enabled ? "ON" : "OFF"}`);
   }
 
   private handleMobEditCommand(normalized: string): boolean {
@@ -1714,6 +1823,11 @@ export class GameScene extends Phaser.Scene {
         getCharacterSlotIndex: () => this.characterSlotIndex,
         refreshMapLocationLabel: () => this.refreshMapLocationLabel(),
         refreshMinimap: () => this.refreshMinimap(),
+        notifyServerRevive: (source, tileX, tileY, mapId) => {
+          if (this.isMultiplayerActive()) {
+            this.mpController.sendRevive(source, tileX, tileY, mapId);
+          }
+        },
       },
       this._homeMapIdBackup
     );
@@ -1755,139 +1869,7 @@ export class GameScene extends Phaser.Scene {
     slotIndex: number,
     options?: { skipMultiplayer?: boolean }
   ) {
-    const stack = this.inventory[slotIndex];
-    if (!stack) {
-      return;
-    }
-
-    const item = getItemDefinition(stack.itemId);
-    const usability = canUseItem(
-      this.selectedClass,
-      this.selectedRace,
-      this.playerProgress.level,
-      item
-    );
-    if (!usability.allowed) {
-      this.gameUi.addChatLine(usability.reason ?? "No podés usar ese objeto.");
-      return;
-    }
-
-    if (item.type !== "consumable" || !item.consumableEffects) {
-      this.gameUi.addChatLine(`${item.name} no se puede usar.`);
-      return;
-    }
-
-    const { healHpPercent, restoreMpPercent, learnSpellId, attributeBuff } =
-      item.consumableEffects;
-
-    if (
-      !options?.skipMultiplayer &&
-      this.multiplayer?.isConnected() &&
-      !learnSpellId &&
-      (healHpPercent || restoreMpPercent || attributeBuff)
-    ) {
-      if (!this.isMultiplayerActive()) {
-        this.gameUi.addChatLine("Conectando con el servidor...");
-        return;
-      }
-      if (!this.multiplayer!.getSpawnSynced()) {
-        this.gameUi.addChatLine("Esperá a que termine la conexión con el servidor.");
-        return;
-      }
-      this.multiplayer!.sendUseItem(stack.itemId, slotIndex);
-      return;
-    }
-    if (learnSpellId) {
-      const learned = this.tryLearnSpellFromScroll(learnSpellId, item.name);
-      if (!learned) {
-        return;
-      }
-
-      this.consumeOneFromSlot(slotIndex, item.textureKey);
-      this.refreshKnownSpellsUi();
-      return;
-    }
-
-    if (attributeBuff === "strength" || attributeBuff === "agility") {
-      this.expireAttributePotionBuffsIfNeeded();
-      const statLabel = attributeBuff === "strength" ? "Fuerza" : "Agilidad";
-      const result = this.tryApplyAttributeBuffFromPotion(attributeBuff);
-      this.resetAttributePotionTimer();
-
-      this.consumeOneFromSlot(slotIndex, item.textureKey);
-      this.refreshSkillsUi();
-      this.refreshHud();
-
-      if (result.atCap && result.gained <= 0) {
-        this.gameUi.addChatLine(
-          `Usaste ${item.name}. Renovaste el efecto por 90 s (ya tenés el máximo de ${statLabel}).`
-        );
-        return;
-      }
-
-      const totalBonus = Math.floor(this.attributeBuffs[attributeBuff]);
-      this.gameUi.addChatLine(
-        `Usaste ${item.name} y ganaste +${result.gained} ${statLabel} (bono +${totalBonus}, stat ${result.newStatValue}/${STAT_MAX + ATTRIBUTE_POTION_BUFF_MAX}, 90 s).`
-      );
-      return;
-    }
-
-    if (restoreMpPercent && restoreMpPercent > 0) {
-      if (!CLASS_USES_MANA[this.selectedClass] || this.playerProgress.mpMax <= 0) {
-        this.gameUi.addChatLine("Tu clase no usa maná.");
-        return;
-      }
-      if (this.playerProgress.mp >= this.playerProgress.mpMax) {
-        this.gameUi.addChatLine("Ya tenés el maná al máximo.");
-        return;
-      }
-
-      const manaAmount = Math.max(
-        1,
-        Math.floor(this.playerProgress.mpMax * restoreMpPercent)
-      );
-      const before = this.playerProgress.mp;
-      this.playerProgress.mp = Math.min(
-        this.playerProgress.mpMax,
-        this.playerProgress.mp + manaAmount
-      );
-      const restored = this.playerProgress.mp - before;
-
-      this.consumeOneFromSlot(slotIndex, item.textureKey);
-      this.refreshHud();
-      this.gameUi.addChatLine(
-        `Usaste ${item.name} y recuperaste ${restored} MP (${Math.round(restoreMpPercent * 100)}%).`
-      );
-      return;
-    }
-
-    if (!healHpPercent || healHpPercent <= 0) {
-      this.gameUi.addChatLine(`${item.name} no tiene efecto definido.`);
-      return;
-    }
-
-    if (this.playerProgress.hp >= this.playerProgress.hpMax) {
-      this.gameUi.addChatLine("Ya tenés la vida al máximo.");
-      return;
-    }
-
-    const healAmount = Math.max(
-      1,
-      Math.floor(this.playerProgress.hpMax * healHpPercent)
-    );
-    const before = this.playerProgress.hp;
-    this.playerProgress.hp = Math.min(
-      this.playerProgress.hpMax,
-      this.playerProgress.hp + healAmount
-    );
-    const restored = this.playerProgress.hp - before;
-
-    this.consumeOneFromSlot(slotIndex, item.textureKey);
-
-    this.refreshHud();
-    this.gameUi.addChatLine(
-      `Usaste ${item.name} y recuperaste ${restored} HP (${Math.round(healHpPercent * 100)}%).`
-    );
+    this.consumableController?.useConsumableFromSlot(slotIndex, options);
   }
 
   private resetAttributePotionTimer() {
@@ -1895,212 +1877,14 @@ export class GameScene extends Phaser.Scene {
   }
 
   private clearAttributePotionBuffs(notify = false) {
-    const hadBuff =
-      this.attributeBuffs.strength > 0 ||
-      this.attributeBuffs.agility > 0 ||
-      this.attributeBuffExpiresAt > 0;
-    this.attributeBuffs = { strength: 0, agility: 0 };
-    this.attributeBuffExpiresAt = 0;
-    if (notify && hadBuff) {
-      this.gameUi.addChatLine(
-        "El efecto de las pociones de fuerza y agilidad terminó."
-      );
-      this.refreshSkillsUi();
-    }
+    this.consumableController?.clearAttributePotionBuffs(notify);
   }
 
-  /** @returns true si se limpiaron buffs por expiración */
   private expireAttributePotionBuffsIfNeeded(): boolean {
-    if (this.attributeBuffExpiresAt <= 0) {
+    if (!this.consumableController) {
       return false;
     }
-    if (this.time.now < this.attributeBuffExpiresAt) {
-      return false;
-    }
-    this.clearAttributePotionBuffs(true);
-    return true;
-  }
-
-  private handleServerUseItemAck(ack: ServerUseItemAckMessage) {
-    if (typeof ack.hp === "number") {
-      this.playerProgress.hp = ack.hp;
-    }
-    if (typeof ack.mp === "number") {
-      this.playerProgress.mp = ack.mp;
-    }
-    if (ack.attributeBuffs) {
-      this.attributeBuffs = {
-        strength: ack.attributeBuffs.strength,
-        agility: ack.attributeBuffs.agility,
-      };
-      this.attributeBuffExpiresAt = ack.buffExpiresAtMs ?? 0;
-      this.refreshSkillsUi();
-    }
-    this.refreshHud();
-    this.gameUi.addChatLine(ack.message);
-
-    if (ack.clientOnly && typeof ack.inventorySlot === "number") {
-      this.useConsumableFromSlot(ack.inventorySlot, { skipMultiplayer: true });
-      this.persistCharacterProgress();
-      return;
-    }
-
-    const slotIndex = this.resolveInventorySlotForItemAck(ack);
-    if (slotIndex >= 0) {
-      const item = getItemDefinition(ack.itemId as ItemId);
-      this.consumeOneFromSlot(slotIndex, item.textureKey);
-    }
-    this.persistCharacterProgress();
-  }
-
-  private syncLocalGoldFromServer(gold: number | undefined) {
-    if (typeof gold !== "number" || !Number.isFinite(gold)) {
-      return;
-    }
-    this.playerProgress.gold = Math.max(0, Math.floor(gold));
-    this.refreshHud();
-  }
-
-  private syncWorldItemsFromServer(items: NetWorldItemState[] | null | undefined) {
-    if (!this.isMultiplayerActive()) {
-      return;
-    }
-    this.worldItemManager.syncFromNetStates(items);
-  }
-
-  private applyWorldItemSpawned(mapId: string, item: NetWorldItemState) {
-    if (!this.isMultiplayerActive() || mapId !== this.currentMapId) {
-      return;
-    }
-    this.worldItemManager.applyNetSpawned(mapId, item);
-  }
-
-  private applyWorldItemUpdated(
-    mapId: string,
-    item: import("../../shared/types").NetWorldItemState
-  ) {
-    if (!this.isMultiplayerActive() || mapId !== this.currentMapId) {
-      return;
-    }
-    this.worldItemManager.applyNetUpdated(mapId, item);
-  }
-
-  private applyWorldItemRemoved(mapId: string, worldItemId: string) {
-    if (!this.isMultiplayerActive() || mapId !== this.currentMapId) {
-      return;
-    }
-    this.worldItemManager.applyNetRemoved(mapId, worldItemId);
-  }
-
-  private syncLocalInventoryFromServer(slots: NetInventorySlotState[] | undefined) {
-    if (!Array.isArray(slots)) {
-      return;
-    }
-    this.inventory = Array(INVENTORY_SLOT_COUNT).fill(null);
-    for (const slot of slots) {
-      const slotIndex =
-        typeof slot.slotIndex === "number" && Number.isFinite(slot.slotIndex)
-          ? Math.floor(slot.slotIndex)
-          : -1;
-      if (slotIndex < 0 || slotIndex >= INVENTORY_SLOT_COUNT) {
-        continue;
-      }
-      const amount =
-        typeof slot.amount === "number" && Number.isFinite(slot.amount)
-          ? Math.max(0, Math.floor(slot.amount))
-          : 0;
-      const itemId =
-        typeof slot.itemId === "string" && slot.itemId.trim() ? slot.itemId.trim() : null;
-      if (!itemId || amount <= 0) {
-        continue;
-      }
-      try {
-        const definition = getItemDefinition(itemId as ItemId);
-        this.inventory[slotIndex] = { itemId: definition.id, count: amount };
-      } catch {
-        continue;
-      }
-    }
-    this.refreshInventoryUi();
-    this.gameUi.setEquippedItemIds(
-      Object.values(this.equipment).filter((id): id is ItemId => id != null)
-    );
-  }
-
-  private resolveInventorySlotForItemAck(ack: ServerUseItemAckMessage): number {
-    if (typeof ack.inventorySlot === "number" && ack.inventorySlot >= 0) {
-      const preferred = this.inventory[ack.inventorySlot];
-      if (preferred?.itemId === ack.itemId && preferred.count > 0) {
-        return ack.inventorySlot;
-      }
-    }
-    return this.inventory.findIndex(
-      (stack) => stack?.itemId === ack.itemId && stack.count > 0
-    );
-  }
-
-  private tryApplyAttributeBuffFromPotion(stat: "strength" | "agility"): {
-    gained: number;
-    atCap: boolean;
-    newStatValue: number;
-  } {
-    const current = Math.floor(this.attributeBuffs[stat]);
-    if (current >= ATTRIBUTE_POTION_BUFF_MAX) {
-      const natural = resolveCoreStats(this.selectedRace, this.selectedClass);
-      return {
-        gained: 0,
-        atCap: true,
-        newStatValue: natural[stat] + current,
-      };
-    }
-
-    const roll = Phaser.Math.Between(ATTRIBUTE_POTION_GAIN_MIN, ATTRIBUTE_POTION_GAIN_MAX);
-    const gained = Math.min(roll, ATTRIBUTE_POTION_BUFF_MAX - current);
-    this.attributeBuffs[stat] = current + gained;
-    const core = this.getCoreStats();
-    return { gained, atCap: false, newStatValue: core[stat] };
-  }
-
-  private tryLearnSpellFromScroll(spellId: number, itemName: string): boolean {
-    const spell = SPELL_DEFINITIONS.find((entry) => entry.idSpell === spellId);
-    if (!spell) {
-      this.gameUi.addChatLine(`${itemName} no tiene un hechizo válido.`);
-      return false;
-    }
-    if (!spell.usableBy.includes(this.selectedClass)) {
-      this.gameUi.addChatLine(`Tu clase no puede aprender ${spell.nombre}.`);
-      return false;
-    }
-    if (spell.nivelMagiaRequerido > this.getMagicSkillLevel()) {
-      this.gameUi.addChatLine(
-        `Necesitás ${spell.nivelMagiaRequerido} puntos de Magia para aprender ${spell.nombre}.`
-      );
-      return false;
-    }
-    if (this.learnedSpellIds.has(spellId)) {
-      this.gameUi.addChatLine(`Ya conocés ${spell.nombre}.`);
-      return false;
-    }
-
-    this.learnedSpellIds.add(spellId);
-    this.gameUi.addChatLine(`Aprendiste ${spell.nombre}.`);
-    return true;
-  }
-
-  private consumeOneFromSlot(slotIndex: number, textureKey: string) {
-    const stack = this.inventory[slotIndex];
-    if (!stack) {
-      return;
-    }
-
-    stack.count -= 1;
-    if (stack.count <= 0) {
-      this.inventory[slotIndex] = null;
-      this.gameUi.clearInventorySlot(slotIndex);
-      return;
-    }
-
-    this.gameUi.setInventorySlot(slotIndex, textureKey, stack.count, stack.itemId);
+    return this.consumableController.expireAttributePotionBuffsIfNeeded(this.time.now);
   }
 
   private createWorldItem(
@@ -2110,6 +1894,10 @@ export class GameScene extends Phaser.Scene {
     count = 1,
     options?: { exactTile?: boolean }
   ) {
+    if (!this.worldItemManager) {
+      console.warn("[GameScene] createWorldItem antes de initWorldItemManager", itemId);
+      return;
+    }
     this.worldItemManager.createItem(itemId, tileX, tileY, count, options);
   }
 
@@ -2119,6 +1907,10 @@ export class GameScene extends Phaser.Scene {
     count: number,
     options?: { exactTile?: boolean }
   ) {
+    if (!this.worldItemManager) {
+      console.warn("[GameScene] createWorldGold antes de initWorldItemManager");
+      return;
+    }
     this.worldItemManager.createGold(tileX, tileY, count, options);
   }
 
@@ -2287,10 +2079,6 @@ export class GameScene extends Phaser.Scene {
 
   private syncNpcsForCurrentMap() {
     this.npcManager?.syncForMap(this.currentMapId);
-  }
-
-  revivePlayerFromAlly() {
-    this.deathSystem.reviveFromAlly();
   }
 
   private setupInput() {
@@ -3347,10 +3135,6 @@ export class GameScene extends Phaser.Scene {
     this.mobController.removeShowcaseDummies();
   }
 
-  private destroyAllDummies() {
-    this.mobController.destroyAll();
-  }
-
   private updateMobShowcaseAi() {
     this.mobController.updateShowcaseAi();
   }
@@ -3399,11 +3183,26 @@ export class GameScene extends Phaser.Scene {
     return this.mobAiSystem.resolveFacingTowardsTargetTile(fromTileX, fromTileY, toTileX, toTileY, fallbackFacing);
   }
 
-  private killDummy(dummy: DummyState) {
+  private cancelMobLocalRespawn(dummy: DummyState) {
+    if (dummy.respawnTimer) {
+      dummy.respawnTimer.remove(false);
+      dummy.respawnTimer = undefined;
+    }
+  }
+
+  /** Muerte visual sincronizada desde el servidor (sin XP, drops ni respawn local). */
+  applyMobDeathFromServer(dummy: DummyState) {
+    if (!dummy.alive) {
+      return;
+    }
+    this.cancelMobLocalRespawn(dummy);
     if (this.inspectedDummyId === dummy.id) {
       this.inspectedDummyId = null;
     }
     this.stopDummyMovement(dummy);
+    dummy.netMoveQueue = [];
+    dummy.netMoveTargetTile = undefined;
+    dummy.isMoving = false;
     dummy.alive = false;
     dummy.nextAiMoveAt = 0;
     dummy.nextAttackAt = 0;
@@ -3412,10 +3211,44 @@ export class GameScene extends Phaser.Scene {
     dummy.sprite.stop();
     dummy.sprite.clearTint();
     dummy.sprite.setVisible(false);
-    if (dummy.face) {
-      dummy.face.setVisible(false);
-    }
+    dummy.face?.setVisible(false);
     dummy.hpLabel.setVisible(false);
+  }
+
+  /** Respawn visual desde el servidor (cancela timers locales de respawn). */
+  applyMobReviveFromServer(
+    dummy: DummyState,
+    netMob: Pick<import("../../shared/types").NetMobState, "hp" | "hpMax" | "tileX" | "tileY" | "facing">
+  ) {
+    this.cancelMobLocalRespawn(dummy);
+    dummy.alive = true;
+    dummy.hp = netMob.hp;
+    dummy.maxHp = netMob.hpMax;
+    dummy.tileX = netMob.tileX;
+    dummy.tileY = netMob.tileY;
+    dummy.facing = netMob.facing;
+    dummy.isAggroed = false;
+    dummy.immobilizedUntilMs = 0;
+    dummy.isMoving = false;
+    dummy.netMoveQueue = [];
+    dummy.netMoveTargetTile = undefined;
+    this.tweens.killTweensOf(dummy.sprite);
+    dummy.sprite.clearTint();
+    dummy.sprite.setVisible(true);
+    if (dummy.face) {
+      dummy.face.setVisible(true);
+    }
+    this.syncDummyWorldPosition(dummy);
+    this.setMobAnimationState(dummy, "idle");
+    this.syncDummyVisibilityForCurrentMap();
+  }
+
+  private killDummy(dummy: DummyState) {
+    if (this.isMultiplayerActive()) {
+      this.applyMobDeathFromServer(dummy);
+      return;
+    }
+    this.applyMobDeathFromServer(dummy);
     this.gameUi.addCombatLine(`${dummy.name} fue destruido.`);
     this.killStats.creaturesKilled += 1;
     this.refreshSkillsUi();
@@ -3600,11 +3433,17 @@ export class GameScene extends Phaser.Scene {
   }
 
   private scheduleDummyRespawn(dummy: DummyState) {
-    if (dummy.isShowcase || dummy.respawnMs <= 0) {
+    if (dummy.isShowcase || dummy.respawnMs <= 0 || this.isMultiplayerActive()) {
       return;
     }
-    this.time.delayedCall(dummy.respawnMs, () => {
-      const spawnTile = dummy.fixedSpawnTile ?? this.pickRandomMobSpawnTile(dummy.spawnConfig);
+    this.cancelMobLocalRespawn(dummy);
+    dummy.respawnTimer = this.time.delayedCall(dummy.respawnMs, () => {
+      dummy.respawnTimer = undefined;
+      const spawnTile =
+        dummy.fixedSpawnTile ??
+        (this.isMultiplayerActive()
+          ? { x: dummy.tileX, y: dummy.tileY }
+          : this.pickRandomMobSpawnTile(dummy.spawnConfig));
       dummy.hp = dummy.maxHp;
       dummy.alive = true;
       dummy.isMoving = false;
@@ -4181,32 +4020,5 @@ export class GameScene extends Phaser.Scene {
       return { x: this.playerTileX - distance, y: this.playerTileY };
     }
     return { x: this.playerTileX + distance, y: this.playerTileY };
-  }
-
-  private toggleCitizenOutfit() {
-    if (this.equipment.armor) {
-      this.gameUi.addChatLine("Quitá la armadura del cuerpo antes de cambiar la ropa de ciudadano.");
-      return;
-    }
-    if (this.equippedOutfit === "base") {
-      const check = canRaceEquipArmor(this.selectedRace, true);
-      if (!check.allowed) {
-        this.gameUi.addChatLine(check.reason ?? "No podés usar esa ropa.");
-        return;
-      }
-      this.equippedOutfit = "citizen";
-      this.equippedArmorVisual = getDefaultArmorVisualForOutfit("citizen");
-    } else {
-      this.equippedOutfit = "base";
-      this.equippedArmorVisual = undefined;
-    }
-    this.applyLocalPlayerBodyVisual();
-    this.syncEquippedHeldItemVisuals();
-    const label =
-      this.equippedOutfit === "citizen"
-        ? "Equipaste Ropa de Ciudadano."
-        : "Te quitaste la Ropa de Ciudadano.";
-
-    this.gameUi.addChatLine(label);
   }
 }

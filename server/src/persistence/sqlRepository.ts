@@ -26,7 +26,7 @@ export class SqlCharacterRepository implements CharacterRepository {
       SELECT
         id, account_id, name, role, map_id, tile_x, tile_y, facing,
         race_id, gender_id, class_id, faction_id, face_index,
-        level, hp, hp_max, mp, mp_max,
+        level, hp, hp_max, mp, mp_max, gold,
         weapon_item_id, shield_item_id, helmet_item_id, armor_item_id,
         equipped_outfit, attr_strength_bonus, attr_agility_bonus, attr_buffs_expires_at_ms
       FROM characters
@@ -72,16 +72,16 @@ export class SqlCharacterRepository implements CharacterRepository {
       INSERT INTO characters (
         id, account_id, name, role, map_id, tile_x, tile_y, facing,
         race_id, gender_id, class_id, faction_id, face_index,
-        level, hp, hp_max, mp, mp_max,
+        level, hp, hp_max, mp, mp_max, gold,
         weapon_item_id, shield_item_id, helmet_item_id, armor_item_id,
         equipped_outfit, attr_strength_bonus, attr_agility_bonus, attr_buffs_expires_at_ms,
         updated_at
       ) VALUES (
         $1, $2, $3, $4, $5, $6, $7, $8,
         $9, $10, $11, $12, $13,
-        $14, $15, $16, $17, $18,
-        $19, $20, $21, $22,
-        $23, $24, $25, $26,
+        $14, $15, $16, $17, $18, $19,
+        $20, $21, $22, $23,
+        $24, $25, $26, $27,
         NOW()
       )
       ON CONFLICT (id) DO UPDATE SET
@@ -102,6 +102,7 @@ export class SqlCharacterRepository implements CharacterRepository {
         hp_max = EXCLUDED.hp_max,
         mp = EXCLUDED.mp,
         mp_max = EXCLUDED.mp_max,
+        gold = EXCLUDED.gold,
         weapon_item_id = EXCLUDED.weapon_item_id,
         shield_item_id = EXCLUDED.shield_item_id,
         helmet_item_id = EXCLUDED.helmet_item_id,
@@ -131,6 +132,7 @@ export class SqlCharacterRepository implements CharacterRepository {
         row.hp_max,
         row.mp,
         row.mp_max,
+        row.gold,
         row.weapon_item_id,
         row.shield_item_id,
         row.helmet_item_id,

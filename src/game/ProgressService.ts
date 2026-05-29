@@ -1,4 +1,5 @@
 import type Phaser from "phaser";
+import { shouldApplyScheduledPersist } from "../../shared/progressPersistGuard";
 import { patchSavedCharacterMeta } from "../data/characters";
 import {
   deleteCharacterProgress,
@@ -69,12 +70,14 @@ export class ProgressService {
     delayMs = DEFAULT_SAVE_DEBOUNCE_MS
   ): void {
     if (!this.characterId) return;
+    const scheduledForCharacterId = this.characterId;
     if (this.debounceTimer) {
       this.debounceTimer.remove(false);
     }
     this.debounceTimer = this.scene.time.delayedCall(delayMs, () => {
       this.debounceTimer = undefined;
       if (!this.scene.sys) return;
+      if (!shouldApplyScheduledPersist(scheduledForCharacterId, this.characterId)) return;
       this.persistNow(getSnapshot, meta);
     });
   }
