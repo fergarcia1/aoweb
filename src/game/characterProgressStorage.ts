@@ -2,9 +2,10 @@ import { normalizeOutfit, type Outfit } from "../../game-data/outfits";
 import type { Facing } from "../../shared/types";
 import type { EquipmentSlot, ItemId } from "../items/itemDefinitions";
 import type { InventorySlot } from "../items/inventoryStack";
-import { SKILL_IDS, type SkillId } from "./skills";
 
-export const INVENTORY_SLOT_COUNT = 24;
+import { INVENTORY_SLOT_COUNT } from "../../game-data/constants";
+
+export { INVENTORY_SLOT_COUNT };
 export const MACRO_SLOT_COUNT = 10;
 
 const STORAGE_PREFIX = "aoweb_progress_v1_";
@@ -51,7 +52,7 @@ export type SavedCharacterProgress = {
   equipment: Record<EquipmentSlot, ItemId | null>;
   equippedOutfit: Outfit;
   playerProgress: SavedPlayerProgress;
-  skillLevels: Record<SkillId, number>;
+
   learnedSpellIds: number[];
   macroBindings: SavedMacroBinding[];
   killStats: SavedKillStats;
@@ -112,19 +113,7 @@ function normalizeEquipment(raw: unknown): Record<EquipmentSlot, ItemId | null> 
   return equipment;
 }
 
-function normalizeSkillLevels(raw: unknown): Record<SkillId, number> {
-  const levels = Object.fromEntries(SKILL_IDS.map((id) => [id, 0])) as Record<SkillId, number>;
-  if (!raw || typeof raw !== "object") {
-    return levels;
-  }
-  for (const skillId of SKILL_IDS) {
-    const value = (raw as Record<string, unknown>)[skillId];
-    if (typeof value === "number" && Number.isFinite(value)) {
-      levels[skillId] = Math.max(0, Math.floor(value));
-    }
-  }
-  return levels;
-}
+
 
 function normalizeMacroBindings(raw: unknown): SavedMacroBinding[] {
   const defaults: SavedMacroBinding[] = Array.from({ length: MACRO_SLOT_COUNT }, () => ({
@@ -283,9 +272,14 @@ export function loadCharacterProgress(characterId: string): SavedCharacterProgre
           : 0,
     };
 
+    let mapId = parsed.mapId;
+    if (mapId && ["pueblo", "bosque", "montana", "desierto"].includes(mapId)) {
+      mapId = "mapa1";
+    }
+
     return {
       version: 1,
-      mapId: parsed.mapId,
+      mapId: mapId,
       tileX: Math.max(0, Math.floor(parsed.tileX)),
       tileY: Math.max(0, Math.floor(parsed.tileY)),
       facing: normalizeFacing(parsed.facing),
@@ -293,7 +287,6 @@ export function loadCharacterProgress(characterId: string): SavedCharacterProgre
       equipment: normalizeEquipment(parsed.equipment),
       equippedOutfit: normalizeOutfit(parsed.equippedOutfit),
       playerProgress,
-      skillLevels: normalizeSkillLevels(parsed.skillLevels),
       learnedSpellIds,
       macroBindings: normalizeMacroBindings(parsed.macroBindings),
       killStats,

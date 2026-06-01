@@ -11,6 +11,11 @@ import {
   START_MAP_ID,
   type GameMap,
 } from "../maps";
+import {
+  collectLegacyObjGrhFileNums,
+  type GrhIndexEntry,
+} from "../maps/legacyMapObjects";
+import grhIndexJson from "../../public/assets/ao/grh_index.json";
 import { getTileDefinition, TILE } from "../maps/tileDefinitions";
 import {
   isTileBlockedByMapObject,
@@ -42,9 +47,6 @@ import {
 } from "../game/armorUtils";
 import {
   createEquippedOverlaySprite,
-  getPlayerHeadWalkSway,
-  syncEquippedHelmetVisual as applyEquippedHelmetVisual,
-  syncEquippedHeldItemVisuals as applyEquippedHeldItemVisuals,
   type EquippedGearSyncContext,
 } from "../game/equippedGear";
 import {
@@ -67,13 +69,7 @@ import {
   GHOST_RACE_ID,
   type CharacterRaceId,
 } from "../data/characters";
-import {
-  buildSkillDisplayEntries,
-  createInitialSkillLevels,
-  getSkillCapGainBetweenLevels,
-  tryImproveSkill,
-  type SkillId,
-} from "../game/skills";
+
 import {
   registerAoTerrain,
   setupAoTerrainTexture,
@@ -85,6 +81,7 @@ import {
   type MacroEditorItemOption,
   type MacroEditorSpellOption,
 } from "../ui/gameUi";
+import { isPhaserObjectLive } from "../ui/phaserObjectUtils";
 import {
   registerInventoryPanelAssets,
   setupInventoryPanelTextures,
@@ -106,6 +103,7 @@ import { DEFAULT_HOME_MAP_ID, getPriestSpawnForHome, PRIEST_REVIVE_MAX_TILE_DIST
 import {
   ATTRIBUTE_POTION_GAIN_MAX,
   ATTRIBUTE_POTION_GAIN_MIN,
+  BANK_SLOT_COUNT,
   STAT_MIN,
 } from "../../game-data/constants";
 import {
@@ -116,7 +114,21 @@ import {
   STAT_MAX,
   type CoreStats,
 } from "../game/characterStats";
+import { getImmobilizePlayerDurationMs } from "../../shared/combat";
+import {
+  isMapTileWalkable as isSharedMapTileWalkable,
+  setDoorTileOverride,
+} from "../../shared/mapWalkability";
+import { INVISIBILITY_DURATION_MS } from "../../game-data/invisibility";
 import { DeathOverlay } from "../ui/deathOverlay";
+import { SpellMagicWordsOverlay } from "../ui/spellMagicWordsOverlay";
+import { ensureAoFont2TransparentBackground, preloadAoFont2 } from "../ui/aoBitmapFont";
+import { getSpellMagicWordsForCast } from "../spells/spellMagicWords";
+import { isResurrectSpell, isResurrectSpellId } from "../spells/spellBehaviors";
+import {
+  RESURRECT_MAX_TILE_DISTANCE,
+  RESURRECT_SPELL_ID,
+} from "../../game-data/resurrect";
 import { BankOverlay } from "../ui/bankOverlay";
 import { ShopOverlay } from "../ui/shopOverlay";
 import {
@@ -174,10 +186,12 @@ import {
   SPELL_DEFINITIONS,
   type SpellDefinition,
 } from "../data/spells";
+import { preloadSpellWavs, playSpellWav } from "../audio/spellWav";
 import {
   ALL_FX_SHEETS,
   getSpellEffectConfig,
   getSpellEffectFirstFrame,
+  getSpellWav,
   SPAWN_FX_CONFIG,
   SPAWN_FX_ID,
   spellEffectAnimKey,
@@ -219,17 +233,28 @@ import {
   registerMobWalkAnimations,
   syncMobFaceSprite,
 } from "../game/mobs/mobVisualRuntime";
+import { loadAllImperiumNpcVisualAssets } from "../game/npcs/loadImperiumNpcVisualAssets";
 import {
-  getMobShowcaseAnchorTile,
-  MOB_SHOWCASE_CONFIG,
-  MOB_SHOWCASE_MODEL_ORDER,
-} from "../data/mobShowcase";
+  playImperiumNpcIdleFrame,
+  playImperiumNpcWalkAnim,
+  registerImperiumNpcWalkAnims,
+} from "../game/npcs/imperiumNpcRuntime";
+import { IMPERIUM_NPC_CATALOG } from "../npcs/imperiumNpcCatalog";
+import { getImperiumNpcSpriteConfigFromCatalog } from "../game/npcs/imperiumNpcVisual";
 import {
   WorldItemManager,
   GameSceneChatCommands,
   GameSceneMultiplayerController,
   GameSceneMobController,
   GameSceneMapController,
+  GameSceneEntitySync,
+  GameSceneLocalPlayerVisuals,
+  processGameSceneFrameInput,
+  runGameScenePreload,
+  refreshGameSceneHud,
+  refreshGameSceneMinimap,
+  refreshGameSceneMapLocation,
+  createGameScenePlayer,
   GameSceneInventoryController,
   GameSceneCombatController,
   GameSceneLocalPlayerSync,
@@ -249,7 +274,6 @@ import {
   getBaseVitalsFromStats,
   getLevelUpBonusesFromStats,
   macroSpellTextureKey,
-  BUILDING_OCCLUDED_ALPHA,
   CLASS_USES_MANA,
   DEFAULT_MACRO_ACTION,
   DEFAULT_MOB_HITBOX_HEIGHT_TILES,
@@ -258,7 +282,6 @@ import {
   DEFAULT_PLAYER_NAME,
   HUD_AGILITY_POTION_TEXTURE_KEY,
   HUD_STRENGTH_POTION_TEXTURE_KEY,
-  INMOVILIZADO_PLAYER_DURATION_MS,
   MEDITATION_ANIM_KEY,
   MEDITATION_FRAME_HEIGHT,
   MEDITATION_FRAME_SEQUENCE,
@@ -278,7 +301,6 @@ import {
   TEST_START_HP_MAX,
   TEST_START_MP,
   TEST_START_MP_MAX,
-  TREE_OCCLUDED_ALPHA,
   TREE_TEXTURE_KEY,
   TREE_TEXTURE_PATH,
   TRAINING_DUMMY_NAME,
@@ -299,17 +321,22 @@ export class GameScene extends Phaser.Scene {
   private player!: Phaser.GameObjects.Sprite;
   private playerFace!: Phaser.GameObjects.Sprite;
   private playerNameLabel!: Phaser.GameObjects.Text;
+  private spellMagicWordsOverlay?: SpellMagicWordsOverlay;
   private equippedWeaponSprite?: Phaser.GameObjects.Sprite;
   private equippedShieldSprite?: Phaser.GameObjects.Sprite;
   private equippedHelmetSprite?: Phaser.GameObjects.Sprite;
 
   private gameUi!: GameUi;
   private mapController!: GameSceneMapController;
+  private entitySync!: GameSceneEntitySync;
+  private localPlayerVisuals!: GameSceneLocalPlayerVisuals;
   private inventoryController!: GameSceneInventoryController;
   private combatController!: GameSceneCombatController;
 
   private currentMap!: GameMap;
   private currentMapId = START_MAP_ID;
+  /** Puertas abiertas/cerradas (solo mapa actual; no muta el GameMap importado). */
+  private readonly mapTileOverrides = new Map<string, number>();
 
   private playerTileX = 4;
   private playerTileY = 4;
@@ -375,7 +402,7 @@ export class GameScene extends Phaser.Scene {
     gold: 0,
   };
   private readonly learnedSpellIds = new Set<number>();
-  private skillLevels: Record<SkillId, number> = createInitialSkillLevels();
+
   private killStats: PlayerKillStats = {
     creaturesKilled: 0,
     criminalsKilled: 0,
@@ -383,8 +410,11 @@ export class GameScene extends Phaser.Scene {
   };
   /** Evita FX duplicado si el servidor reenvía spell_fx tras un cast local. */
   private suppressServerSpellFxUntil = 0;
+  /** FX de canalización de Resucitar por id de lanzador. */
+  private readonly resurrectChannelFxByCasterId = new Map<string, Phaser.GameObjects.Sprite>();
   private inspectedDummyId: string | null = null;
   private playerImmobilizedUntilMs = 0;
+  private playerInvisibleUntilMs = 0;
   private wasPlayerImmobilizedLastFrame = false;
   private nextImmobilizedMoveFeedbackAt = 0;
   private meditationSystem!: MeditationSystem;
@@ -474,6 +504,56 @@ export class GameScene extends Phaser.Scene {
         }
         this.shopBankSystem?.layoutOnResize(this.mapController.getGameViewportRect());
       },
+      setDoorTileOverride: (tileX, tileY, isOpen) => {
+        setDoorTileOverride(this.mapTileOverrides, tileX, tileY, isOpen);
+      },
+      isMapTileWalkable: (tileX, tileY) => this.isMapTileWalkable(tileX, tileY),
+    });
+  }
+
+  /** Crea entitySync/localPlayerVisuals si el jugador ya existe (p. ej. resume antes de create). */
+  private ensureEntitySyncReady(): void {
+    if (!this.player) {
+      return;
+    }
+    if (!this.entitySync) {
+      this.initEntitySync();
+    }
+    if (!this.localPlayerVisuals) {
+      this.initLocalPlayerVisuals();
+    }
+  }
+
+  private initEntitySync(): void {
+    this.entitySync = new GameSceneEntitySync({
+      getPlayer: () => this.player,
+      getPlayerFace: () => this.playerFace,
+      getPlayerNameLabel: () => this.playerNameLabel,
+      getPlayerTileX: () => this.playerTileX,
+      getPlayerTileY: () => this.playerTileY,
+      getFacing: () => this.facing,
+      getIsMoving: () => this.isMoving,
+      getActiveFaceLayout: () => this.getActiveFaceLayout(),
+      getEquippedGearContext: () => this.getEquippedGearContext(),
+      getDummies: () => this.dummies,
+      getCurrentMapId: () => this.currentMapId,
+      depthFromFeetY: (feetY) => this.depthFromFeetY(feetY),
+      getMapController: () => this.mapController,
+      isWorldSceneLive: () => this.isWorldSceneLive(),
+      syncSpellMagicWordsOverlayPosition: () => this.spellMagicWordsOverlay?.syncPosition(),
+    });
+  }
+
+  private initLocalPlayerVisuals(): void {
+    this.localPlayerVisuals = new GameSceneLocalPlayerVisuals({
+      getPlayer: () => this.player,
+      getDeathPhase: () => this.deathPhase,
+      getUseGhostAppearance: () => this.useGhostAppearance,
+      getInvisibleUntilMs: () => this.playerInvisibleUntilMs,
+      setInvisibleUntilMs: (ms) => {
+        this.playerInvisibleUntilMs = ms;
+      },
+      getVisualParts: () => this.getLocalPlayerVisualParts(),
     });
   }
 
@@ -488,6 +568,7 @@ export class GameScene extends Phaser.Scene {
       getPlayerTile: () => ({ x: this.playerTileX, y: this.playerTileY }),
       getWorldItemManager: () => this.worldItemManager,
       isMultiplayerActive: () => this.isMultiplayerActive(),
+      isPlayerAdmin: () => this.isPlayerAdmin(),
       sendEquipToServer: (action, payload) => {
         if (action === "equip" && "inventorySlot" in payload) {
           this.multiplayer!.sendEquipItem("equip", payload);
@@ -529,34 +610,80 @@ export class GameScene extends Phaser.Scene {
       getPlayerTile: () => ({ x: this.playerTileX, y: this.playerTileY }),
       getCurrentMapId: () => this.currentMapId,
       hasLearnedSpell: (spellId) => this.learnedSpellIds.has(spellId),
-      getMagicSkillLevel: () => this.getMagicSkillLevel(),
       hasAnilloEspectralInInventory: () => this.hasAnilloEspectralInInventory(),
       isPlayerDeadOrGhost: () => this.isPlayerDeadOrGhost(),
       isMultiplayerActive: () => this.isMultiplayerActive(),
+      isPlayerAdmin: () => this.isPlayerAdmin(),
       stopMeditation: () => this.stopMeditation(),
       refreshHud: () => this.refreshHud(),
-      tryImproveMagicOnSpellCast: () => this.tryImproveMagicOnSpellCast(),
+
       onPlayerHpDepleted: () => {
         if (this.deathPhase === "alive") {
           this.handlePlayerDeath();
         }
       },
       sendAttackToServer: (facing) => this.multiplayer!.sendAttack(facing),
-      sendCastSpellToServer: (spellId, tileX, tileY) =>
-        this.multiplayer!.sendCastSpell(spellId, tileX, tileY),
+      sendCastSpellToServer: (spellId, tileX, tileY, targetPlayerId) =>
+        this.multiplayer!.sendCastSpell(spellId, tileX, tileY, targetPlayerId),
       getDummyInAttackRange: () => this.getDummyInAttackRange(),
       getDummyHitTile: (dummy) => this.getDummyHitTile(dummy),
       killDummy: (dummy) => this.killDummy(dummy),
       refreshInspectedDummyLabel: () => this.refreshInspectedDummyLabel(),
       getInspectedDummyId: () => this.inspectedDummyId,
       playSpellEffect: (spellId, tx, ty) => this.playSpellEffect(spellId, tx, ty),
+      startResurrectChannelEffect: (casterId, tileX, tileY, endsAtMs) =>
+        this.startResurrectChannelEffect(casterId, tileX, tileY, endsAtMs),
+      getLocalPlayerId: () => this.mpController.getPlayerId(),
       setSuppressServerSpellFxUntil: (until) => {
         this.suppressServerSpellFxUntil = until;
       },
+      showSpellMagicWords: (spellId, spellNombre) => {
+        const words = getSpellMagicWordsForCast(spellId, spellNombre);
+        if (words) {
+          this.spellMagicWordsOverlay?.show(words);
+        }
+        this.playSpellCastSound(spellId);
+      },
+      clearSpellMagicWords: () => {
+        this.spellMagicWordsOverlay?.clear();
+      },
       onMeleeImpact: () => {
         this.cameras.main.shake(45, 0.0016, true);
-        this.playHitSound();
+        this.playSyntheticHitSound();
       },
+      applySpellAttributeBuff: (stat, amount) => {
+        this.attributeBuffs[stat] = Math.min(
+          ATTRIBUTE_POTION_BUFF_MAX,
+          this.attributeBuffs[stat] + amount
+        );
+        this.resetAttributePotionTimer();
+      },
+      clearAllSpellEffects: () => {
+        this.clearAttributePotionBuffs(false);
+        this.playerImmobilizedUntilMs = 0;
+        this.playerInvisibleUntilMs = 0;
+        this.nextImmobilizedMoveFeedbackAt = 0;
+        this.resetLocalPlayerVisualAlpha();
+      },
+      applyLocalInvisibility: (durationMs: number) => {
+        this.playerInvisibleUntilMs = Math.max(
+          this.playerInvisibleUntilMs,
+          Date.now() + durationMs
+        );
+      },
+      isLocalPlayerImmobilized: (now) => this.isPlayerImmobilized(now),
+      clearLocalPlayerImmobilize: () => {
+        this.playerImmobilizedUntilMs = 0;
+        this.nextImmobilizedMoveFeedbackAt = 0;
+      },
+      findDummyAtTile: (tileX, tileY) => this.findDummyAtTile(tileX, tileY),
+      findDeadAllyPlayerIdAtTile: (tileX, tileY) => {
+        const ghost = this.multiplayer
+          ?.getRemotePlayers()
+          ?.findRemoteGhostAtTile(tileX, tileY);
+        return ghost?.id;
+      },
+      isServerConnected: () => Boolean(this.multiplayer?.isConnected()),
     });
   }
 
@@ -628,6 +755,49 @@ export class GameScene extends Phaser.Scene {
       setServerReviveSyncPending: (value) => {
         this.serverReviveSyncPending = value;
       },
+      setPlayerExpFromServer: (exp, expToNext) => {
+        this.playerProgress.exp = exp;
+        if (typeof expToNext === "number") {
+          this.playerProgress.expToNext = expToNext;
+        }
+      },
+      setLearnedSpellIdsFromServer: (spellIds) => {
+        this.learnedSpellIds.clear();
+        for (const id of spellIds) {
+          if (Number.isFinite(id) && id > 0) {
+            this.learnedSpellIds.add(Math.floor(id));
+          }
+        }
+      },
+      setBankStateFromServer: (bankGold, bankInventory) => {
+        const state = this.shopBankSystem.getBankState();
+        if (typeof bankGold === "number" && Number.isFinite(bankGold)) {
+          state.gold = Math.max(0, Math.floor(bankGold));
+        }
+        if (Array.isArray(bankInventory)) {
+          const slots = state.slots;
+          for (let i = 0; i < BANK_SLOT_COUNT; i += 1) {
+            slots[i] = null;
+          }
+          for (const slot of bankInventory) {
+            const idx =
+              typeof slot.slotIndex === "number" ? Math.floor(slot.slotIndex) : -1;
+            if (idx < 0 || idx >= BANK_SLOT_COUNT) continue;
+            const amount =
+              typeof slot.amount === "number" ? Math.max(0, Math.floor(slot.amount)) : 0;
+            const itemId =
+              typeof slot.itemId === "string" && slot.itemId.trim()
+                ? (slot.itemId.trim() as ItemId)
+                : null;
+            if (amount > 0 && itemId) {
+              slots[idx] = { itemId, count: amount };
+            }
+          }
+        }
+        this.shopBankSystem.setBankState(state);
+        saveBankState(this.characterId, state);
+      },
+      refreshKnownSpellsUi: () => this.refreshKnownSpellsUi(),
     });
   }
 
@@ -645,18 +815,17 @@ export class GameScene extends Phaser.Scene {
       setAttributeBuffExpiresAt: (ms) => {
         this.attributeBuffExpiresAt = ms;
       },
-      getMagicSkillLevel: () => this.getMagicSkillLevel(),
       hasLearnedSpell: (id) => this.learnedSpellIds.has(id),
       learnSpell: (id) => this.learnedSpellIds.add(id),
       addChatLine: (text) => this.gameUi.addChatLine(text),
       refreshHud: () => this.refreshHud(),
-      refreshSkillsUi: () => this.refreshSkillsUi(),
       refreshKnownSpellsUi: () => this.refreshKnownSpellsUi(),
       getCoreStats: () => this.getCoreStats(),
       clearInventorySlotUi: (slotIndex) => this.gameUi.clearInventorySlot(slotIndex),
       setInventorySlotUi: (slotIndex, textureKey, count, itemId) =>
         this.gameUi.setInventorySlot(slotIndex, textureKey, count, itemId),
       isMultiplayerActive: () => this.isMultiplayerActive(),
+      isPlayerAdmin: () => this.isPlayerAdmin(),
       isMultiplayerConnected: () => Boolean(this.multiplayer?.isConnected()),
       isSpawnSynced: () => Boolean(this.multiplayer?.getSpawnSynced()),
       sendUseItemToServer: (itemId, slotIndex) =>
@@ -679,6 +848,15 @@ export class GameScene extends Phaser.Scene {
       markHomeCity: () => this.markHomeCity(),
       isAlive: () => this.deathPhase === "alive",
       killPlayer: () => {
+        if (this.isMultiplayerActive()) {
+          if (!this.multiplayer?.isConnected()) {
+            this.gameUi.addChatLine("Sin conexión: no se pudo reportar la muerte al servidor.");
+            return;
+          }
+          this.multiplayer.sendSuicide();
+          this.gameUi.addChatLine("Muriendo... (esperá confirmación del servidor)");
+          return;
+        }
         this.playerProgress.hp = 0;
         this.handlePlayerDeath();
       },
@@ -723,7 +901,6 @@ export class GameScene extends Phaser.Scene {
         this.applyMobReviveFromServer(dummy, netMob),
       restoreLocalMobsAfterDisconnect: () => {
         this.mobController.destroyAll();
-        this.mobController.createAllIfNeeded();
       },
       getMobFeetWorld: (modelId, tileX, tileY) =>
         this.getMobFeetWorld(modelId, tileX, tileY),
@@ -778,14 +955,18 @@ export class GameScene extends Phaser.Scene {
       getEquippedOutfit: () => this.equippedOutfit,
       getInventory: () => this.inventory,
       setMultiplayerStatus: (message) => this.setMultiplayerStatus(message),
-      addChatLine: (text) => this.gameUi.addChatLine(text),
-      addCombatLine: (text) => this.gameUi.addCombatLine(text),
+      addChatLine: (text) => this.gameUi?.addChatLine(text),
+      addCombatLine: (text) => this.gameUi?.addCombatLine(text),
       syncLocalVitalsFromServer: (state) => this.localPlayerSync.syncLocalVitalsFromServer(state),
       syncLocalEquipmentFromServer: (state) =>
         this.localPlayerSync.syncLocalEquipmentFromServer(state),
       syncLocalInventoryFromServer: (slots) =>
         this.localPlayerSync.syncLocalInventoryFromServer(slots),
       syncLocalGoldFromServer: (gold) => this.localPlayerSync.syncLocalGoldFromServer(gold),
+      syncLocalWelcomeExtras: (welcome) =>
+        this.localPlayerSync.syncLocalWelcomeExtras(welcome),
+      getBankState: () => this.shopBankSystem.getBankState(),
+      getLearnedSpellIds: () => [...this.learnedSpellIds],
       syncWorldItemsFromServer: (items) => this.localPlayerSync.syncWorldItemsFromServer(items),
       applyWorldItemSpawned: (mapId, item) =>
         this.localPlayerSync.applyWorldItemSpawned(mapId, item),
@@ -803,6 +984,7 @@ export class GameScene extends Phaser.Scene {
       applyServerPlayerRole: (role) => {
         this.playerRole = this.resolvePlayerRole(role);
         this.syncPlayerNameLabelStyle();
+        this.refreshKnownSpellsUi();
       },
       isAdminCharacterName,
       snapLocalPlayerToTile: (state) => this.mpController.snapLocalPlayerToTile(state),
@@ -815,15 +997,21 @@ export class GameScene extends Phaser.Scene {
       killAllLocalMobs: () => this.mobController.destroyAll(),
       restoreLocalMobsAfterDisconnect: () => {
         this.mobController.destroyAll();
-        this.mobController.createAllIfNeeded();
       },
       applyIncomingDamage: (amount, type) =>
         this.combatController.applyIncomingDamage(amount, type),
       showDamageNumber: (x, y, amount, source) =>
         this.combatController.showDamageNumber(x, y, amount, source),
       playSpellEffect: (spellId, tx, ty) => this.playSpellEffect(spellId, tx, ty),
+      playSpawnEffectAtTile: (tileX, tileY) => this.playSpawnEffectAtTile(tileX, tileY),
+      startResurrectChannelEffect: (casterId, tileX, tileY, endsAtMs) =>
+        this.startResurrectChannelEffect(casterId, tileX, tileY, endsAtMs),
+      stopResurrectChannelEffect: (casterId) => this.stopResurrectChannelEffect(casterId),
       getSuppressServerSpellFxUntil: () => this.suppressServerSpellFxUntil,
       getPlayerSprite: () => this.player,
+      getLocalPlayerId: () => this.mpController.getPlayerId(),
+      applyLocalRevivedFromServer: (hp) => this.deathSystem.applyRevivedFromServer(hp),
+      isPlayerDeadOrGhost: () => this.isPlayerDeadOrGhost(),
       applyMapTransition: (transition, options) =>
         this.applyMapTransition(transition, options),
       tweenPlayerTo: (target, duration, onUpdate, onComplete) => {
@@ -862,7 +1050,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   private returnToCharacterSelectForDuplicateLogin(message: string) {
-    this.gameUi.addChatLine(message);
+    this.gameUi?.addChatLine(message);
     this.mpController?.disconnect();
     this.scene.start("CharacterSelectScene");
   }
@@ -876,65 +1064,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   preload() {
-    registerPlayerSprites(this);
-    registerNpcAssets(this);
-    registerAoTerrain(this);
-    registerRaceFaces(this);
-    registerInventoryPanelAssets(this);
-    loadMobVisualAssets(this);
-    ALL_FX_SHEETS.forEach((fx) => {
-      this.load.spritesheet(fx.sheetKey, fx.path, {
-        frameWidth: fx.frameWidth,
-        frameHeight: fx.frameHeight,
-      });
-    });
-    this.load.spritesheet(
-      MEDITATION_TEXTURE_KEY,
-      "/assets/ao/meditations/lowLvlMed.png",
-      {
-        frameWidth: MEDITATION_FRAME_WIDTH,
-        frameHeight: MEDITATION_FRAME_HEIGHT,
-      }
-    );
-    this.load.image(TREE_TEXTURE_KEY, TREE_TEXTURE_PATH);
-    registerMapObjectAssets(this);
-    SPELL_DEFINITIONS.forEach((spell) => {
-      if (!spell.iconAssetPath) return;
-      this.load.image(macroSpellTextureKey(spell.idSpell), spell.iconAssetPath);
-    });
-  
-    Object.values(ITEM_DEFINITIONS).forEach((item) => {
-      this.load.image(item.textureKey, item.assetPath);
-      if (item.equippedTextureKey && item.equippedAssetPath) {
-        if (item.equippedFrameWidth && item.equippedFrameHeight) {
-          this.load.spritesheet(item.equippedTextureKey, item.equippedAssetPath, {
-            frameWidth: item.equippedFrameWidth,
-            frameHeight: item.equippedFrameHeight,
-          });
-        } else {
-          this.load.image(item.equippedTextureKey, item.equippedAssetPath);
-        }
-      }
-    });
-    Object.values(ITEM_DEFINITIONS).forEach((item) => {
-      if (item.type !== "armor") return;
-      const armorSheets = [item.spritesheetStdPath, item.spritesheetBajosPath].filter(
-        (path): path is string => Boolean(path)
-      );
-      armorSheets.forEach((sheetPath) => {
-        registerArmorSpritesheet(this, textureKeyFromAssetPath(sheetPath), sheetPath);
-      });
-    });
-
-    this.load.image("world_gold", "assets/ao/otherItems/oro.png");
-    this.load.image(HUD_STRENGTH_POTION_TEXTURE_KEY, "assets/ao/otherItems/pocionVerde.png");
-    this.load.image(HUD_AGILITY_POTION_TEXTURE_KEY, "assets/ao/otherItems/pocionAmarilla.png");
-
-    for (const map of getAllMaps()) {
-      for (const overlay of map.groundOverlays ?? []) {
-        this.load.image(overlay.textureKey, overlay.texturePath);
-      }
-    }
+    runGameScenePreload(this);
   }
 
   /**
@@ -942,6 +1072,7 @@ export class GameScene extends Phaser.Scene {
    * Crítico: setupCameras → initWorldItemManager → initMpController → spawn/drops.
    */
   create() {
+    ensureAoFont2TransparentBackground(this);
     this.initShopBankSystem();
     this.initCombatController();
     this.initDeathSystem();
@@ -955,6 +1086,7 @@ export class GameScene extends Phaser.Scene {
     setupRaceFacesTextures(this);
     setupInventoryPanelTextures(this);
     registerMobWalkAnimations(this);
+    this.registerImperiumNpcWalkAnimations();
     const treeTexture = this.textures.get(TREE_TEXTURE_KEY);
     if (treeTexture.key !== "__MISSING") {
       treeTexture.setFilter(Phaser.Textures.FilterMode.NEAREST);
@@ -966,6 +1098,20 @@ export class GameScene extends Phaser.Scene {
     if (savedProgress) {
       this.applyCharacterProgress(savedProgress);
       this.hasLoadedCharacterProgress = true;
+    } else {
+      this.inventory = Array(INVENTORY_SLOT_COUNT).fill(null);
+      this.equipment = {
+        weapon: null,
+        shield: null,
+        helmet: null,
+        armor: null,
+      };
+      this.equippedOutfit = "base";
+      this.equippedArmorVisual = undefined;
+      this.hasLoadedCharacterProgress = false;
+      this.currentMapId = this.homeMapId;
+      this.resetDeathStateForCharacterSwitch();
+      this.syncCharacterVitalsAndSpells();
     }
 
     this.currentMap = getMap(this.currentMapId);
@@ -979,8 +1125,16 @@ export class GameScene extends Phaser.Scene {
     }
 
     this.mapController.drawMap(this.currentMap);
+    if (!isPhaserObjectLive(this.player)) {
+      this.player = undefined!;
+      this.playerFace = undefined!;
+      this.playerNameLabel = undefined!;
+    }
     this.createPlayer();
+    this.ensureEntitySyncReady();
+    this.playFacingAnim("idle");
     this.initMobController();
+    this.mapController.updateRoofTransparency(this.playerTileX, this.playerTileY);
 
     this.gameUi = new GameUi(this);
     this.gameUi.setMinimapRedrawHandler(() => this.refreshMinimap());
@@ -995,12 +1149,11 @@ export class GameScene extends Phaser.Scene {
     });
     this.initializeStarterSpells();
     this.refreshKnownSpellsUi();
-    this.refreshSkillsUi();
     this.gameUi.setSpellInfoRequestHandler((spell) => {
       const debuffText = spell.remueveDebuff ? ` | Quita: ${spell.remueveDebuff}` : "";
       const classesText = spell.usableBy.join(", ");
       this.gameUi.addChatLine(
-        `${spell.nombre} [#${spell.idSpell}] MP:${spell.manaCost} Danio:${spell.danioMin}-${spell.danioMax} Cura:${spell.healMin}-${spell.healMax} AoE:${spell.aoe ? `si (${spell.aoeRadiusTiles} tiles)` : "no"} Aliados:${spell.puedeUsarseEnAliados ? "si" : "no"} Valor:${spell.valor} MagiaReq:${spell.nivelMagiaRequerido} Clases:${classesText}${debuffText} | ${spell.descripcion}`
+        `${spell.nombre} [#${spell.idSpell}] MP:${spell.manaCost} Danio:${spell.danioMin}-${spell.danioMax} Cura:${spell.healMin}-${spell.healMax} AoE:${spell.aoe ? `si (${spell.aoeRadiusTiles} tiles)` : "no"} Aliados:${spell.puedeUsarseEnAliados ? "si" : "no"} Valor:${spell.valor} NivelReq:${spell.nivelRequerido} Clases:${classesText}${debuffText} | ${spell.descripcion}`
       );
     });
     this.gameUi.setSpellCastRequestHandler((spell) => {
@@ -1012,7 +1165,6 @@ export class GameScene extends Phaser.Scene {
 
     if (this.hasLoadedCharacterProgress) {
       this.refreshKnownSpellsUi();
-      this.refreshSkillsUi();
       this.refreshInventoryUi();
       this.validateEquippedArmorForRace();
       this.refreshHud();
@@ -1059,6 +1211,7 @@ export class GameScene extends Phaser.Scene {
     this.events.on(Phaser.Scenes.Events.RESUME, this.handleSceneResume, this);
     this.events.on(Phaser.Scenes.Events.PAUSE, this.handleScenePause, this);
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      this.clearStaleWorldVisualRefs();
       this.persistCharacterProgress();
       this.progressService?.cancelScheduledPersist();
       this.scale.off("resize", this.applyCameraLayout, this);
@@ -1080,7 +1233,18 @@ export class GameScene extends Phaser.Scene {
   }
 
   private isWorldSceneLive(): boolean {
-    return Boolean(this.sys && this.player?.scene === this);
+    return Boolean(this.sys?.isActive() && isPhaserObjectLive(this.player));
+  }
+
+  /** Evita usar sprites/textos destruidos tras shutdown o scene.start/restart. */
+  private clearStaleWorldVisualRefs(): void {
+    this.player = undefined!;
+    this.playerFace = undefined!;
+    this.playerNameLabel = undefined!;
+    this.equippedWeaponSprite = undefined!;
+    this.equippedShieldSprite = undefined!;
+    this.equippedHelmetSprite = undefined!;
+    this.gameUi = undefined!;
   }
 
   private handleScenePause = () => {
@@ -1112,6 +1276,17 @@ export class GameScene extends Phaser.Scene {
       this.hasLoadedCharacterProgress = true;
       this.applyWorldStateFromProgress();
     } else {
+      this.inventory = Array(INVENTORY_SLOT_COUNT).fill(null);
+      this.equipment = {
+        weapon: null,
+        shield: null,
+        helmet: null,
+        armor: null,
+      };
+      this.equippedOutfit = "base";
+      this.equippedArmorVisual = undefined;
+      this.hasLoadedCharacterProgress = false;
+      this.currentMapId = this.homeMapId;
       this.resetDeathStateForCharacterSwitch();
       this.syncCharacterVitalsAndSpells();
       this.applyWorldStateFromProgress();
@@ -1121,14 +1296,15 @@ export class GameScene extends Phaser.Scene {
     this.validateEquippedArmorForRace();
     this.refreshInventoryUsability();
     this.refreshKnownSpellsUi();
-    this.refreshSkillsUi();
     this.refreshMacroVisuals();
     this.refreshHud();
-    if (this.playerNameLabel) {
+    if (isPhaserObjectLive(this.playerNameLabel)) {
       this.playerNameLabel.setText(this.playerName);
       this.syncPlayerNameLabelStyle();
     }
-    this.gameUi.addChatLine(`Volviste con ${this.playerName}.`);
+    if (this.gameUi) {
+      this.gameUi.addChatLine(`Volviste con ${this.playerName}.`);
+    }
     if (this.isWorldSceneLive()) {
       this.playSpawnEffect();
     }
@@ -1149,17 +1325,13 @@ export class GameScene extends Phaser.Scene {
     this.playerProgress.expToNext = expRequiredForLevel(TEST_PLAYER_LEVEL);
     this.applyTestStartingVitals();
     this.refreshKnownSpellsUi();
-    this.refreshSkillsUi();
     this.refreshInventoryUsability();
     this.refreshMacroVisuals();
     this.refreshHud();
   }
 
-  private getMagicSkillLevel(): number {
-    return this.skillLevels.magia ?? 0;
-  }
-
-  private refreshSkillsUi() {
+  private refreshStatsOverlayUi() {
+    if (!this.gameUi) return;
     const natural = resolveCoreStats(this.selectedRace, this.selectedClass);
     const coreStats = this.getCoreStats();
     this.gameUi.setCharacterAttributes({
@@ -1170,9 +1342,7 @@ export class GameScene extends Phaser.Scene {
       strengthCeiling: natural.strength + ATTRIBUTE_POTION_BUFF_MAX,
       agilityCeiling: natural.agility + ATTRIBUTE_POTION_BUFF_MAX,
     });
-    this.gameUi.setSkillEntries(
-      buildSkillDisplayEntries(this.skillLevels, this.playerProgress.level)
-    );
+
     this.gameUi.setKillStats(this.killStats);
   }
 
@@ -1227,6 +1397,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   private refreshInventoryUsability() {
+    if (!this.gameUi) return;
     this.inventory.forEach((stack, slotIndex) => {
       if (!stack) {
         this.gameUi.setInventorySlotInvalid(slotIndex, false);
@@ -1237,7 +1408,8 @@ export class GameScene extends Phaser.Scene {
         this.selectedClass,
         this.selectedRace,
         this.playerProgress.level,
-        item
+        item,
+        this.isPlayerAdmin()
       );
       this.gameUi.setInventorySlotInvalid(slotIndex, !usability.allowed);
     });
@@ -1250,19 +1422,6 @@ export class GameScene extends Phaser.Scene {
       const row = Math.floor(index / cols);
       this.createWorldItem(itemId, centerTileX + 1 + col, centerTileY + row);
     });
-  }
-
-  private tryImproveMagicOnSpellCast() {
-    if (!CLASS_USES_MANA[this.selectedClass]) {
-      return;
-    }
-    const result = tryImproveSkill("magia", this.skillLevels, this.playerProgress.level);
-    if (!result.improved) {
-      return;
-    }
-    this.gameUi.addCombatLine(`Subiste Magia a ${result.newValue}.`);
-    this.refreshKnownSpellsUi();
-    this.refreshSkillsUi();
   }
 
   private applyActiveCharacter(character: SavedCharacter) {
@@ -1279,7 +1438,9 @@ export class GameScene extends Phaser.Scene {
     this.ensureProgressService().setCharacterId(character.id);
     this.bankState = loadBankState(character.id);
     this.syncPlayerBodyAndFace();
-    this.syncPlayerNameLabelStyle();
+    if (isPhaserObjectLive(this.playerNameLabel)) {
+      this.syncPlayerNameLabelStyle();
+    }
   }
 
   private buildCharacterProgressSnapshot(): SavedCharacterProgress {
@@ -1296,7 +1457,6 @@ export class GameScene extends Phaser.Scene {
       equipment: { ...this.equipment },
       equippedOutfit: this.equippedOutfit,
       playerProgress: { ...this.playerProgress },
-      skillLevels: { ...this.skillLevels },
       learnedSpellIds: [...this.learnedSpellIds],
       macroBindings: this.macroBindings.map((binding) => ({ ...binding })),
       killStats: { ...this.killStats },
@@ -1334,9 +1494,6 @@ export class GameScene extends Phaser.Scene {
       },
       setPlayerProgress: (playerProgress) => {
         this.playerProgress = playerProgress;
-      },
-      setSkillLevels: (levels) => {
-        this.skillLevels = levels;
       },
       setLearnedSpellIds: (ids) => {
         this.learnedSpellIds.clear();
@@ -1416,7 +1573,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   private syncPlayerNameLabelStyle() {
-    if (!this.playerNameLabel) return;
+    if (!isPhaserObjectLive(this.playerNameLabel)) return;
     const colors = getPlayerNameColors(this.selectedFaction, this.playerRole);
     this.playerNameLabel.setColor(colors.fill);
     this.playerNameLabel.setStroke(colors.stroke, WORLD_NAME_STROKE);
@@ -1516,74 +1673,63 @@ export class GameScene extends Phaser.Scene {
     armor: null,
   };
 
+  private getHudDeps() {
+    return {
+      getGameUi: () => this.gameUi,
+      getCurrentMap: () => this.currentMap,
+      getMapController: () => this.mapController,
+      getPlayerTileX: () => this.playerTileX,
+      getPlayerTileY: () => this.playerTileY,
+      getPlayerName: () => this.playerName,
+      getPlayerFaction: () => this.selectedFaction,
+      getPlayerRole: () => this.playerRole,
+      getPlayerProgress: () => this.playerProgress,
+      refreshStatsOverlay: () => this.refreshStatsOverlayUi(),
+    };
+  }
+
   private createPlayer() {
-    if (this.player) return;
+    if (isPhaserObjectLive(this.player)) return;
 
     const { x, y } = this.getPlayerFeetWorldForTile(this.playerTileX, this.playerTileY);
+    const created = createGameScenePlayer({
+      scene: this,
+      tileX: this.playerTileX,
+      tileY: this.playerTileY,
+      feetX: x,
+      feetY: y,
+      depthFromFeetY: (feetY) => this.depthFromFeetY(feetY),
+      facing: this.facing,
+      deathPhase: this.deathPhase,
+      useGhostAppearance: this.useGhostAppearance,
+      equippedOutfit: this.equippedOutfit,
+      equippedArmorVisual: this.equippedArmorVisual,
+      visualBodyTextureKey: this.getVisualBodyTextureKey(),
+      selectedRace: this.selectedRace,
+      selectedGender: this.selectedGender,
+      selectedFaceIndex: this.selectedFaceIndex,
+      faceLayoutScale: this.getActiveFaceLayout().scale,
+      playerName: this.playerName,
+      selectedFaction: this.selectedFaction,
+      playerRole: this.playerRole,
+      uiCamera: this.uiCamera,
+      setupHitbox: (player) => this.setupPlayerHitboxInteractionFor(player),
+      onPlayerPointerDown: () => {
+        if (this.combatController?.hasPendingSpellCast()) {
+          this.combatController.tryCastSpellOnPlayer();
+          return;
+        }
+        this.inspectPlayerCharacter();
+      },
+    });
 
-    this.player = this.add.sprite(
-      x,
-      y,
-      this.useGhostAppearance && this.deathPhase !== "alive"
-        ? textureKeyForPlayer(
-            "base",
-            raceBodyTextureKey(GHOST_RACE_ID, "male"),
-            undefined
-          )
-        : textureKeyForPlayer(
-            this.equippedOutfit,
-            this.getVisualBodyTextureKey(),
-            this.equippedArmorVisual,
-            this.selectedRace
-          ),
-      0
-    );
-    applyPlayerOrigin(this.player);
-    this.player.setDepth(this.depthFromFeetY(y));
-
-    const faceLayout = this.getActiveFaceLayout();
-
-    this.playerFace = this.add.sprite(
-      x,
-      y,
-      faceTextureKey(this.selectedRace, this.selectedGender),
-      getFaceFrame(this.selectedRace, this.selectedGender, this.selectedFaceIndex, this.facing)
-    );
-
-  this.playerFace.setOrigin(0.5, 1);
-  this.playerFace.setScale(faceLayout.scale);
-  this.playerFace.setDepth(this.player.depth + 0.02);
-  this.syncPlayerFacePosition();
-
-  this.equippedWeaponSprite = createEquippedOverlaySprite(this, x, y);
-  this.equippedShieldSprite = createEquippedOverlaySprite(this, x, y);
-  this.equippedHelmetSprite = createEquippedOverlaySprite(this, x, y);
-  this.syncEquippedHeldItemVisuals();
-
-  const nameColors = getPlayerNameColors(this.selectedFaction, this.playerRole);
-  this.playerNameLabel = this.add
-    .text(x, y + 2, this.playerName, {
-      fontFamily: GAME_FONT,
-      fontSize: `${WORLD_NAME_FONT_SIZE}px`,
-      color: nameColors.fill,
-      fontStyle: "bold",
-      stroke: nameColors.stroke,
-      strokeThickness: WORLD_NAME_STROKE,
-      resolution: GAME_TEXT_RESOLUTION,
-    })
-    .setOrigin(0.5, 0)
-    .setDepth(this.player.depth + 2);
-
-  this.setupPlayerHitboxInteraction();
-  this.player.on("pointerdown", () => {
-    if (this.combatController.hasPendingSpellCast()) {
-      this.combatController.tryCastSpellOnPlayer();
-      return;
-    }
-    this.inspectPlayerCharacter();
-  });
-    
-    this.playFacingAnim("idle");
+    this.player = created.player;
+    this.playerFace = created.playerFace;
+    this.playerNameLabel = created.playerNameLabel;
+    this.equippedWeaponSprite = created.equippedWeaponSprite;
+    this.equippedShieldSprite = created.equippedShieldSprite;
+    this.equippedHelmetSprite = created.equippedHelmetSprite;
+    this.spellMagicWordsOverlay = created.spellMagicWordsOverlay;
   }
 
   private inspectPlayerCharacter() {
@@ -1615,6 +1761,24 @@ export class GameScene extends Phaser.Scene {
     );
   }
 
+  private inspectRemote(remote: import("../network/RemotePlayerManager").RemoteEntry) {
+    this.clearInspectedDummy();
+    const baseText = formatCharacterInspectLine(
+      remote.playerName,
+      normalizeFactionId(remote.factionId) as import("../data/characters").CharacterFactionId,
+      remote.classId as import("./gameSceneModules/types").ClassId,
+      remote.raceId as import("./gameSceneModules/types").RaceId,
+      remote.genderId as import("../data/characters").CharacterGenderId,
+      remote.level,
+      remote.role
+    );
+    const suffix =
+      remote.isGhost || remote.hp <= 0
+        ? ` — Muerto (${remote.hp}/${remote.hpMax} HP)`
+        : ` — Vida ${remote.hp}/${remote.hpMax}`;
+    this.gameUi.addChatLine(formatInspectLineWithDebuffs(`${baseText}${suffix}`, []));
+  }
+
   private clearInspectedDummy() {
     this.inspectedDummyId = null;
     this.dummies.forEach((dummy) => dummy.hpLabel.setVisible(false));
@@ -1638,6 +1802,10 @@ export class GameScene extends Phaser.Scene {
     this.mpController.syncServerInventoryIfActive();
   }
 
+  private syncServerBankIfMultiplayer() {
+    this.mpController?.syncServerBankIfActive();
+  }
+
   private isMultiplayerActive() {
     return this.mpController?.isActive() ?? false;
   }
@@ -1654,22 +1822,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   private spawnStarterInventory() {
-    WEAPONS.forEach((weapon) => {
-      addToInventory(this.inventory, weapon.itemId, 1);
-    });
-    addToInventory(this.inventory, "potion_hp", TEST_HEALTH_POTION_STACK);
-    addToInventory(this.inventory, "potion_mp", TEST_MANA_POTION_STACK);
-    addToInventory(this.inventory, "potion_strength", 5);
-    addToInventory(this.inventory, "potion_agility", 5);
-    addToInventory(this.inventory, "anillo_espectral", 1);
-    addToInventory(this.inventory, "armor_cuero", 1);
-    addToInventory(this.inventory, "armor_placas", 1);
-    addToInventory(this.inventory, "armor_placas_rojas", 1);
-    addToInventory(this.inventory, "armor_placas_azules", 1);
-    addToInventory(this.inventory, "armor_tunica_nigro", 1);
-    addToInventory(this.inventory, "armor_tunica_azul", 1);
-    addToInventory(this.inventory, "armor_dragon_negro", 1);
-    addToInventory(this.inventory, "armor_dragon_negro_bajos", 1);
+    // Inventory starts empty by default
     this.refreshInventoryUi();
   }
 
@@ -1680,13 +1833,8 @@ export class GameScene extends Phaser.Scene {
   }
 
   private refreshKnownSpellsUi() {
-    const knownSpells = SPELL_DEFINITIONS.filter(
-      (spell) =>
-        this.learnedSpellIds.has(spell.idSpell) &&
-        spell.usableBy.includes(this.selectedClass) &&
-        spell.nivelMagiaRequerido <= this.getMagicSkillLevel()
-    );
-    this.gameUi.setSpells(knownSpells);
+    if (!this.gameUi) return;
+    this.gameUi.setSpells(this.getAvailableSpellDefinitions());
   }
 
   private resolvePlayerRole(serverRole?: PlayerRole): PlayerRole {
@@ -1970,6 +2118,11 @@ export class GameScene extends Phaser.Scene {
         setInventorySlotUi: (i, tex, count) => this.gameUi.setInventorySlot(i, tex, count),
         getEquipment: () => this.equipment,
         onInventoryChanged: () => this.syncServerInventoryIfMultiplayer(),
+        onBankChanged: () => this.syncServerBankIfMultiplayer(),
+        isPlayerAdmin: () => this.isPlayerAdmin(),
+        getPlayerLevel: () => this.playerProgress.level,
+        getPlayerClass: () => this.selectedClass,
+        getPlayerRace: () => this.selectedRace,
       },
       this._bankStateBackup
     );
@@ -2117,41 +2270,15 @@ export class GameScene extends Phaser.Scene {
   }
 
   private refreshMapLocationLabel() {
-    this.gameUi.setMapLocation(
-      this.currentMap.name,
-      this.playerTileX,
-      this.playerTileY
-    );
+    refreshGameSceneMapLocation(this.getHudDeps());
   }
 
   private refreshHud() {
-    this.refreshMapLocationLabel();
-    this.refreshMinimap();
-    this.mapController.updateWorldMapMarker();
-    const p = this.playerProgress;
-
-    this.gameUi.setStats({
-      name: this.playerName,
-      nameColor: getPlayerNameColors(this.selectedFaction, this.playerRole).fill,
-      level: p.level,
-      hp: p.hp,
-      hpMax: p.hpMax,
-      mp: Math.floor(p.mp),
-      mpMax: p.mpMax,
-      exp: p.exp,
-      expMax: p.expToNext,
-      gold: p.gold,
-    });
+    refreshGameSceneHud(this.getHudDeps());
   }
 
   private refreshMinimap() {
-    const bounds = this.mapController.getMinimapBounds();
-    this.gameUi.updateMinimap(
-      this.currentMap,
-      this.playerTileX,
-      this.playerTileY,
-      bounds
-    );
+    refreshGameSceneMinimap(this.getHudDeps());
   }
 
   update(_time: number, delta: number) {
@@ -2159,145 +2286,91 @@ export class GameScene extends Phaser.Scene {
     this.mapController.snapCameraScroll();
     this.drawHitboxDebugOverlay();
     this.updatePlayerDebuffs();
+    this.localPlayerVisuals?.updateInvisibility();
+    this.multiplayer?.getRemotePlayers()?.updateInvisibilityVisuals(Date.now());
     this.meditationSystem.update(delta);
-    this.updateMobShowcaseAi();
     this.updateMobAi();
-    this.syncEntityDepths();
-    this.syncMovingMobFaces();
-    this.syncPlayerFacePosition();
-    this.syncPlayerNameLabelPosition();
-    this.syncEquippedHeldItemVisuals();
+    this.ensureEntitySyncReady();
+    this.entitySync?.syncFrame();
     this.meditationSystem.syncFxPosition();
-    this.syncSceneryOcclusion();
+    this.mapController.syncSceneryOcclusion(this.playerTileX, this.playerTileY);
 
-    if (!this.cursors || !this.wasd || this.isChangingMap) {
-      return;
-    }
-
-    if (
-      this.gameUi.isChatFocused() ||
-      this.gameUi.isConfirmOpen() ||
-      this.gameUi.isMacroEditorOpen() ||
-      this.gameUi.isStatsOverlayOpen() ||
-      (this.bankOverlay?.isOpen() ?? false) ||
-      (this.shopOverlay?.isOpen() ?? false)
-    ) {
-      return;
-    }
-
-    if (this.worldMapToggleKey && Phaser.Input.Keyboard.JustDown(this.worldMapToggleKey)) {
-      this.mapController.toggleWorldMap();
-      return;
-    }
-    if (
-      this.combatController.hasPendingSpellCast() &&
-      this.cancelSpellTargetingKey &&
-      Phaser.Input.Keyboard.JustDown(this.cancelSpellTargetingKey)
-    ) {
-      this.combatController.cancelSpellTargeting("Lanzamiento cancelado.");
-      return;
-    }
-    if (this.shopOverlay?.isOpen() && Phaser.Input.Keyboard.JustDown(this.cancelSpellTargetingKey)) {
-      this.shopOverlay.handleEscape();
-      return;
-    }
-    if (this.bankOverlay?.isOpen() && Phaser.Input.Keyboard.JustDown(this.cancelSpellTargetingKey)) {
-      this.bankOverlay.handleEscape();
-      return;
-    }
-    if (this.mapController.isWorldMapOpen()) {
-      return;
-    }
-
-    if (this.isPlayerDeadOrGhost()) {
-      if (this.meditateKey && Phaser.Input.Keyboard.JustDown(this.meditateKey)) {
-        this.gameUi.addChatLine("No podés meditar estando muerto o en forma fantasma.");
-      }
-      if (this.attackKey && Phaser.Input.Keyboard.JustDown(this.attackKey)) {
-        this.gameUi.addChatLine("No podés atacar en esta forma.");
-      }
-      if (this.isMoving) {
-        return;
-      }
-      const direction = this.getPressedDirection();
-      if (direction) {
-        this.stopMeditation("Dejaste de meditar.");
-        if (this.isMultiplayerActive()) {
-          this.tryNetworkStep(direction);
-        } else {
-          this.tryStep(direction);
-        }
-      }
-      return;
-    }
-
-    if (this.meditateKey && Phaser.Input.Keyboard.JustDown(this.meditateKey)) {
-      this.meditationSystem.toggle("hotkey");
-      return;
-    }
-
-    if (this.attackKey && Phaser.Input.Keyboard.JustDown(this.attackKey)) {
-      this.stopMeditation("Dejaste de meditar.");
-      this.combatController.tryAttackDummy();
-    }
-    if (
-      this.equipSelectedSlotKey &&
-      Phaser.Input.Keyboard.JustDown(this.equipSelectedSlotKey)
-    ) {
-      this.stopMeditation("Dejaste de meditar.");
-      this.tryToggleEquipmentFromSelectedSlot();
-    }
-    if (
-      this.dropSelectedSlotKey &&
-      Phaser.Input.Keyboard.JustDown(this.dropSelectedSlotKey)
-    ) {
-      this.stopMeditation("Dejaste de meditar.");
-      this.tryDropSelectedItem();
-    }
-
-    this.updateDesiredFacing();
-
-    if (Phaser.Input.Keyboard.JustDown(this.pickupKey)) {
-      this.stopMeditation("Dejaste de meditar.");
-      this.inventoryController.tryPickupAtPlayerTile();
-    }
-
-    if (this.isMoving) {
-      return;
-    }
-
-    const direction = this.getPressedDirection();
-    if (!direction) {
-      return;
-    }
-
-    if (this.isPlayerImmobilized()) {
-      const now = this.time.now;
-      if (now >= this.nextImmobilizedMoveFeedbackAt) {
-        this.nextImmobilizedMoveFeedbackAt = now + 900;
-        this.gameUi.addCombatLine("Estás inmovilizado y no podés moverte.");
-      }
-      return;
-    }
-
-    this.stopMeditation("Dejaste de meditar.");
-    if (this.isMultiplayerActive()) {
-      this.tryNetworkStep(direction);
-      return;
-    }
-    this.tryStep(direction);
+    processGameSceneFrameInput({
+      isChangingMap: this.isChangingMap,
+      hasCursors: Boolean(this.cursors && this.wasd),
+      isChatFocused: this.gameUi.isChatFocused(),
+      isConfirmOpen: this.gameUi.isConfirmOpen(),
+      isMacroEditorOpen: this.gameUi.isMacroEditorOpen(),
+      isStatsOverlayOpen: this.gameUi.isStatsOverlayOpen(),
+      isBankOpen: this.bankOverlay?.isOpen() ?? false,
+      isShopOpen: this.shopOverlay?.isOpen() ?? false,
+      justPressedWorldMapToggle: Boolean(
+        this.worldMapToggleKey && Phaser.Input.Keyboard.JustDown(this.worldMapToggleKey)
+      ),
+      hasPendingSpellCast: this.combatController.hasPendingSpellCast(),
+      justPressedCancelTargeting: Boolean(
+        this.cancelSpellTargetingKey &&
+          Phaser.Input.Keyboard.JustDown(this.cancelSpellTargetingKey)
+      ),
+      isWorldMapOpen: this.mapController.isWorldMapOpen(),
+      isPlayerDeadOrGhost: this.isPlayerDeadOrGhost(),
+      justPressedMeditate: Boolean(
+        this.meditateKey && Phaser.Input.Keyboard.JustDown(this.meditateKey)
+      ),
+      isAttackKeyDown: Boolean(this.attackKey?.isDown),
+      justPressedEquipSlot: Boolean(
+        this.equipSelectedSlotKey &&
+          Phaser.Input.Keyboard.JustDown(this.equipSelectedSlotKey)
+      ),
+      justPressedDropSlot: Boolean(
+        this.dropSelectedSlotKey && Phaser.Input.Keyboard.JustDown(this.dropSelectedSlotKey)
+      ),
+      justPressedPickup: Phaser.Input.Keyboard.JustDown(this.pickupKey),
+      isMoving: this.isMoving,
+      getPressedDirection: () => this.getPressedDirection(),
+      isPlayerImmobilized: () => this.isPlayerImmobilized(),
+      getTimeNow: () => this.time.now,
+      getNextImmobilizedFeedbackAt: () => this.nextImmobilizedMoveFeedbackAt,
+      setNextImmobilizedFeedbackAt: (at) => {
+        this.nextImmobilizedMoveFeedbackAt = at;
+      },
+      isMultiplayerActive: () => this.isMultiplayerActive(),
+      toggleWorldMap: () => this.mapController.toggleWorldMap(),
+      cancelSpellTargeting: (message) => this.combatController.cancelSpellTargeting(message),
+      handleShopEscape: () => this.shopOverlay?.handleEscape(),
+      handleBankEscape: () => this.bankOverlay?.handleEscape(),
+      onMeditateHotkeyWhileDead: () =>
+        this.gameUi.addChatLine("No podés meditar estando muerto o en forma fantasma."),
+      onAttackWhileDead: () => this.gameUi.addChatLine("No podés atacar en esta forma."),
+      tryNetworkStep: (direction) => this.tryNetworkStep(direction),
+      tryLocalStep: (direction) => this.tryStep(direction),
+      onMeditateToggle: () => this.meditationSystem.toggle("hotkey"),
+      onAttack: () => this.combatController.tryAttackDummy(),
+      onEquipSelectedSlot: () => this.tryToggleEquipmentFromSelectedSlot(),
+      onDropSelectedSlot: () => this.tryDropSelectedItem(),
+      onPickup: () => this.inventoryController.tryPickupAtPlayerTile(),
+      updateDesiredFacing: () => this.updateDesiredFacing(),
+      stopMeditation: (reason) => this.stopMeditation(reason),
+      onImmobilizedMoveAttempt: () =>
+        this.gameUi.addCombatLine("Estás inmovilizado y no podés moverte."),
+    });
   }
 
   private isPlayerImmobilized(now = this.time.now): boolean {
     return now < this.playerImmobilizedUntilMs;
   }
 
-  private applyInmovilizadoDebuffToPlayer(targetName: string, sourceName: string) {
+  private applyInmovilizadoDebuffToPlayer(
+    targetName: string,
+    sourceName: string,
+    spellId: number
+  ) {
     const now = this.time.now;
+    const durationMs = getImmobilizePlayerDurationMs(spellId);
     const wasImmobilized = this.isPlayerImmobilized(now);
     this.playerImmobilizedUntilMs = Math.max(
       this.playerImmobilizedUntilMs,
-      now + INMOVILIZADO_PLAYER_DURATION_MS
+      now + durationMs
     );
 
     if (wasImmobilized) {
@@ -2309,9 +2382,7 @@ export class GameScene extends Phaser.Scene {
       return;
     }
     this.gameUi.addCombatLine(
-      `${sourceName} inmoviliza a ${targetName} por ${formatImmobilizeDuration(
-        INMOVILIZADO_PLAYER_DURATION_MS
-      )}.`
+      `${sourceName} inmoviliza a ${targetName} por ${formatImmobilizeDuration(durationMs)}.`
     );
   }
 
@@ -2324,28 +2395,19 @@ export class GameScene extends Phaser.Scene {
     this.wasPlayerImmobilizedLastFrame = isImmobilized;
   }
 
-  private syncSceneryOcclusion() {
-    if (!this.player) return;
-
-    const applyOcclusion = (
-      sprite: Phaser.GameObjects.Image,
-      occludedAlpha: number
-    ) => {
-      const bounds = sprite.getBounds();
-      const playerBehind =
-        this.player.x >= bounds.left &&
-        this.player.x <= bounds.right &&
-        this.player.y <= sprite.y &&
-        this.player.y >= bounds.top;
-      sprite.setAlpha(playerBehind ? occludedAlpha : 1);
+  private getLocalPlayerVisualParts() {
+    return {
+      body: this.player,
+      face: this.playerFace,
+      weapon: this.equippedWeaponSprite,
+      shield: this.equippedShieldSprite,
+      helmet: this.equippedHelmetSprite,
+      nameLabel: this.playerNameLabel,
     };
+  }
 
-    this.mapController.getMapTrees().forEach((tree) =>
-      applyOcclusion(tree, TREE_OCCLUDED_ALPHA)
-    );
-    this.mapController.getMapBuildings().forEach((building) =>
-      applyOcclusion(building, BUILDING_OCCLUDED_ALPHA)
-    );
+  private resetLocalPlayerVisualAlpha() {
+    this.localPlayerVisuals?.resetAlpha();
   }
 
   private getPressedDirection(): MoveDirection | null {
@@ -2552,10 +2614,16 @@ export class GameScene extends Phaser.Scene {
     const binding = this.macroBindings[slotIndex];
     const itemOptions = this.getMacroItemOptions();
     const spellOptions = this.getMacroSpellOptions();
+    const selectedInvSlot = this.gameUi.getSelectedInventorySlot();
+    const itemFromSelectedSlot =
+      selectedInvSlot >= 0 ? this.inventory[selectedInvSlot]?.itemId ?? null : null;
     const nextItemId =
-      binding.itemId && itemOptions.some((option) => option.itemId === binding.itemId)
-        ? binding.itemId
-        : itemOptions[0]?.itemId ?? null;
+      itemFromSelectedSlot &&
+      itemOptions.some((option) => option.itemId === itemFromSelectedSlot)
+        ? itemFromSelectedSlot
+        : binding.itemId && itemOptions.some((option) => option.itemId === binding.itemId)
+          ? binding.itemId
+          : itemOptions[0]?.itemId ?? null;
     const nextSpellId =
       binding.spellId && spellOptions.some((option) => option.spellId === binding.spellId)
         ? binding.spellId
@@ -2617,16 +2685,24 @@ export class GameScene extends Phaser.Scene {
     }));
   }
 
-  private getKnownSpellDefinitions(): SpellDefinition[] {
+  private getAvailableSpellDefinitions(): SpellDefinition[] {
+    if (this.isPlayerAdmin()) {
+      return [...SPELL_DEFINITIONS];
+    }
     return SPELL_DEFINITIONS.filter(
       (spell) =>
         this.learnedSpellIds.has(spell.idSpell) &&
         spell.usableBy.includes(this.selectedClass) &&
-        spell.nivelMagiaRequerido <= this.getMagicSkillLevel()
+        spell.nivelRequerido <= this.playerProgress.level
     );
   }
 
+  private getKnownSpellDefinitions(): SpellDefinition[] {
+    return this.getAvailableSpellDefinitions();
+  }
+
   private refreshMacroVisuals() {
+    if (!this.gameUi) return;
     this.macroBindings.forEach((binding, index) => {
       this.gameUi.setMacroKeyLabel(index, this.formatMacroKeyLabel(binding.keyCode));
       const iconTexture =
@@ -2691,7 +2767,7 @@ export class GameScene extends Phaser.Scene {
         descripcion: spellDefinition.descripcion,
         valor: spellDefinition.valor,
         usableBy: spellDefinition.usableBy,
-        nivelMagiaRequerido: spellDefinition.nivelMagiaRequerido,
+        nivelRequerido: spellDefinition.nivelRequerido,
         manaCost: spellDefinition.manaCost,
         danioMin: spellDefinition.danioMin,
         danioMax: spellDefinition.danioMax,
@@ -2780,6 +2856,7 @@ export class GameScene extends Phaser.Scene {
       onUpdate: () => {
         this.syncPlayerFacePosition();
         this.syncEquippedHeldItemVisuals();
+        this.syncPlayerNameLabelPosition();
       },
       onComplete: () => {
         this.player.setPosition(target.x, target.y);
@@ -2795,6 +2872,7 @@ export class GameScene extends Phaser.Scene {
 
   /** Al terminar un paso: revisar transiciones por tile o por borde del mapa. */
   private handleTileEvents() {
+    this.mapController.updateRoofTransparency(this.playerTileX, this.playerTileY);
     const transition = findTransition(
       this.currentMapId,
       this.playerTileX,
@@ -2803,12 +2881,6 @@ export class GameScene extends Phaser.Scene {
     );
 
     if (transition) {
-      if (this.isMultiplayerActive()) {
-        this.gameUi.addChatLine(
-          "No podés cambiar de mapa en multijugador (solo Pueblo está disponible online)."
-        );
-        return;
-      }
       this.changeMap(transition);
     }
   }
@@ -2824,7 +2896,7 @@ export class GameScene extends Phaser.Scene {
   ) {
     if (this.isMultiplayerActive() && !options?.silent) {
       this.gameUi.addChatLine(
-        "No podés cambiar de mapa en multijugador (solo Pueblo está disponible online)."
+        "No podés cambiar de mapa en multijugador (solo Ullathorpe está disponible online)."
       );
       return;
     }
@@ -2852,6 +2924,7 @@ export class GameScene extends Phaser.Scene {
       this.cacheCurrentMapWorldItems();
     }
     this.worldItemManager.clearSprites();
+    this.mapTileOverrides.clear();
 
     this.currentMapId = transition.toMapId;
     this.currentMap = getMap(this.currentMapId);
@@ -2867,6 +2940,7 @@ export class GameScene extends Phaser.Scene {
     this.syncNpcsForCurrentMap();
     this.syncDummyVisibilityForCurrentMap();
     this.mapController.updateCameraBounds();
+    this.mapController.updateRoofTransparency(this.playerTileX, this.playerTileY);
 
     const pos = this.getPlayerFeetWorldForTile(this.playerTileX, this.playerTileY);
 
@@ -2909,12 +2983,29 @@ export class GameScene extends Phaser.Scene {
       this.getVisualRace()
     );
 
-    if (state === "walk" && isProfile) {
-      this.player.play({ key, repeat: -1 }, true);
+    // Siempre repeat:-1 para que la animación nunca "complete" y dispare un restart.
+    // Las idle se registran con repeat:0 (1 frame), lo que hace que isPlaying vuelva
+    // a false después de 1 segundo; el siguiente play() las reinicia → freeze visual.
+    // Con repeat:-1 el frame queda visible indefinidamente sin completarse.
+    const playOpts = (k: string) => ({ key: k, repeat: -1 });
+
+    if (!this.anims.exists(key)) {
+      const fallbackFacing: Facing = isProfile ? "left" : this.facing;
+      const fallbackKey = playerAnimationKey(
+        "idle",
+        fallbackFacing,
+        visualOutfit,
+        this.getVisualBodyTextureKey(),
+        this.useGhostAppearance ? undefined : this.equippedArmorVisual,
+        this.getVisualRace()
+      );
+      if (this.anims.exists(fallbackKey)) {
+        this.player.play(playOpts(fallbackKey), true);
+      } else {
+        this.player.anims.stop();
+      }
     } else {
-      // Siempre reiniciar idle/walk frontal: setTexture(..., 0) deja frame 0 (abajo)
-      // aunque currentAnim.key siga siendo el de otro facing.
-      this.player.play(key);
+      this.player.play(playOpts(key), true);
     }
 
     this.updatePlayerFaceFrame();
@@ -2938,28 +3029,15 @@ export class GameScene extends Phaser.Scene {
   }
 
   private syncPlayerFacePosition() {
-    if (!this.player || !this.playerFace) return;
-  
-    const offset = this.getActiveFaceLayout().offset[this.facing];
-    const { x: walkSwayX, y: walkSwayY } = getPlayerHeadWalkSway(
-      this.player,
-      this.facing,
-      this.isMoving
-    );
-  
-    this.playerFace.setPosition(
-      this.player.x + offset.x + walkSwayX,
-      this.player.y - offset.y + walkSwayY
-    );
-    this.playerFace.setDepth(this.player.depth + 0.02);
-    this.syncEquippedHelmetVisual(walkSwayX, walkSwayY);
+    this.ensureEntitySyncReady();
+    if (!this.entitySync) return;
+    this.entitySync.syncPlayerFacePosition();
   }
 
   private syncPlayerNameLabelPosition() {
-    if (!this.player || !this.playerNameLabel) return;
-
-    this.playerNameLabel.setPosition(this.player.x, this.player.y + 2);
-    this.playerNameLabel.setDepth(this.player.depth + 2);
+    this.ensureEntitySyncReady();
+    if (!this.entitySync) return;
+    this.entitySync.syncPlayerNameLabelPosition();
   }
 
   private getEquippedGearContext(): EquippedGearSyncContext {
@@ -2975,22 +3053,10 @@ export class GameScene extends Phaser.Scene {
     };
   }
 
-  private syncEquippedHelmetVisual(walkSwayX?: number, walkSwayY?: number) {
-    if (!this.isWorldSceneLive()) {
-      return;
-    }
-    applyEquippedHelmetVisual({
-      ...this.getEquippedGearContext(),
-      walkSwayX,
-      walkSwayY,
-    });
-  }
-
   private syncEquippedHeldItemVisuals() {
-    if (!this.isWorldSceneLive()) {
-      return;
-    }
-    applyEquippedHeldItemVisuals(this.getEquippedGearContext());
+    this.ensureEntitySyncReady();
+    if (!this.entitySync) return;
+    this.entitySync.syncEquippedHeldItemVisuals();
   }
 
   private depthFromFeetY(feetY: number): number {
@@ -3016,22 +3082,33 @@ export class GameScene extends Phaser.Scene {
   }
 
   private syncMobSpriteOrigin(dummy: DummyState) {
+    if (dummy.imperiumSpriteConfig) {
+      dummy.sprite.setOrigin(0.5, 1);
+      return;
+    }
     const model = MOB_MODELS[dummy.modelId];
     dummy.sprite.setOrigin(0.5, model.facingOriginY?.[dummy.facing] ?? 1);
   }
 
   private syncDummyWorldPosition(dummy: DummyState) {
     this.syncMobSpriteOrigin(dummy);
-    const feet = this.getMobFeetWorld(dummy.modelId, dummy.tileX, dummy.tileY);
+    const feet = dummy.imperiumSpriteConfig
+      ? tileToFeetWorld(dummy.tileX, dummy.tileY, TILE_SIZE)
+      : this.getMobFeetWorld(dummy.modelId, dummy.tileX, dummy.tileY);
     dummy.sprite.setPosition(feet.x, feet.y);
     const depth = this.depthFromFeetY(feet.y);
     dummy.sprite.setDepth(depth);
     this.syncMobFaceForDummy(dummy);
     dummy.hpLabel.setPosition(feet.x, feet.y - 30);
     dummy.hpLabel.setDepth(depth + 3);
+    this.mobController.rebuildHitbox(dummy);
   }
 
   private attachMobFaceIfNeeded(dummy: DummyState, facing: Facing = dummy.facing) {
+    if (dummy.imperiumSpriteConfig) {
+      // Los NPCs del catálogo Imperium no usan el sistema de face overlay de mobs clásicos
+      return;
+    }
     if (!mobHasFaceOverlay(dummy.modelId)) {
       dummy.face?.destroy();
       dummy.face = undefined;
@@ -3046,14 +3123,6 @@ export class GameScene extends Phaser.Scene {
     this.syncMobFaceForDummy(dummy);
   }
 
-  private syncMovingMobFaces() {
-    for (const dummy of this.dummies) {
-      if (!dummy.face || !dummy.alive || dummy.mapId !== this.currentMapId) continue;
-      syncMobFaceSprite(dummy.sprite, dummy.face, dummy.modelId, dummy.facing);
-      dummy.face.setDepth(dummy.sprite.depth + 0.02);
-    }
-  }
-
   private syncMobFaceForDummy(dummy: DummyState) {
     if (!dummy.face) {
       return;
@@ -3063,27 +3132,13 @@ export class GameScene extends Phaser.Scene {
     dummy.face.setVisible(dummy.sprite.visible);
   }
 
-  private syncEntityDepths() {
-    if (!this.player) return;
-    this.player.setDepth(this.depthFromFeetY(this.player.y));
-    if (this.playerFace) {
-      this.playerFace.setDepth(this.player.depth + 0.02);
-    }
-    if (this.playerNameLabel) {
-      this.playerNameLabel.setDepth(this.player.depth + 2);
-    }
-  }
-
   private isMapTileWalkable(tileX: number, tileY: number): boolean {
-    const map = this.currentMap;
-
-    if (tileX < 0 || tileY < 0 || tileX >= map.width || tileY >= map.height) {
-      return false;
-    }
-
-    const tile = map.tiles[tileY][tileX];
-    const tileDefinition = getTileDefinition(tile);
-    return tileDefinition.walkable;
+    return isSharedMapTileWalkable(
+      this.currentMapId,
+      tileX,
+      tileY,
+      this.mapTileOverrides
+    );
   }
 
   private isTileOccupiedByRemotePlayer(tileX: number, tileY: number): boolean {
@@ -3132,18 +3187,6 @@ export class GameScene extends Phaser.Scene {
     }
 
     return true;
-  }
-
-  private createMobShowcaseIfNeeded() {
-    this.mobController.createShowcaseIfNeeded();
-  }
-
-  private removeShowcaseDummies() {
-    this.mobController.removeShowcaseDummies();
-  }
-
-  private updateMobShowcaseAi() {
-    this.mobController.updateShowcaseAi();
   }
 
   private syncDummyVisibilityForCurrentMap() {
@@ -3258,7 +3301,6 @@ export class GameScene extends Phaser.Scene {
     this.applyMobDeathFromServer(dummy);
     this.gameUi.addCombatLine(`${dummy.name} fue destruido.`);
     this.killStats.creaturesKilled += 1;
-    this.refreshSkillsUi();
     this.grantExperience(dummy.expReward);
     this.tryDropFromDummy(dummy);
     this.scheduleDummyRespawn(dummy);
@@ -3323,7 +3365,7 @@ export class GameScene extends Phaser.Scene {
     this.deathPhase = "alive";
     this.useGhostAppearance = false;
     this.clearAttributePotionBuffs(false);
-    this.skillLevels = createInitialSkillLevels();
+
     this.learnedSpellIds.clear();
     this.initializeStarterSpells();
     this.killStats = {
@@ -3346,7 +3388,6 @@ export class GameScene extends Phaser.Scene {
     this.syncEquippedArmorOutfit();
     this.syncEquippedHeldItemVisuals();
     this.refreshKnownSpellsUi();
-    this.refreshSkillsUi();
     this.refreshMacroVisuals();
     this.refreshInventoryUi();
     this.refreshHud();
@@ -3423,15 +3464,9 @@ export class GameScene extends Phaser.Scene {
       this.playerProgress.hp = this.playerProgress.hpMax;
       this.playerProgress.mp = CLASS_USES_MANA[this.selectedClass] ? this.playerProgress.mpMax : 0;
 
-      const magiaCapGain = getSkillCapGainBetweenLevels(
-        "magia",
-        this.playerProgress.level - 1,
-        this.playerProgress.level
-      );
       this.gameUi.addChatLine(
-        `Subiste a nivel ${this.playerProgress.level}! HP+${levelBonuses.hpBonus}, MP+${levelBonuses.mpBonus}. Tope de Magia +${magiaCapGain}.`
+        `Subiste a nivel ${this.playerProgress.level}! HP+${levelBonuses.hpBonus}, MP+${levelBonuses.mpBonus}.`
       );
-      this.refreshSkillsUi();
       this.refreshInventoryUsability();
     }
 
@@ -3505,18 +3540,12 @@ export class GameScene extends Phaser.Scene {
 
   /** Footprint usado para bloqueo de movimiento (ancla del mob en tileX/tileY). */
   private getDummyBlockedTiles(dummy: DummyState): { x: number; y: number }[] {
-    const byBaseAnchor = getMobFootprintTiles(
+    return getMobFootprintTiles(
       dummy.tileX,
       dummy.tileY,
       dummy.hitboxWidthTiles,
       dummy.hitboxHeightTiles
     );
-    const byVisualOffset = this.getDummyTargetTiles(dummy);
-    const unique = new Map<string, { x: number; y: number }>();
-    for (const tile of [...byBaseAnchor, ...byVisualOffset]) {
-      unique.set(`${tile.x},${tile.y}`, tile);
-    }
-    return [...unique.values()];
   }
 
   private getDummyOccupiedTilesLarge(dummy: DummyState): { x: number; y: number }[] {
@@ -3550,9 +3579,13 @@ export class GameScene extends Phaser.Scene {
   }
 
   private setupPlayerHitboxInteraction() {
-    const hitArea = this.getPlayerHitboxAreaRect(this.player);
-    this.player.setInteractive(hitArea, Phaser.Geom.Rectangle.Contains);
-    this.player.input!.cursor = "pointer";
+    this.setupPlayerHitboxInteractionFor(this.player);
+  }
+
+  private setupPlayerHitboxInteractionFor(player: Phaser.GameObjects.Sprite) {
+    const hitArea = this.getPlayerHitboxAreaRect(player);
+    player.setInteractive(hitArea, Phaser.Geom.Rectangle.Contains);
+    player.input!.cursor = "pointer";
   }
 
   private refreshPlayerHitboxInteraction() {
@@ -3617,7 +3650,178 @@ export class GameScene extends Phaser.Scene {
   }
 
   private findPlayerAtWorldPoint(worldX: number, worldY: number): boolean {
-    return containsWorldPointInHitArea(this.player, worldX, worldY);
+    if (containsWorldPointInHitArea(this.player, worldX, worldY)) {
+      return true;
+    }
+    const tileX = Math.floor(worldX / TILE_SIZE);
+    const tileY = Math.floor(worldY / TILE_SIZE);
+    return tileX === this.playerTileX && tileY === this.playerTileY;
+  }
+
+  private findRemotePlayerAtWorldPoint(worldX: number, worldY: number): { tileX: number, tileY: number } | null {
+    const remote = this.multiplayer?.getRemotePlayers()?.findRemoteAtWorldPoint(worldX, worldY);
+    if (!remote) {
+      return null;
+    }
+    return { tileX: remote.tileX, tileY: remote.tileY };
+  }
+
+  private isPendingResurrectSpell(): boolean {
+    const spell = this.combatController.getPendingSpellCast();
+    if (!spell) {
+      return false;
+    }
+    return (
+      isResurrectSpellId(spell.idSpell) ||
+      isResurrectSpell(spell.idSpell) ||
+      spell.nombre === "Resucitar"
+    );
+  }
+
+  private tryCastPendingSpellOnAllyFromPointer(
+    pointer: Phaser.Input.Pointer,
+    currentlyOver: Phaser.GameObjects.GameObject[]
+  ): boolean {
+    const resurrectPending = this.isPendingResurrectSpell();
+
+    for (const gameObject of currentlyOver) {
+      if (gameObject === this.player) {
+        this.combatController.tryCastSpellOnPlayer();
+        return true;
+      }
+      const remote = this.multiplayer?.getRemotePlayers()?.getRemoteBySprite(gameObject);
+      if (remote) {
+        if (remote.isGhost || remote.hp <= 0) {
+          if (resurrectPending) {
+            this.combatController.tryCastResurrectOnGhost(
+              remote.tileX,
+              remote.tileY,
+              remote.id
+            );
+            return true;
+          }
+          continue;
+        }
+        this.combatController.tryCastSpellOnPlayer(
+          remote.tileX,
+          remote.tileY,
+          remote.id
+        );
+        return true;
+      }
+    }
+
+    if (this.findPlayerAtWorldPoint(pointer.worldX, pointer.worldY)) {
+      this.combatController.tryCastSpellOnPlayer();
+      return true;
+    }
+
+    if (resurrectPending) {
+      const hitGhost = this.multiplayer
+        ?.getRemotePlayers()
+        ?.findRemoteGhostAtWorldPoint(pointer.worldX, pointer.worldY);
+      if (hitGhost) {
+        this.combatController.tryCastResurrectOnGhost(
+          hitGhost.tileX,
+          hitGhost.tileY,
+          hitGhost.id
+        );
+        return true;
+      }
+    }
+
+    const hitRemote = this.findRemotePlayerAtWorldPoint(pointer.worldX, pointer.worldY);
+    if (hitRemote) {
+      this.combatController.tryCastSpellOnPlayer(hitRemote.tileX, hitRemote.tileY);
+      return true;
+    }
+
+    return false;
+  }
+
+  private tryCastPendingResurrectFromPointer(
+    pointer: Phaser.Input.Pointer,
+    currentlyOver: Phaser.GameObjects.GameObject[]
+  ): boolean {
+    const remotes = this.multiplayer?.getRemotePlayers();
+    if (!remotes) {
+      return false;
+    }
+
+    for (const gameObject of currentlyOver) {
+      const remote = remotes.getRemoteBySprite(gameObject);
+      if (remote && (remote.isGhost || remote.hp <= 0)) {
+        this.combatController.tryCastResurrectOnGhost(
+          remote.tileX,
+          remote.tileY,
+          remote.id
+        );
+        return true;
+      }
+    }
+
+    const ghostAtPointer = remotes.findRemoteGhostAtWorldPoint(
+      pointer.worldX,
+      pointer.worldY
+    );
+    if (ghostAtPointer) {
+      this.combatController.tryCastResurrectOnGhost(
+        ghostAtPointer.tileX,
+        ghostAtPointer.tileY,
+        ghostAtPointer.id
+      );
+      return true;
+    }
+
+    const clickTileX = Math.floor(pointer.worldX / TILE_SIZE);
+    const clickTileY = Math.floor(pointer.worldY / TILE_SIZE);
+    const nearest = remotes.findNearestRemoteGhostInRange(
+      this.playerTileX,
+      this.playerTileY,
+      RESURRECT_MAX_TILE_DISTANCE,
+      clickTileX,
+      clickTileY
+    );
+    if (nearest) {
+      this.combatController.tryCastResurrectOnGhost(
+        nearest.tileX,
+        nearest.tileY,
+        nearest.id
+      );
+      return true;
+    }
+
+    const nearestToCaster = remotes.findNearestRemoteGhostInRange(
+      this.playerTileX,
+      this.playerTileY,
+      RESURRECT_MAX_TILE_DISTANCE
+    );
+    if (nearestToCaster) {
+      this.combatController.tryCastResurrectOnGhost(
+        nearestToCaster.tileX,
+        nearestToCaster.tileY,
+        nearestToCaster.id
+      );
+      return true;
+    }
+
+    return false;
+  }
+
+  private findDummyAtTile(tileX: number, tileY: number): DummyState | null {
+    for (const dummy of this.dummies) {
+      if (!dummy.alive || dummy.mapId !== this.currentMapId) {
+        continue;
+      }
+      if (
+        this.getDummyTargetTiles(dummy).some(
+          (tile) => tile.x === tileX && tile.y === tileY
+        )
+      ) {
+        return dummy;
+      }
+    }
+    return null;
   }
 
   private findDummyAtWorldPoint(worldX: number, worldY: number): DummyState | null {
@@ -3741,11 +3945,29 @@ export class GameScene extends Phaser.Scene {
               return;
             }
           }
+          
+          const tileX = Math.floor(pointer.worldX / TILE_SIZE);
+          const tileY = Math.floor(pointer.worldY / TILE_SIZE);
+          this.multiplayer?.sendInteractMap(tileX, tileY);
+          
           return;
         }
 
         if (this.combatController.hasPendingSpellCast()) {
           const spell = this.combatController.getPendingSpellCast()!;
+          if (
+            isResurrectSpellId(spell.idSpell) ||
+            isResurrectSpell(spell.idSpell) ||
+            spell.nombre === "Resucitar"
+          ) {
+            if (this.tryCastPendingResurrectFromPointer(pointer, currentlyOver)) {
+              return;
+            }
+            this.combatController.cancelSpellTargeting(
+              `No hay fantasma aliado a ${RESURRECT_MAX_TILE_DISTANCE} tiles. Hacé click cerca del cuerpo.`
+            );
+            return;
+          }
           if (this.combatController.spellCanTargetDummy(spell)) {
             for (const gameObject of currentlyOver) {
               const dummy = this.dummies.find((entry) => entry.sprite === gameObject);
@@ -3762,16 +3984,31 @@ export class GameScene extends Phaser.Scene {
             }
           }
 
+          // 2) Aliados (curas/buffs/remover debuff)
           if (this.combatController.spellCanTargetPlayer(spell)) {
+            if (this.tryCastPendingSpellOnAllyFromPointer(pointer, currentlyOver)) {
+              return;
+            }
+          }
+
+          // 3) Jugador remoto (daño; el servidor valida facción/PvP)
+          if (!this.combatController.spellCanTargetPlayer(spell)) {
+            let targetRemote = undefined;
             for (const gameObject of currentlyOver) {
-              if (gameObject === this.player) {
-                this.combatController.tryCastSpellOnPlayer();
-                return;
+              const remote = this.multiplayer?.getRemotePlayers()?.getRemoteBySprite(gameObject);
+              if (remote && !remote.isGhost) {
+                targetRemote = remote;
+                break;
               }
             }
-
-            if (this.findPlayerAtWorldPoint(pointer.worldX, pointer.worldY)) {
-              this.combatController.tryCastSpellOnPlayer();
+            if (!targetRemote) {
+              const hitRemote = this.findRemotePlayerAtWorldPoint(pointer.worldX, pointer.worldY);
+              if (hitRemote) {
+                this.combatController.tryCastSpellOnPlayer(hitRemote.tileX, hitRemote.tileY);
+                return;
+              }
+            } else {
+              this.combatController.tryCastSpellOnPlayer(targetRemote.tileX, targetRemote.tileY);
               return;
             }
           }
@@ -3793,6 +4030,11 @@ export class GameScene extends Phaser.Scene {
             this.inspectDummy(dummy);
             return;
           }
+          const remote = this.multiplayer?.getRemotePlayers()?.getRemoteBySprite(gameObject);
+          if (remote) {
+            this.inspectRemote(remote);
+            return;
+          }
         }
 
         const inspectedDummy = this.findDummyAtWorldPoint(
@@ -3801,6 +4043,25 @@ export class GameScene extends Phaser.Scene {
         );
         if (inspectedDummy?.alive) {
           this.inspectDummy(inspectedDummy);
+          return;
+        }
+
+        const remotes = this.multiplayer?.getRemotePlayers();
+        const ghostAtPointer = remotes?.findRemoteGhostAtWorldPoint(
+          pointer.worldX,
+          pointer.worldY
+        );
+        if (ghostAtPointer) {
+          this.inspectRemote(ghostAtPointer);
+          return;
+        }
+
+        const aliveAtPointer = remotes?.findRemoteAtWorldPoint(
+          pointer.worldX,
+          pointer.worldY
+        );
+        if (aliveAtPointer) {
+          this.inspectRemote(aliveAtPointer);
           return;
         }
 
@@ -3834,14 +4095,11 @@ export class GameScene extends Phaser.Scene {
   }
 
   private isTileWalkableInMap(map: GameMap, tileX: number, tileY: number): boolean {
-    if (tileX < 0 || tileY < 0 || tileX >= map.width || tileY >= map.height) {
-      return false;
-    }
-    return getTileDefinition(map.tiles[tileY][tileX]).walkable;
+    return isSharedMapTileWalkable(map.id, tileX, tileY);
   }
 
   private getDummyOccupiedTiles(dummy: DummyState): { x: number; y: number }[] {
-    return this.getDummyTargetTiles(dummy);
+    return this.getDummyBlockedTiles(dummy);
   }
 
   private getMobMoveSpeedRatio(modelId: MobModelId): number {
@@ -3864,12 +4122,30 @@ export class GameScene extends Phaser.Scene {
 
   private setMobAnimationState(dummy: DummyState, state: "idle" | "walk") {
     this.syncMobSpriteOrigin(dummy);
+    if (dummy.imperiumSpriteConfig) {
+      if (state === "walk") {
+        playImperiumNpcWalkAnim(this, dummy.sprite, dummy.npcId!, dummy.imperiumSpriteConfig, dummy.facing);
+      } else {
+        playImperiumNpcIdleFrame(dummy.sprite, dummy.imperiumSpriteConfig, dummy.facing);
+      }
+      this.syncMobFaceForDummy(dummy);
+      return;
+    }
     if (state === "walk") {
       playMobWalkAnimation(dummy.sprite, dummy.modelId, dummy.facing);
     } else {
       playMobIdleFrame(dummy.sprite, dummy.modelId, dummy.facing);
     }
     this.syncMobFaceForDummy(dummy);
+  }
+
+  private registerImperiumNpcWalkAnimations(): void {
+    for (const entry of IMPERIUM_NPC_CATALOG) {
+      if (!entry.visual || entry.visual.status !== "ready") continue;
+      const config = getImperiumNpcSpriteConfigFromCatalog(entry);
+      if (!config) continue;
+      registerImperiumNpcWalkAnims(this, entry.npcId, config);
+    }
   }
 
   private registerSpellAnimations() {
@@ -3915,7 +4191,88 @@ export class GameScene extends Phaser.Scene {
     });
   }
 
+  startResurrectChannelEffect(
+    casterId: string,
+    tileX: number,
+    tileY: number,
+    endsAtMs: number
+  ) {
+    this.stopResurrectChannelEffect(casterId);
+
+    const fxConfig = getSpellEffectConfig(RESURRECT_SPELL_ID);
+    if (!fxConfig) {
+      return;
+    }
+
+    const animKey = spellEffectAnimKey(RESURRECT_SPELL_ID);
+    if (!this.anims.exists(animKey)) {
+      return;
+    }
+
+    const { x, y } = tileToFeetWorld(tileX, tileY, TILE_SIZE);
+    const worldX = x + (fxConfig.offsetX ?? 0);
+    const worldY = y + (fxConfig.offsetY ?? 0);
+
+    const sprite = this.add
+      .sprite(worldX, worldY, fxConfig.sheetKey, getSpellEffectFirstFrame(fxConfig))
+      .setOrigin(fxConfig.originX ?? 0.5, fxConfig.originY ?? 0.5)
+      .setDepth(this.depthFromFeetY(y) + 1)
+      .setScale(fxConfig.scale ?? 1)
+      .setBlendMode(Phaser.BlendModes.ADD);
+
+    if (fxConfig.tint != null) {
+      sprite.setTint(fxConfig.tint);
+    }
+    if (this.uiCamera) {
+      this.uiCamera.ignore(sprite);
+    }
+
+    sprite.play({ key: animKey, repeat: -1 });
+    this.resurrectChannelFxByCasterId.set(casterId, sprite);
+
+    const remainingMs = Math.max(0, endsAtMs - Date.now());
+    if (remainingMs > 0) {
+      this.time.delayedCall(remainingMs, () => this.stopResurrectChannelEffect(casterId));
+    }
+  }
+
+  stopResurrectChannelEffect(casterId: string) {
+    const sprite = this.resurrectChannelFxByCasterId.get(casterId);
+    if (!sprite) {
+      return;
+    }
+    sprite.destroy();
+    this.resurrectChannelFxByCasterId.delete(casterId);
+  }
+
+  private lastSpellCastSoundAt = 0;
+  private lastSpellCastSoundId = -1;
+
+  /** Sonido de lanzamiento (WAV de IAO); evita doble play local en ~350 ms. */
+  private playSpellCastSound(spellId: number) {
+    const now = this.time.now;
+    if (
+      this.lastSpellCastSoundId === spellId &&
+      now - this.lastSpellCastSoundAt < 350
+    ) {
+      return;
+    }
+    const wav = getSpellWav(spellId);
+    if (playSpellWav(this, wav)) {
+      this.lastSpellCastSoundAt = now;
+      this.lastSpellCastSoundId = spellId;
+      return;
+    }
+    if (getSpellEffectConfig(spellId)?.playHitSound) {
+      this.playSyntheticHitSound();
+      this.lastSpellCastSoundAt = now;
+      this.lastSpellCastSoundId = spellId;
+    }
+  }
+
   private playSpellEffect(spellId: number, tileX: number, tileY: number) {
+    this.playSpellCastSound(spellId);
+
     const fxConfig = getSpellEffectConfig(spellId);
     if (!fxConfig) {
       return;
@@ -3941,6 +4298,10 @@ export class GameScene extends Phaser.Scene {
       .setScale(fxConfig.scale ?? 1)
       .setBlendMode(Phaser.BlendModes.ADD);
 
+    if (fxConfig.tint != null) {
+      sprite.setTint(fxConfig.tint);
+    }
+
     if (this.uiCamera) {
       this.uiCamera.ignore(sprite);
     }
@@ -3961,14 +4322,15 @@ export class GameScene extends Phaser.Scene {
     if (fxConfig.shakeOnPlay) {
       this.cameras.main.shake(90, 0.0022, true);
     }
-    if (fxConfig.playHitSound) {
-      this.playHitSound();
-    }
   }
 
   private playSpawnEffect() {
+    this.playSpawnEffectAtTile(this.playerTileX, this.playerTileY);
+  }
+
+  private playSpawnEffectAtTile(tileX: number, tileY: number) {
     const fx = SPAWN_FX_CONFIG;
-    const { x, y } = tileToFeetWorld(this.playerTileX, this.playerTileY, TILE_SIZE);
+    const { x, y } = tileToFeetWorld(tileX, tileY, TILE_SIZE);
     const worldX = x + (fx.offsetX ?? 0);
     const worldY = y + (fx.offsetY ?? 0);
 
@@ -3990,7 +4352,7 @@ export class GameScene extends Phaser.Scene {
     sprite.play(spellEffectAnimKey(SPAWN_FX_ID));
   }
 
-  private playHitSound() {
+  private playSyntheticHitSound() {
     if (!("context" in this.sound)) {
       return;
     }

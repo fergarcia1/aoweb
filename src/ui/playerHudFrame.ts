@@ -9,7 +9,10 @@ export const FONDO_BOTONES_TEXTURE_KEY = "fondo_botones";
 const LVL_NAME_EXP_FILE = "lvlNameExp.png";
 const VENTANA_CHAT_FILE = "ventanaChat.png";
 const FONDO_BOTONES_FILE = "fondoBotones.png";
-const AOWEB_SKIN_FILE = "aoweb_skin.png";
+
+import { resolveAowebSkinFile } from "./aowebSkinVariant";
+
+export { getAowebSkinVariant, type AowebUiSkinVariant } from "./aowebSkinVariant";
 
 export const AOWEB_SKIN_TEXTURE_KEY = "aoweb_skin";
 export const AOWEB_SKIN_FALLBACK_SIZE = { w: 1024, h: 768 };
@@ -55,7 +58,7 @@ export function registerPlayerHudAssets(scene: Phaser.Scene): void {
   scene.load.image(LVL_NAME_EXP_TEXTURE_KEY, UI_PATH + LVL_NAME_EXP_FILE);
   scene.load.image(VENTANA_CHAT_TEXTURE_KEY, UI_PATH + VENTANA_CHAT_FILE);
   scene.load.image(FONDO_BOTONES_TEXTURE_KEY, UI_PATH + FONDO_BOTONES_FILE);
-  scene.load.image(AOWEB_SKIN_TEXTURE_KEY, UI_PATH + AOWEB_SKIN_FILE);
+  scene.load.image(AOWEB_SKIN_TEXTURE_KEY, UI_PATH + resolveAowebSkinFile());
 }
 
 const UI_GRAFICA_TEXTURE_KEYS = [

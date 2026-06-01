@@ -1,8 +1,14 @@
 import Phaser from "phaser";
+import {
+  isMinimapLegacyRoofTile,
+  MINIMAP_LEGACY_ROOF_COLOR,
+} from "../../shared/mapWalkability";
+import { computeMinimapCellSize, minimapTileCenterPx } from "../../shared/minimapLayout";
 import { getTileDefinition, TILE } from "../maps/tileDefinitions";
 import type { GameMap } from "../maps/types";
 import type { SpellDefinition } from "../data/spells";
 import { GAME_FONT, GAME_TEXT_RESOLUTION } from "./fonts";
+import { isPhaserObjectLive } from "./phaserObjectUtils";
 import { getGameViewport, UI_LAYOUT } from "./layout";
 import { createInventoryPanel, type InventoryPanel } from "./inventoryPanel";
 import {
@@ -18,19 +24,16 @@ import {
   VENTANA_CHAT_TEXTURE_KEY,
 } from "./playerHudFrame";
 import {
-  AOWEB_SKIN_INVENTORY_CELL,
-  AOWEB_SKIN_REGIONS,
-  getSkinGameViewport,
+  getAowebSkinRegions,
+  getSkinDerivedLayout,
   scaleSkinRect,
-  scaleSkinX,
   scaleSkinY,
 } from "./aowebSkinLayout";
 import { ATTRIBUTE_POTION_BUFF_MAX, STAT_MAX } from "../../game-data/constants";
 import { INVENTORY_SLOT_COUNT } from "../game/characterProgressStorage";
 
 /** Posición X nativa del centro de cada ranura de la barra de macros. */
-const SKIN_MACRO_SLOT_X = [62, 107, 152, 201, 249, 296, 343, 390, 484, 530] as const;
-import type { SkillDisplayEntry } from "../game/skills";
+
 
 export type CharacterAttributesDisplay = {
   strength: number;
@@ -52,7 +55,7 @@ export type PlayerKillStats = {
 const UI_DEPTH = 1000;
 const MACRO_COUNT = 10;
 const INVENTORY_ROWS = 4;
-const INVENTORY_COLS = Math.floor(INVENTORY_SLOT_COUNT / INVENTORY_ROWS);
+const INVENTORY_COLS = 5;
 const INVENTORY_SLOT_SCALE = 1.12;
 /** Fracción del casillero que ocupa el ícono (ancho/alto). */
 const INVENTORY_ICON_FILL = 0.9;
@@ -70,6 +73,11 @@ const CHAT_HISTORY_FONT_SIZE = 10;
 const CHAT_HISTORY_LINE_HEIGHT = 13;
 const HUD_STRENGTH_POTION_TEXTURE_KEY = "hud_strength_potion_icon";
 const HUD_AGILITY_POTION_TEXTURE_KEY = "hud_agility_potion_icon";
+/** Tamaños probados de mayor a menor para que el texto quepa en la barra. */
+const VITAL_BAR_LABEL_FONT_SIZES = [11, 10, 9] as const;
+const VITAL_BAR_LABEL_STROKE = "#1a1208";
+const VITAL_BAR_LABEL_STROKE_THICKNESS = 4;
+const VITAL_BAR_LABEL_RESOLUTION = 3;
 
 const ATTRIBUTE_STAT_COLOR_DEFAULT = "#f2d188";
 const ATTRIBUTE_STAT_COLOR_DEFAULT_LEGACY = "#f5d76e";
@@ -116,7 +124,7 @@ type SpellInfoRequest = {
   descripcion: string;
   valor: number;
   usableBy: string[];
-  nivelMagiaRequerido: number;
+  nivelRequerido: number;
   manaCost: number;
   danioMin: number;
   danioMax: number;
@@ -164,9 +172,9 @@ export class GameUi {
   private equippedItemIds = new Set<string>();
   private readonly scene: Phaser.Scene;
   private readonly root: Phaser.GameObjects.Container;
-  private readonly sidebarWidth = UI_LAYOUT.sidebarWidth;
-  private readonly macroBarHeight = UI_LAYOUT.macroBarHeight;
-  private readonly chatHeight = UI_LAYOUT.chatHeight;
+  private sidebarWidth = UI_LAYOUT.sidebarWidth;
+  private macroBarHeight = UI_LAYOUT.macroBarHeight;
+  private chatHeight = UI_LAYOUT.chatHeight;
 
   private stats: PlayerHudStats = { ...DEFAULT_STATS };
 
@@ -178,6 +186,10 @@ export class GameUi {
   private useAowebSkin = false;
 
   private mapNameText!: Phaser.GameObjects.Text;
+  private mapCoordsText!: Phaser.GameObjects.Text;
+  private mapNameOffset = { x: 0, y: 0 };
+  private minimapMaskGfx!: Phaser.GameObjects.Graphics;
+  private minimapMask?: Phaser.Display.Masks.GeometryMask;
   private chatText!: Phaser.GameObjects.Text;
   private chatTabBgFrames: Phaser.GameObjects.Image[] = [];
   private chatTabs: {
@@ -223,6 +235,8 @@ export class GameUi {
     itemIcon: Phaser.GameObjects.Image;
     keyLabel: Phaser.GameObjects.Text;
   }[] = [];
+  /** Última geometría de cada slot (para reescalar iconos tras cambiar textura). */
+  private macroSlotMetrics: { cx: number; cy: number; size: number }[] = [];
   private macroSlotClickHandler?: (slotIndex: number) => void;
   private activeSidebarTab: "inventory" | "spells" = "inventory";
   private statsTabBtn!: Phaser.GameObjects.Graphics;
@@ -237,12 +251,7 @@ export class GameUi {
   private statsOverlayCloseZone!: Phaser.GameObjects.Zone;
   private statsOverlayAttrTexts: Phaser.GameObjects.Text[] = [];
   private statsOverlaySectionTitles: Phaser.GameObjects.Text[] = [];
-  private statsSkillNameTexts: Phaser.GameObjects.Text[] = [];
-  private statsSkillValueTexts: Phaser.GameObjects.Text[] = [];
-  private statsSkillBars: Phaser.GameObjects.Graphics[] = [];
   private statsKillTexts: Phaser.GameObjects.Text[] = [];
-  private statsSkillScrollOffset = 0;
-  private skillEntries: SkillDisplayEntry[] = [];
   private killStats: PlayerKillStats = {
     creaturesKilled: 0,
     criminalsKilled: 0,
@@ -393,8 +402,6 @@ export class GameUi {
   private fullscreenBtnHit!: Phaser.GameObjects.Graphics;
   private fullscreenBtnLabel!: Phaser.GameObjects.Text;
 
-  private mapNameOffset = { x: 0, y: 0 };
-
   getContainer(): Phaser.GameObjects.Container {
     return this.root;
   }
@@ -424,12 +431,12 @@ export class GameUi {
       if (raw) {
         const parsed = JSON.parse(raw) as { x?: number; y?: number };
         this.mapNameOffset = {
-          x: typeof parsed.x === "number" ? parsed.x : 0,
-          y: typeof parsed.y === "number" ? parsed.y : 0,
+          x: typeof parsed.x === "number" && Number.isFinite(parsed.x) ? parsed.x : 0,
+          y: typeof parsed.y === "number" && Number.isFinite(parsed.y) ? parsed.y : 0,
         };
       }
     } catch {
-      // ignore
+      this.mapNameOffset = { x: 0, y: 0 };
     }
 
     this.build();
@@ -468,7 +475,8 @@ export class GameUi {
   }
 
   setMapLocation(name: string, tileX: number, tileY: number) {
-    this.mapNameText.setText(`${name} (${tileX}, ${tileY})`);
+    this.mapNameText.setText(name.trim());
+    this.mapCoordsText.setText(`${tileX}, ${tileY}`);
   }
 
   setMinimapRedrawHandler(handler: () => void) {
@@ -497,12 +505,6 @@ export class GameUi {
     this.spells = [...spells];
     this.spellScrollOffset = 0;
     this.selectedSpellIndex = this.spells.length > 0 ? 0 : -1;
-    this.relayout();
-  }
-
-  setSkillEntries(entries: SkillDisplayEntry[]) {
-    this.skillEntries = [...entries];
-    this.statsSkillScrollOffset = 0;
     this.relayout();
   }
 
@@ -637,7 +639,14 @@ export class GameUi {
     this.fullscreenBtnLabel.setColor(inFullscreen ? "#f0e6c8" : "#e6edf3");
   }
 
+  private canRenderChat(): boolean {
+    return Boolean(this.scene.sys?.isActive() && isPhaserObjectLive(this.chatText));
+  }
+
   private renderChatHistory() {
+    if (!this.canRenderChat()) {
+      return;
+    }
     const lineHeight = CHAT_HISTORY_LINE_HEIGHT;
     const maxLines = Math.max(1, Math.floor(this.chatTextArea.h / lineHeight));
     const filtered = this.chatHistory.filter(
@@ -663,15 +672,16 @@ export class GameUi {
     }
 
     g.clear();
+    this.syncMinimapMask();
 
-    const minimapBgAlpha = this.useAowebSkin ? 0.35 : 0.92;
-    g.fillStyle(0x0a1018, minimapBgAlpha);
+    const minimapBgAlpha = this.useAowebSkin ? 0.55 : 0.92;
+    g.fillStyle(0x121a24, minimapBgAlpha);
     if (this.useAowebSkin) {
       g.fillRect(x, y, size, size);
     } else {
-      g.fillRoundedRect(x - 2, y - 2, size + 4, size + 4, 4);
-      g.lineStyle(1, 0x4c607f, 1);
-      g.strokeRoundedRect(x - 1.5, y - 1.5, size + 3, size + 3, 4);
+      g.fillRoundedRect(x - 2, y - 2, size + 4, size + 4, 6);
+      g.lineStyle(1, 0x5a6d88, 1);
+      g.strokeRoundedRect(x - 1.5, y - 1.5, size + 3, size + 3, 6);
     }
 
     const minTileX = bounds?.minTileX ?? 0;
@@ -681,39 +691,124 @@ export class GameUi {
     const renderW = Math.max(1, maxTileX - minTileX + 1);
     const renderH = Math.max(1, maxTileY - minTileY + 1);
 
-    const cell = Math.max(1, Math.floor(size / Math.max(renderW, renderH)));
-    const offsetX = x + Math.floor((size - renderW * cell) / 2);
-    const offsetY = y + Math.floor((size - renderH * cell) / 2);
+    const cell = computeMinimapCellSize(size, renderW, renderH);
+    const mapPixelW = renderW * cell;
+    const mapPixelH = renderH * cell;
+    const offsetX = x + Math.floor((size - mapPixelW) / 2);
+    const offsetY = y + Math.floor((size - mapPixelH) / 2);
 
     for (let ty = minTileY; ty <= maxTileY; ty++) {
       for (let tx = minTileX; tx <= maxTileX; tx++) {
-        const tileId = map.tiles[ty][tx];
+        const tileId = map.tiles[ty]?.[tx] ?? TILE.GRASS;
         const def = getTileDefinition(tileId);
         let color = def.color;
 
         if (tileId === TILE.WATER) {
-          color = 0x1f5b9c;
-        } else if (tileId === TILE.WALL) {
-          color = 0x252f12;
+          color = 0x2a6a9e;
+        } else if (tileId === TILE.DIRT) {
+          color = 0x6b5238;
+        } else if (!def.walkable && tileId !== TILE.TREE) {
+          color = 0x3d3020;
         } else if (tileId === TILE.TREE) {
-          color = 0x1f6f2e;
+          color = 0x2d6b34;
         } else if (def.isPortal) {
-          color = 0xfff3a0;
+          color = 0xc9b060;
         }
 
+        if (map.legacyCsmData && isMinimapLegacyRoofTile(map, tx, ty)) {
+          color = MINIMAP_LEGACY_ROOF_COLOR;
+        }
+
+        const cellX = offsetX + (tx - minTileX) * cell;
+        const cellY = offsetY + (ty - minTileY) * cell;
         g.fillStyle(color, 1);
-        g.fillRect(offsetX + (tx - minTileX) * cell, offsetY + (ty - minTileY) * cell, cell, cell);
+        g.fillRect(cellX, cellY, cell, cell);
+        if (cell >= 3 && !def.walkable) {
+          g.fillStyle(0x000000, 0.12);
+          g.fillRect(cellX, cellY, cell, cell);
+        }
       }
     }
 
     const clampedPlayerX = Phaser.Math.Clamp(playerTileX, minTileX, maxTileX);
     const clampedPlayerY = Phaser.Math.Clamp(playerTileY, minTileY, maxTileY);
-    const px = offsetX + (clampedPlayerX - minTileX) * cell + Math.floor(cell / 2);
-    const py = offsetY + (clampedPlayerY - minTileY) * cell + Math.floor(cell / 2);
-    g.fillStyle(0xffffff, 1);
-    g.fillRect(px - 1, py - 1, 3, 3);
+    const originX = offsetX - x;
+    const originY = offsetY - y;
+    const px = x + minimapTileCenterPx(clampedPlayerX, minTileX, cell, originX);
+    const py = y + minimapTileCenterPx(clampedPlayerY, minTileY, cell, originY);
+    const markerR = Math.max(2, Math.floor(cell * 0.35));
+    g.fillStyle(0xffffff, 0.95);
+    g.fillCircle(px, py, markerR);
     g.fillStyle(0xe74c3c, 1);
-    g.fillRect(px, py, 1, 1);
+    g.fillCircle(px, py, Math.max(1, markerR - 1));
+  }
+
+  private layoutMinimapLabels(
+    minimapRect: { x: number; y: number; w: number; h: number },
+    screenH: number,
+    gapAboveMinimap = 0
+  ) {
+    const centerX = minimapRect.x + minimapRect.w / 2 + this.mapNameOffset.x;
+
+    if (this.useAowebSkin) {
+      // En skin AOWEB: nombre y coordenadas dentro del minimapa (parte inferior).
+      const offsetX = Math.max(-minimapRect.w / 2, Math.min(minimapRect.w / 2, this.mapNameOffset.x));
+      const offsetY = Math.max(-minimapRect.h + scaleSkinY(28, screenH), Math.min(scaleSkinY(12, screenH), this.mapNameOffset.y));
+      const mmCenterX = minimapRect.x + minimapRect.w / 2 + offsetX;
+      const innerBottom = minimapRect.y + minimapRect.h - scaleSkinY(-30, screenH);
+      const coordsY = innerBottom + offsetY;
+      const nameY = coordsY - 13;
+      const labelStroke = { color: "#000000", thickness: 2 };
+
+      this.mapNameText.setOrigin(0.5, 1);
+      this.mapNameText.setPosition(mmCenterX, nameY);
+      this.mapNameText.setFontSize("10px");
+      this.mapNameText.setColor("#f5ecd8");
+      this.mapNameText.setStroke(labelStroke.color, labelStroke.thickness);
+      this.mapNameText.setWordWrapWidth(minimapRect.w - 8);
+      this.mapNameText.setAlign("center");
+      this.mapNameText.setVisible(true);
+      this.mapNameText.setDepth(UI_DEPTH + 5);
+
+      this.mapCoordsText.setOrigin(0.5, 1);
+      this.mapCoordsText.setPosition(mmCenterX, coordsY);
+      this.mapCoordsText.setFontSize("10px");
+      this.mapCoordsText.setColor("#c8d8f0");
+      this.mapCoordsText.setStroke(labelStroke.color, labelStroke.thickness);
+      this.mapCoordsText.setVisible(true);
+      this.mapCoordsText.setDepth(UI_DEPTH + 5);
+      return;
+    }
+
+    const nameY = minimapRect.y - gapAboveMinimap + this.mapNameOffset.y;
+    this.mapNameText.setOrigin(0.5, 1);
+    this.mapNameText.setPosition(centerX, nameY);
+    this.mapNameText.setFontSize("11px");
+    this.mapNameText.setColor("#ffe566");
+    this.mapNameText.setWordWrapWidth(minimapRect.w);
+    this.mapNameText.setAlign("center");
+
+    this.mapCoordsText.setOrigin(0.5, 1);
+    this.mapCoordsText.setPosition(centerX, nameY - 13);
+    this.mapCoordsText.setFontSize("10px");
+    this.mapCoordsText.setColor("#b8c4d9");
+    this.mapCoordsText.setVisible(true);
+  }
+
+  private syncMinimapMask() {
+    // Aplicar máscara rectangular al minimapa para recortarlo dentro del hueco de la skin.
+    const { x, y, size } = this.minimapGeom;
+    if (size <= 0) {
+      this.minimapGfx.clearMask();
+      return;
+    }
+    this.minimapMaskGfx.clear();
+    this.minimapMaskGfx.fillStyle(0xffffff, 1);
+    this.minimapMaskGfx.fillRect(x, y, size, size);
+    if (!this.minimapMask) {
+      this.minimapMask = this.minimapMaskGfx.createGeometryMask();
+    }
+    this.minimapGfx.setMask(this.minimapMask);
   }
 
   private build() {
@@ -736,6 +831,7 @@ this.chatMaskGfx = this.scene.add.graphics().setScrollFactor(0);
 this.chatMaskGfx.setVisible(false);
 
 this.mapNameText = this.makeText("", 11, "#ffe566", true);
+    this.mapCoordsText = this.makeText("", 10, "#9eb0c8", false);
 this.chatText = this.makeText("", CHAT_HISTORY_FONT_SIZE, "#b8c4d9");
 this.chatInputText = this.makeText("", 12, "#ffffff");
 
@@ -829,12 +925,6 @@ this.chatText.setMask(this.chatMaskGfx.createGeometryMask());
     this.invTabLabel = this.makeText("Inventario", 9, "#c8d0dc", true).setOrigin(0.5, 0.5);
     this.spellsTabLabel = this.makeText("Hechizos", 9, "#c8d0dc", true).setOrigin(0.5, 0.5);
     this.statsTabLabel = this.makeText("Estadísticas", 9, "#c8d0dc", true).setOrigin(0.5, 0.5);
-    const STATS_VISIBLE_ROWS = 10;
-    for (let i = 0; i < STATS_VISIBLE_ROWS; i += 1) {
-      this.statsSkillNameTexts.push(this.makeText("", 9, "#ffffff"));
-      this.statsSkillValueTexts.push(this.makeText("", 9, "#b8c4d9", true));
-      this.statsSkillBars.push(this.scene.add.graphics().setScrollFactor(0));
-    }
     for (let i = 0; i < 6; i += 1) {
       this.statsKillTexts.push(this.makeText("", 9, "#c8d0dc"));
     }
@@ -896,8 +986,11 @@ this.chatText.setMask(this.chatMaskGfx.createGeometryMask());
     this.agilityValueText = this.makeText("0", 13, "#f5d76e", true).setOrigin(1, 0.5);
     this.hpLabel = this.makeText("HP 100/100", 11, "#ffffff");
     this.mpLabel = this.makeText("MP 50/50", 11, "#ffffff");
+    this.applyVitalBarLabelStyle(this.hpLabel);
+    this.applyVitalBarLabelStyle(this.mpLabel);
     this.hpFill = this.scene.add.graphics().setScrollFactor(0);
     this.mpFill = this.scene.add.graphics().setScrollFactor(0);
+    this.minimapMaskGfx = this.scene.add.graphics().setScrollFactor(0).setVisible(false);
     this.minimapGfx = this.scene.add.graphics().setScrollFactor(0);
     this.fullscreenBtnBg = this.scene.add
       .image(0, 0, FONDO_BOTONES_TEXTURE_KEY)
@@ -1050,6 +1143,8 @@ this.chatText.setMask(this.chatMaskGfx.createGeometryMask());
       this.sidebarPanel,
 
       this.mapNameText,
+      this.mapCoordsText,
+      this.minimapMaskGfx,
       this.chatText,
     
       // El input va DESPUÉS del historial para tapar cualquier texto que se escape
@@ -1152,6 +1247,7 @@ this.chatText.setMask(this.chatMaskGfx.createGeometryMask());
     slot.itemIcon.setTexture(textureKey);
     slot.itemIcon.setData("hasItem", true);
     slot.itemIcon.setVisible(true);
+    this.applyMacroIconLayout(slotIndex);
   }
 
   isMacroEditorOpen() {
@@ -1208,29 +1304,45 @@ this.chatText.setMask(this.chatMaskGfx.createGeometryMask());
     });
   }
 
+  /** Escala el icono al slot (setTexture deja el frame a tamaño nativo si no se reescala). */
+  private applyMacroIconLayout(slotIndex: number) {
+    const slot = this.macroSlots[slotIndex];
+    const metrics = this.macroSlotMetrics[slotIndex];
+    if (!slot || !metrics || !slot.itemIcon.getData("hasItem")) {
+      return;
+    }
+    const icon = slot.itemIcon;
+    icon.setOrigin(0.5, 0.5);
+    icon.setPosition(metrics.cx, metrics.cy);
+    const frame = icon.frame;
+    const srcW = Math.max(1, frame.width);
+    const srcH = Math.max(1, frame.height);
+    const maxDim = Math.max(8, metrics.size - 6);
+    const scale = maxDim / Math.max(srcW, srcH);
+    icon.setScale(scale);
+  }
+
   /** Posiciona iconos/teclas de macro sobre los slots del marco (sin recuadros propios). */
   private layoutMacroSlots(w: number, h: number) {
-    const macroR = scaleSkinRect(AOWEB_SKIN_REGIONS.macroBar, w, h);
-    const macroSlotSize = Math.min(40, scaleSkinX(44, w));
-    const iconPad = Math.max(2, Math.floor(macroSlotSize * 0.12));
-    const visibleCount = Math.min(SKIN_MACRO_SLOT_X.length, this.macroSlots.length);
+    const macroR = scaleSkinRect(getAowebSkinRegions().macroBar, w, h);
+    const slotCount = this.macroSlots.length;
+    const slotPitch = macroR.w / slotCount;
+    const macroSlotSize = Math.min(40, Math.floor(slotPitch * 0.82));
     const yMacro = macroR.y + Math.floor((macroR.h - macroSlotSize) / 2);
 
     this.macroSlots.forEach((slot, index) => {
-      const visible = index < visibleCount;
-      slot.hit.setVisible(visible);
-      slot.itemIcon.setVisible(visible && Boolean(slot.itemIcon.getData("hasItem")));
-      slot.keyLabel.setVisible(visible);
-      if (!visible) {
-        return;
-      }
+      slot.hit.setVisible(true);
+      slot.itemIcon.setVisible(Boolean(slot.itemIcon.getData("hasItem")));
+      slot.keyLabel.setVisible(true);
 
-      const slotCenterX = scaleSkinX(SKIN_MACRO_SLOT_X[index], w);
+      const slotCenterX = macroR.x + Math.floor(slotPitch * index + slotPitch / 2);
+      const slotCenterY = yMacro + Math.floor(macroSlotSize / 2);
       const mx = slotCenterX - Math.floor(macroSlotSize / 2);
-      slot.hit.setPosition(mx, yMacro).setSize(macroSlotSize, macroSlotSize);
-      slot.itemIcon.setPosition(mx + iconPad, yMacro + iconPad);
-      slot.itemIcon.setDisplaySize(macroSlotSize - iconPad * 2, macroSlotSize - iconPad * 2);
-      slot.keyLabel.setPosition(mx + macroSlotSize - 6, yMacro + macroSlotSize - 5);
+      const my = yMacro;
+      this.macroSlotMetrics[index] = { cx: slotCenterX, cy: slotCenterY, size: macroSlotSize };
+      slot.hit.setPosition(mx, my).setSize(macroSlotSize, macroSlotSize);
+      this.applyMacroIconLayout(index);
+      slot.keyLabel.setPosition(slotCenterX + macroSlotSize / 2 - 4, my + macroSlotSize - 4);
       slot.keyLabel.setOrigin(1, 1);
     });
   }
@@ -1556,7 +1668,6 @@ this.chatText.setMask(this.chatMaskGfx.createGeometryMask());
       this.statsOverlayAttrTexts.push(this.makeText("", 9, "#c8d0dc"));
     }
     this.statsOverlaySectionTitles.push(
-      this.makeText("Skills", 10, "#9aa3b2", true),
       this.makeText("Asesinatos", 10, "#9aa3b2", true)
     );
 
@@ -1569,9 +1680,6 @@ this.chatText.setMask(this.chatMaskGfx.createGeometryMask());
       this.statsOverlayCloseZone,
       ...this.statsOverlayAttrTexts,
       ...this.statsOverlaySectionTitles,
-      ...this.statsSkillNameTexts,
-      ...this.statsSkillValueTexts,
-      ...this.statsSkillBars,
       ...this.statsKillTexts,
     ]);
     this.root.add(this.statsOverlay);
@@ -1647,53 +1755,11 @@ this.chatText.setMask(this.chatMaskGfx.createGeometryMask());
       }
     });
 
-    const skillsTitle = this.statsOverlaySectionTitles[0];
-    const killsTitle = this.statsOverlaySectionTitles[1];
+    const killsTitle = this.statsOverlaySectionTitles[0];
     const sectionY = attrY + 34;
-    skillsTitle.setPosition(leftX, sectionY);
-    killsTitle.setPosition(rightX, sectionY);
+    killsTitle.setPosition(leftX, sectionY);
 
-    const skillsTop = sectionY + 16;
     const killsTop = sectionY + 16;
-    const listH = panelH - (skillsTop - panelY) - pad;
-    const visibleRows = this.statsSkillNameTexts.length;
-    const rowH = Math.max(16, Math.floor(listH / visibleRows));
-    const maxScroll = Math.max(0, this.skillEntries.length - visibleRows);
-    this.statsSkillScrollOffset = Phaser.Math.Clamp(this.statsSkillScrollOffset, 0, maxScroll);
-
-    this.statsSkillNameTexts.forEach((nameText, rowIndex) => {
-      const entry = this.skillEntries[this.statsSkillScrollOffset + rowIndex];
-      const rowY = skillsTop + rowIndex * rowH;
-      const bar = this.statsSkillBars[rowIndex];
-      const valueText = this.statsSkillValueTexts[rowIndex];
-      const skillListW = colW - 4;
-
-      if (!entry) {
-        nameText.setText("");
-        valueText.setText("");
-        bar.clear();
-        return;
-      }
-
-      nameText.setPosition(leftX, rowY);
-      nameText.setText(entry.label);
-      valueText.setPosition(leftX + colW, rowY);
-      valueText.setOrigin(1, 0);
-      valueText.setText(`${entry.current}/${entry.cap}`);
-
-      const barY = rowY + 12;
-      const barH = 4;
-      const fillRatio = entry.cap > 0 ? Phaser.Math.Clamp(entry.current / entry.cap, 0, 1) : 0;
-      bar.clear();
-      bar.fillStyle(0x2a2118, 1);
-      bar.fillRect(leftX, barY, skillListW, barH);
-      if (fillRatio > 0) {
-        bar.fillStyle(0xb87333, 1);
-        bar.fillRect(leftX, barY, Math.max(1, Math.floor(skillListW * fillRatio)), barH);
-      }
-      bar.lineStyle(1, 0x4a4030, 0.9);
-      bar.strokeRect(leftX + 0.5, barY + 0.5, skillListW - 1, barH - 1);
-    });
 
     const killLines = [
       `Criaturas matadas: ${this.killStats.creaturesKilled}`,
@@ -1855,7 +1921,8 @@ this.chatText.setMask(this.chatMaskGfx.createGeometryMask());
   }
 
   private cycleMacroAction(delta: number) {
-    const currentIndex = MACRO_ACTIONS.indexOf(this.macroEditorConfig.action);
+    const prevAction = this.macroEditorConfig.action;
+    const currentIndex = MACRO_ACTIONS.indexOf(prevAction);
     const nextIndex =
       (currentIndex + delta + MACRO_ACTIONS.length) % MACRO_ACTIONS.length;
     this.macroEditorConfig.action = MACRO_ACTIONS[nextIndex];
@@ -1866,11 +1933,9 @@ this.chatText.setMask(this.chatMaskGfx.createGeometryMask());
       ) {
         this.macroEditorConfig.selectedSpellId = this.macroEditorConfig.spellOptions[0].spellId;
       }
-    } else if (
-      this.macroEditorConfig.selectedItemId === null &&
-      this.macroEditorConfig.itemOptions.length > 0
-    ) {
-      this.macroEditorConfig.selectedItemId = this.macroEditorConfig.itemOptions[0].itemId;
+    } else if (prevAction === "cast_spell" || this.macroEditorConfig.selectedItemId === null) {
+      this.macroEditorConfig.selectedItemId =
+        this.macroEditorConfig.itemOptions[0]?.itemId ?? null;
     }
     this.layoutMacroEditorDialog();
   }
@@ -2037,7 +2102,7 @@ this.chatText.setMask(this.chatMaskGfx.createGeometryMask());
       descripcion: spell.descripcion,
       valor: spell.valor,
       usableBy: spell.usableBy,
-      nivelMagiaRequerido: spell.nivelMagiaRequerido,
+      nivelRequerido: spell.nivelRequerido,
       manaCost: spell.manaCost,
       danioMin: spell.danioMin,
       danioMax: spell.danioMax,
@@ -2508,6 +2573,30 @@ this.chatText.setMask(this.chatMaskGfx.createGeometryMask());
       .setScrollFactor(0);
   }
 
+  private applyVitalBarLabelStyle(label: Phaser.GameObjects.Text): void {
+    label
+      .setFontFamily(GAME_FONT)
+      .setFontStyle("bold")
+      .setColor("#ffffff")
+      .setStroke(VITAL_BAR_LABEL_STROKE, VITAL_BAR_LABEL_STROKE_THICKNESS)
+      .setResolution(VITAL_BAR_LABEL_RESOLUTION);
+  }
+
+  private fitVitalBarLabel(
+    label: Phaser.GameObjects.Text,
+    text: string,
+    maxWidth: number
+  ): void {
+    const limit = Math.max(24, maxWidth - 6);
+    for (const size of VITAL_BAR_LABEL_FONT_SIZES) {
+      label.setFontSize(`${size}px`);
+      label.setText(text);
+      if (label.width <= limit) {
+        return;
+      }
+    }
+  }
+
   private getSpellPanelMinHeight(): number {
     const rowStride = SPELL_ROW_HEIGHT + SPELL_ROW_GAP;
     const listH = SPELL_MIN_VISIBLE_ROWS * rowStride - SPELL_ROW_GAP;
@@ -2642,15 +2731,21 @@ this.chatText.setMask(this.chatMaskGfx.createGeometryMask());
   private getSidebarPanelHeight(): number {
     if (this.useAowebSkin) {
       const h = this.scene.scale.height;
-      return scaleSkinY(AOWEB_SKIN_REGIONS.inventoryPanel.h, h);
+      return scaleSkinY(getAowebSkinRegions().inventoryPanel.h, h);
     }
     return Math.max(this.inventoryPanel.height, this.getSpellPanelMinHeight());
   }
 
   private relayoutAowebSkin(w: number, h: number) {
+    const skinDerived = getSkinDerivedLayout(w, h);
+    this.sidebarWidth = skinDerived.sidebarWidth;
+    this.macroBarHeight = skinDerived.macroBarHeight;
+    this.chatHeight = skinDerived.chatHeight;
+
+    const R = getAowebSkinRegions();
     const sidebarX = w - this.sidebarWidth;
     const bodyBottom = h - this.macroBarHeight;
-    const gameVp = getSkinGameViewport(w, h);
+    const gameVp = scaleSkinRect(R.viewport, w, h);
 
     this.uiSkinFrame.setPosition(0, 0).setDisplaySize(w, h).setVisible(true);
     // Recorta el marco para dejar "agujero" donde se renderiza el mundo.
@@ -2659,24 +2754,24 @@ this.chatText.setMask(this.chatMaskGfx.createGeometryMask());
     // Franja superior
     this.skinViewportMaskGfx.fillRect(0, 0, w, gameVp.y);
     // Franja inferior
-    this.skinViewportMaskGfx.fillRect(0, gameVp.y + gameVp.height, w, Math.max(0, h - (gameVp.y + gameVp.height)));
+    this.skinViewportMaskGfx.fillRect(0, gameVp.y + gameVp.h, w, Math.max(0, h - (gameVp.y + gameVp.h)));
     // Lateral izquierdo del viewport
-    this.skinViewportMaskGfx.fillRect(0, gameVp.y, gameVp.x, gameVp.height);
+    this.skinViewportMaskGfx.fillRect(0, gameVp.y, gameVp.x, gameVp.h);
     // Lateral derecho del viewport
     this.skinViewportMaskGfx.fillRect(
-      gameVp.x + gameVp.width,
+      gameVp.x + gameVp.w,
       gameVp.y,
-      Math.max(0, w - (gameVp.x + gameVp.width)),
-      gameVp.height
+      Math.max(0, w - (gameVp.x + gameVp.w)),
+      gameVp.h
     );
     this.uiSkinFrame.setMask(this.skinViewportMaskGfx.createGeometryMask());
     this.chatPanel.clear();
     this.chatBgFrame.setVisible(false);
     this.sidebarPanel.clear();
 
-    const chatHist = scaleSkinRect(AOWEB_SKIN_REGIONS.chatHistory, w, h);
-    const chatToggleR = scaleSkinRect(AOWEB_SKIN_REGIONS.chatChannelToggle, w, h);
-    const chatListBase = scaleSkinRect(AOWEB_SKIN_REGIONS.chatChannelList, w, h);
+    const chatHist = scaleSkinRect(R.chatHistory, w, h);
+    const chatToggleR = scaleSkinRect(R.chatChannelToggle, w, h);
+    const chatListBase = scaleSkinRect(R.chatChannelList, w, h);
     const chatPadL = chatHist.x + SKIN_CHAT_PAD.left;
     const chatPadT = chatHist.y + SKIN_CHAT_PAD.top;
     const historyW = Math.max(120, chatHist.w - SKIN_CHAT_PAD.left - SKIN_CHAT_PAD.right);
@@ -2762,28 +2857,28 @@ this.chatText.setMask(this.chatMaskGfx.createGeometryMask());
     this.chatMaskGfx.fillRect(chatPadL, chatHistoryY, historyW, historyH);
     this.renderChatHistory();
 
-    const nameR = scaleSkinRect(AOWEB_SKIN_REGIONS.name, w, h);
-    const expR = scaleSkinRect(AOWEB_SKIN_REGIONS.exp, w, h);
-    const levelR = scaleSkinRect(AOWEB_SKIN_REGIONS.levelCircle, w, h);
+    const nameR = scaleSkinRect(R.name, w, h);
+    const expR = scaleSkinRect(R.exp, w, h);
+    const levelR = scaleSkinRect(R.levelCircle, w, h);
 
     this.lvlNameExpFrame.setVisible(false);
     this.levelText
-      .setPosition(levelR.x + levelR.w / 2, levelR.y + levelR.h / 2)
+      .setPosition(levelR.x + levelR.w / 2.1, levelR.y + levelR.h / 1.25)
       .setOrigin(0.5, 0.5)
-      .setFontSize("14px")
+      .setFontSize("18px")
       .setColor("#e8dcc8")
       .setVisible(true);
     this.nameText
-      .setPosition(nameR.x + nameR.w / 2, nameR.y + nameR.h / 2)
+      .setPosition(nameR.x + nameR.w / 1.5, nameR.y + nameR.h / 2)
       .setOrigin(0.5, 0.5)
       .setFontSize("11px")
       .setWordWrapWidth(nameR.w - 8)
       .setVisible(true);
     this.expBarGeom = {
-      x: expR.x + 2,
-      y: expR.y + 2,
-      w: Math.max(1, expR.w - 4),
-      h: Math.max(4, expR.h - 4),
+      x: expR.x + 6,
+      y: expR.y + 12,
+      w: Math.max(1, expR.w - -4),
+      h: Math.max(4, expR.h - -5),
     };
     this.expSlotGeom = { x: expR.x, y: expR.y, w: expR.w, h: expR.h };
     this.expFill.setVisible(true);
@@ -2792,7 +2887,7 @@ this.chatText.setMask(this.chatMaskGfx.createGeometryMask());
       .setFontSize("7px")
       .setVisible(true);
 
-    const tabsR = scaleSkinRect(AOWEB_SKIN_REGIONS.tabs, w, h);
+    const tabsR = scaleSkinRect(R.tabs, w, h);
     const invTabGap = 4;
     const invTabW = Math.floor((tabsR.w - invTabGap * 2) / 3);
     const invTabH = tabsR.h;
@@ -2823,8 +2918,8 @@ this.chatText.setMask(this.chatMaskGfx.createGeometryMask());
     this.setupTabHitArea(this.spellsTabBtn, tabPositions[1] - hitPadX, hitX0, hitW, hitH);
     this.setupTabHitArea(this.statsTabBtn, tabPositions[2] - hitPadX, hitX0, hitW, hitH);
 
-    const invPanelR = scaleSkinRect(AOWEB_SKIN_REGIONS.inventoryPanel, w, h);
-    this.inventoryPanel.layoutSkinGridInPanel(AOWEB_SKIN_REGIONS.inventoryPanel, w, h);
+    const invPanelR = scaleSkinRect(R.inventoryPanel, w, h);
+    this.inventoryPanel.layoutSkinGridInPanel(R.inventoryPanel, w, h);
     const sidebarPanelHeight = invPanelR.h;
     const invR = invPanelR;
     this.inventoryClipMaskGfx.clear();
@@ -2835,7 +2930,7 @@ this.chatText.setMask(this.chatMaskGfx.createGeometryMask());
     } else {
       this.inventoryPanel.container.clearMask();
     }
-    const hintR = scaleSkinRect(AOWEB_SKIN_REGIONS.hint, w, h);
+    const hintR = scaleSkinRect(R.hint, w, h);
     this.inventoryHintBoxGeom = { x: hintR.x, y: hintR.y, w: hintR.w, h: hintR.h };
     this.inventoryHintText.setPosition(hintR.x + 6, hintR.y + 4);
     this.inventoryHintText.setWordWrapWidth(hintR.w - 12);
@@ -2899,28 +2994,28 @@ this.chatText.setMask(this.chatMaskGfx.createGeometryMask());
     this.redrawInventorySelection();
     this.redrawInventoryHintBox();
 
-    const hpR = scaleSkinRect(AOWEB_SKIN_REGIONS.hpBar, w, h);
-    const mpR = scaleSkinRect(AOWEB_SKIN_REGIONS.mpBar, w, h);
-    const goldR = scaleSkinRect(AOWEB_SKIN_REGIONS.gold, w, h);
-    const strR = scaleSkinRect(AOWEB_SKIN_REGIONS.strengthSlot, w, h);
-    const agiR = scaleSkinRect(AOWEB_SKIN_REGIONS.agilitySlot, w, h);
-    const vitalInset = { x: 2, y: 1, w: 4, h: 2 };
+    const hpR = scaleSkinRect(R.hpBar, w, h);
+    const mpR = scaleSkinRect(R.mpBar, w, h);
+    const goldR = scaleSkinRect(R.gold, w, h);
+    const strR = scaleSkinRect(R.strengthSlot, w, h);
+    const agiR = scaleSkinRect(R.agilitySlot, w, h);
+    const vitalInset = { x: -9, y: -35, w: -77, h: -1};
     this.hpLabel.setVisible(false);
     this.mpLabel.setVisible(false);
     this.goldText
-      .setPosition(goldR.x + 4, goldR.y + goldR.h / 2)
+      .setPosition(goldR.x + -50, goldR.y + goldR.h + 13)
       .setOrigin(0, 0.5)
       .setColor("#f5d76e")
       .setFontSize("11px")
       .setVisible(true);
     this.strengthPotionIcon.setVisible(false);
     this.strengthValueText
-      .setPosition(strR.x + strR.w - 8, strR.y + strR.h / 2)
+      .setPosition(strR.x + strR.w + 214, strR.y + strR.h - 50)
       .setFontSize("15px")
       .setVisible(true);
     this.agilityPotionIcon.setVisible(false);
     this.agilityValueText
-      .setPosition(agiR.x + agiR.w - 8, agiR.y + agiR.h / 2)
+      .setPosition(agiR.x + agiR.w + 214, agiR.y + agiR.h - 20)
       .setFontSize("15px")
       .setVisible(true);
     this.applyAttributeStatColors();
@@ -2937,30 +3032,24 @@ this.chatText.setMask(this.chatMaskGfx.createGeometryMask());
       h: Math.max(4, mpR.h - vitalInset.h),
     };
     this.hpLabel
-      .setPosition(this.hpBarGeom.x + this.hpBarGeom.w / 2, this.hpBarGeom.y + this.hpBarGeom.h / 2)
       .setOrigin(0.5, 0.5)
-      .setFontSize("8px")
-      .setColor("#f2f2f2")
+      .setPosition(this.hpBarGeom.x + this.hpBarGeom.w - 70, this.hpBarGeom.y + this.hpBarGeom.h - 8)
       .setVisible(true);
     this.mpLabel
-      .setPosition(this.mpBarGeom.x + this.mpBarGeom.w / 2, this.mpBarGeom.y + this.mpBarGeom.h / 2)
       .setOrigin(0.5, 0.5)
-      .setFontSize("8px")
-      .setColor("#f2f2f2")
+      .setPosition(this.mpBarGeom.x + this.mpBarGeom.w - 70, this.mpBarGeom.y + this.mpBarGeom.h - 8)
       .setVisible(true);
+    this.applyVitalBarLabelStyle(this.hpLabel);
+    this.applyVitalBarLabelStyle(this.mpLabel);
 
-    const minimapR = scaleSkinRect(AOWEB_SKIN_REGIONS.minimap, w, h);
+    const minimapR = scaleSkinRect(R.minimap, w, h);
     const minimapSize = Math.min(minimapR.w, minimapR.h);
     this.minimapGeom = {
-      x: minimapR.x + Math.floor((minimapR.w - minimapSize) / 2),
-      y: minimapR.y + Math.floor((minimapR.h - minimapSize) / 2),
+      x: minimapR.x + Math.floor((minimapR.w - minimapSize) / 1),
+      y: minimapR.y + Math.floor((minimapR.h - minimapSize) + 5),
       size: minimapSize,
     };
-    this.mapNameText.setOrigin(1, 0);
-    this.mapNameText.setPosition(w - 8 + this.mapNameOffset.x, 6 + this.mapNameOffset.y);
-    this.mapNameText.setWordWrapWidth(140);
-    this.mapNameText.setAlign("right");
-    this.mapNameText.setColor("#d4c4a8").setFontSize("10px");
+    this.layoutMinimapLabels(minimapR, h);
 
     const fullscreenBtnW = 24;
     const fullscreenBtnH = 18;
@@ -3025,6 +3114,7 @@ this.chatText.setMask(this.chatMaskGfx.createGeometryMask());
       this.levelText,
       this.nameText,
       this.minimapGfx,
+      this.mapCoordsText,
       this.mapNameText,
       this.fullscreenBtnBg,
       this.fullscreenBtnHit,
@@ -3382,12 +3472,12 @@ this.chatText.setMask(this.chatMaskGfx.createGeometryMask());
     const goldX = sidebarX + pad;
 
     this.goldText.setPosition(goldX, y + 2);
-    this.hpLabel.setPosition(vitalsX, y);
+    this.hpLabel.setOrigin(0, 0).setPosition(vitalsX, y);
     const hpBarY = y + 12;
     this.hpBarGeom = { x: vitalsX, y: hpBarY, w: vitalBarW, h: 10 };
     y += 28;
 
-    this.mpLabel.setPosition(vitalsX, y);
+    this.mpLabel.setOrigin(0, 0).setPosition(vitalsX, y);
     const mpBarY = y + 12;
     this.mpBarGeom = { x: vitalsX, y: mpBarY, w: vitalBarW, h: 10 };
 
@@ -3401,18 +3491,16 @@ this.chatText.setMask(this.chatMaskGfx.createGeometryMask());
     };
 
     const mapNameGap = 6;
-    this.mapNameText.setOrigin(0.5, 1);
-    this.mapNameText.setPosition(minimapX + minimapSize / 2, minimapY - mapNameGap);
-    // Ajuste manual persistente para la nueva UI / escalados.
-    this.mapNameText.x += this.mapNameOffset.x;
-    this.mapNameText.y += this.mapNameOffset.y;
-    this.mapNameText.setWordWrapWidth(minimapSize);
-    this.mapNameText.setAlign("center");
+    this.layoutMinimapLabels(
+      { x: minimapX, y: minimapY, w: minimapSize, h: minimapSize },
+      h,
+      mapNameGap
+    );
 
     const fullscreenBtnW = 30;
     const fullscreenBtnH = 22;
     const fullscreenBtnX = sidebarX + pad + innerW - fullscreenBtnW;
-    const fullscreenBtnY = minimapY - fullscreenBtnH - mapNameGap - 4;
+    const fullscreenBtnY = minimapY - fullscreenBtnH - mapNameGap - 22;
     this.fullscreenBtnBg
       .setPosition(fullscreenBtnX, fullscreenBtnY)
       .setDisplaySize(fullscreenBtnW, fullscreenBtnH)
@@ -3509,15 +3597,15 @@ this.chatText.setMask(this.chatMaskGfx.createGeometryMask());
         : `Oro: ${s.gold.toLocaleString("es-AR")}`
     );
     if (this.useAowebSkin) {
-      this.hpLabel.setText(`${s.hp}/${s.hpMax}`);
-      this.mpLabel.setText(`${s.mp}/${s.mpMax}`);
+      const hpText = `${s.hp}/${s.hpMax}`;
+      const mpText = `${s.mp}/${s.mpMax}`;
+      this.fitVitalBarLabel(this.hpLabel, hpText, this.hpBarGeom.w);
+      this.fitVitalBarLabel(this.mpLabel, mpText, this.mpBarGeom.w);
       this.hpLabel.setVisible(true);
       this.mpLabel.setVisible(true);
     } else {
       this.hpLabel.setText(`HP ${s.hp}/${s.hpMax}`);
       this.mpLabel.setText(`MP ${s.mp}/${s.mpMax}`);
-    }
-    if (this.useAowebSkin) {
       this.hpLabel.setVisible(true);
       this.mpLabel.setVisible(true);
     }
