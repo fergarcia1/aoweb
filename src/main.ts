@@ -2,6 +2,7 @@ import Phaser from "phaser";
 import { CharacterCreationScene } from "./scenes/CharacterCreationScene";
 import { CharacterSelectScene } from "./scenes/CharacterSelectScene";
 import { GameScene } from "./scenes/GameScene";
+import { flushProgressOnPageHide } from "./game/emergencyProgressFlush";
 import { disconnectActiveMultiplayer } from "./network/multiplayerSession";
 import { setupAppNavbar } from "./ui/appNavbar";
 import { reportStartupError, setupErrorDiagnostics } from "./debug/errorDiagnostics";
@@ -30,7 +31,10 @@ const config: Phaser.Types.Core.GameConfig = {
 setupErrorDiagnostics();
 
 if (typeof window !== "undefined") {
-  window.addEventListener("pagehide", () => disconnectActiveMultiplayer());
+  window.addEventListener("pagehide", () => {
+    flushProgressOnPageHide();
+    disconnectActiveMultiplayer();
+  });
 }
 
 try {

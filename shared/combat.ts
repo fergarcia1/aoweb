@@ -1,5 +1,10 @@
-import { SPELL_DEFINITIONS } from "../src/data/spells";
-import { IMMOBILIZE_SPELL_IDS } from "../src/spells/spellEffects";
+import { IMMOBILIZE_SPELL_IDS, SPELL_DEFINITIONS } from "../game-data/spells";
+import {
+  INMOVILIZAR_MOB_DURATION_MS,
+  INMOVILIZAR_PLAYER_DURATION_MS,
+  PARALIZAR_MOB_DURATION_MS,
+  PARALIZAR_PLAYER_DURATION_MS,
+} from "../game-data/constants";
 
 export const ATTACK_COOLDOWN_MS = 800;
 
@@ -9,6 +14,35 @@ export function getSpellDefinition(spellId: number) {
 
 export function isImmobilizeSpell(spellId: number) {
   return IMMOBILIZE_SPELL_IDS.has(spellId);
+}
+
+/** Duración de inmovilización/parálisis sobre mobs según hechizo. */
+export function getImmobilizeMobDurationMs(spellId: number): number {
+  if (spellId === 8) {
+    return INMOVILIZAR_MOB_DURATION_MS;
+  }
+  if (spellId === 10 || spellId === 35) {
+    return PARALIZAR_MOB_DURATION_MS;
+  }
+  return INMOVILIZAR_MOB_DURATION_MS;
+}
+
+/** Duración de inmovilización/parálisis sobre jugadores según hechizo. */
+export function isMobImmobilizedAt(
+  immobilizedUntilMs: number,
+  nowMs: number = Date.now()
+): boolean {
+  return immobilizedUntilMs > 0 && nowMs < immobilizedUntilMs;
+}
+
+export function getImmobilizePlayerDurationMs(spellId: number): number {
+  if (spellId === 8) {
+    return INMOVILIZAR_PLAYER_DURATION_MS;
+  }
+  if (spellId === 10 || spellId === 35) {
+    return PARALIZAR_PLAYER_DURATION_MS;
+  }
+  return INMOVILIZAR_PLAYER_DURATION_MS;
 }
 
 export function manhattanDistance(ax: number, ay: number, bx: number, by: number) {

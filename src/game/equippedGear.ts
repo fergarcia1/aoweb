@@ -13,7 +13,13 @@ const EQUIP_ROW_BY_FACING: Record<Facing, number> = {
 
 const DEFAULT_EQUIP_SHEET_COLS = 6;
 
-const WEAPON_DEPTH_OFFSET = 0.015;
+/** S/D: arma delante del cuerpo; W/A: cuerpo delante (perspectiva). */
+export const WEAPON_DEPTH_OFFSET_BY_FACING: Record<Facing, number> = {
+  down: 0.015,
+  up: -0.015,
+  left: -0.015,
+  right: 0.015,
+};
 
 /** Ajuste fino del escudo equipado (pies del personaje = origen). */
 export const SHIELD_OFFSET_BY_FACING: Record<Facing, { x: number; y: number }> = {
@@ -158,7 +164,7 @@ export function syncEquippedWeaponVisual(ctx: EquippedGearSyncContext): void {
   sprite.setFrame(getEquippedDirectionalFrame(weaponDef, ctx));
   sprite.setScale(weaponDef.equippedScale ?? 1);
   sprite.setPosition(ctx.player.x, ctx.player.y);
-  sprite.setDepth(ctx.player.depth + WEAPON_DEPTH_OFFSET);
+  sprite.setDepth(ctx.player.depth + WEAPON_DEPTH_OFFSET_BY_FACING[ctx.facing]);
   sprite.setVisible(true);
   sprite.setFlipX(getEquippedOverlayFlipX(weaponDef, ctx.facing));
 }

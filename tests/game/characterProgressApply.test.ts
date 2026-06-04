@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { applySavedProgressToSceneState } from "../../src/scenes/gameSceneModules/characterProgressApply";
-import type { SavedCharacterProgress } from "../../src/game/characterProgressStorage";
+import {
+  INVENTORY_SLOT_COUNT,
+  type SavedCharacterProgress,
+} from "../../src/game/characterProgressStorage";
 
 function baseProgress(
   overrides: Partial<SavedCharacterProgress> = {}
@@ -11,7 +14,7 @@ function baseProgress(
     tileX: 3,
     tileY: 4,
     facing: "up",
-    inventory: Array(20).fill(null),
+    inventory: Array(INVENTORY_SLOT_COUNT).fill(null),
     equipment: { weapon: null, shield: null, helmet: null, armor: null },
     equippedOutfit: "base",
     playerProgress: {

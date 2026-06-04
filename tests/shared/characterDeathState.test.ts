@@ -3,6 +3,7 @@ import {
   deathStateFromSavedProgress,
   freshDeathStateForCharacterSwitch,
   isDeadOrGhost,
+  isPlayerGhostFromVitals,
 } from "../../shared/characterDeathState";
 
 describe("characterDeathState", () => {
@@ -28,5 +29,11 @@ describe("characterDeathState", () => {
     const state = freshDeathStateForCharacterSwitch();
     expect(state.deathPhase).toBe("alive");
     expect(isDeadOrGhost(state)).toBe(false);
+  });
+
+  it("detects ghost from hp or isDead flag", () => {
+    expect(isPlayerGhostFromVitals(0)).toBe(true);
+    expect(isPlayerGhostFromVitals(50, true)).toBe(true);
+    expect(isPlayerGhostFromVitals(50)).toBe(false);
   });
 });

@@ -1,10 +1,23 @@
 import { DEFAULT_MAP_ID } from "./constants";
-import { INVENTORY_SLOT_COUNT } from "../game-data/constants";
+import { BANK_SLOT_COUNT, INVENTORY_SLOT_COUNT } from "../game-data/constants";
 import { isKnownEquipmentItemId } from "../game-data/items/registry";
 import type { Facing, NetPlayerEquipment } from "./types";
 
 /** Mapas con simulación en el servidor hosteado (ampliar al habilitar más zonas). */
-export const MULTIPLAYER_SERVER_MAP_IDS = new Set<string>([DEFAULT_MAP_ID]);
+export const MULTIPLAYER_SERVER_MAP_IDS = new Set<string>([
+  DEFAULT_MAP_ID,
+  "mapa1",
+  "mapa2",
+  "mapa3",
+  "mapa4",
+  "mapa5",
+  "mapa6",
+  "mapa7",
+  "mapa8",
+  "mapa9",
+  "mapa10",
+  "mapa44",
+]);
 
 export type JoinEquipmentPayload = {
   weaponId?: string | null;
@@ -112,4 +125,56 @@ export function sanitizeJoinInventory(
     };
   }
   return slots;
+}
+
+export type JoinBankSlotPayload = {
+  slotIndex?: number;
+  itemId?: string | null;
+  amount?: number;
+};
+
+export function sanitizeJoinBankSlots(
+  raw: JoinBankSlotPayload[] | null | undefined
+): Array<{ slotIndex: number; itemId: string | null; amount: number }> {
+  const slots = Array.from({ length: BANK_SLOT_COUNT }, (_, slotIndex) => ({
+    slotIndex,
+    itemId: null as string | null,
+    amount: 0,
+  }));
+  if (!Array.isArray(raw)) {
+    return slots;
+  }
+  for (const entry of raw) {
+    const slotIndex =
+      typeof entry?.slotIndex === "number" && Number.isFinite(entry.slotIndex)
+        ? Math.floor(entry.slotIndex)
+        : -1;
+    if (slotIndex < 0 || slotIndex >= BANK_SLOT_COUNT) continue;
+    const amount =
+      typeof entry?.amount === "number" && Number.isFinite(entry.amount)
+        ? Math.max(0, Math.floor(entry.amount))
+        : 0;
+    const itemId = nullableItemId(entry?.itemId);
+    slots[slotIndex] = {
+      slotIndex,
+      itemId: amount > 0 ? itemId : null,
+      amount: amount > 0 && itemId ? amount : 0,
+    };
+  }
+  return slots;
+}
+
+export function sanitizeJoinLearnedSpellIds(raw: unknown): Set<number> {
+  const out = new Set<number>();
+  if (!Array.isArray(raw)) {
+    return out;
+  }
+  for (const value of raw) {
+    if (typeof value !== "number" || !Number.isFinite(value)) continue;
+    const id = Math.floor(value);
+    if (id > 0) {
+      out.add(id);
+    }
+  }
+  return out;
 }

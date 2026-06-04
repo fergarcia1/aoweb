@@ -33,8 +33,8 @@ export const GHOST_MOVE_SPEED_RATIO = 1.2;
 /** Distancia máxima (Chebyshev) al sacerdote para revivir con click derecho. */
 export const PRIEST_REVIVE_MAX_TILE_DISTANCE = 5;
 
-/** Visual provisional hasta cargar el sprite de fantasma. */
-export const GHOST_PLAYER_ALPHA = 0.5;
+/** Transparencia leve del sprite de fantasma (cuerpo + cara). */
+export const GHOST_PLAYER_ALPHA = 0.65;
 export const GHOST_PLAYER_TINT = 0x8fa3b8;
 
 export const DEATH_OVERLAY_COLOR = 0x0a0c10;

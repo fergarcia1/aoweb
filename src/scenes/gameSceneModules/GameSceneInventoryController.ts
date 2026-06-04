@@ -1,11 +1,11 @@
 import { INVENTORY_SLOT_COUNT } from "../../game/characterProgressStorage";
-import { canUseItem } from "../../game/itemUsability";
+import { OFFLINE_GAMEPLAY_MESSAGE } from "../../game/mmoMode";
 import {
   getItemDefinition,
   type EquipmentSlot,
   type ItemId,
 } from "../../items/itemDefinitions";
-import { addToInventory, type InventorySlot } from "../../items/inventoryStack";
+import type { InventorySlot } from "../../items/inventoryStack";
 import type { GameUi } from "../../ui/gameUi";
 import type { ClassId, RaceId } from "./types";
 import type { WorldItemManager } from "./WorldItemManager";
@@ -37,6 +37,8 @@ export type GameSceneInventoryDeps = {
   refreshInventoryUi: () => void;
   scheduleSave: () => void;
   useConsumableFromSlot: (slotIndex: number) => void;
+  useMiscItemFromSlot: (slotIndex: number) => void;
+  isPlayerAdmin: () => boolean;
   syncEquippedArmorOutfit: () => void;
   syncEquippedHeldItemVisuals: () => void;
   getCombatSnapshot: () => {
@@ -61,6 +63,10 @@ export class GameSceneInventoryController {
     const item = getItemDefinition(stack.itemId);
     if (item.type === "consumable") {
       this.deps.useConsumableFromSlot(slotIndex);
+      return;
+    }
+    if (item.type === "misc" && item.usableFromInventory) {
+      this.deps.useMiscItemFromSlot(slotIndex);
       return;
     }
 
@@ -152,44 +158,7 @@ export class GameSceneInventoryController {
       return;
     }
 
-    const worldItem = manager.getEntries()[itemIndex];
-
-    if (worldItem.id === "gold") {
-      this.deps.getPlayerProgress().gold += worldItem.count;
-      manager.removeAt(itemIndex);
-      this.deps.refreshHud();
-      this.deps.scheduleSave();
-      this.deps.addChatLine(
-        `Agarraste ${worldItem.count.toLocaleString("es-AR")} de oro.`
-      );
-      return;
-    }
-
-    const { added, remaining } = addToInventory(
-      this.deps.getInventory(),
-      worldItem.id,
-      worldItem.count
-    );
-
-    if (added <= 0) {
-      this.deps.addChatLine("No tenés espacio en el inventario.");
-      return;
-    }
-
-    const item = getItemDefinition(worldItem.id);
-    if (remaining <= 0) {
-      manager.removeAt(itemIndex);
-    } else {
-      manager.updateCountAt(itemIndex, remaining);
-    }
-
-    this.deps.scheduleSave();
-    this.deps.addChatLine(
-      added > 1 ? `Agarraste ${item.name} x${added}.` : `Agarraste ${item.name}.`
-    );
-
-    this.deps.refreshInventoryUi();
-    this.deps.syncServerInventory();
+    this.deps.addChatLine(OFFLINE_GAMEPLAY_MESSAGE);
   }
 
   private dropGold(amount: number): void {
@@ -203,18 +172,7 @@ export class GameSceneInventoryController {
       return;
     }
 
-    progress.gold -= safeAmount;
-    const tile = this.deps.getPlayerTile();
-
-    let remaining = safeAmount;
-    while (remaining > 0) {
-      const stackSize = Math.min(remaining, 10_000);
-      this.deps.createWorldGold(tile.x, tile.y, stackSize);
-      remaining -= stackSize;
-    }
-
-    this.deps.refreshHud();
-    this.deps.addChatLine(`Tiraste ${safeAmount.toLocaleString("es-AR")} de oro.`);
+    this.deps.addChatLine(OFFLINE_GAMEPLAY_MESSAGE);
   }
 
   private dropFromSlot(slotIndex: number, dropCount: number): void {
@@ -231,40 +189,7 @@ export class GameSceneInventoryController {
       return;
     }
 
-    const isDroppingAll = safeDropCount >= originalCount;
-    const equipment = this.deps.getEquipment();
-
-    if (isDroppingAll) {
-      const equippedSlot = this.getEquippedSlotForItem(itemId);
-      if (equippedSlot) {
-        equipment[equippedSlot] = null;
-        if (equippedSlot === "armor") {
-          this.deps.syncEquippedArmorOutfit();
-        }
-        if (equippedSlot === "weapon") {
-          this.deps.syncEquippedHeldItemVisuals();
-        }
-      }
-      inventory[slotIndex] = null;
-      this.deps.getGameUi().clearInventorySlot(slotIndex);
-    } else {
-      stack.count = originalCount - safeDropCount;
-      const itemDef = getItemDefinition(itemId);
-      this.deps.getGameUi().setInventorySlot(
-        slotIndex,
-        itemDef.textureKey,
-        stack.count,
-        stack.itemId
-      );
-    }
-
-    const tile = this.deps.getPlayerTile();
-    this.deps.createWorldItem(itemId, tile.x, tile.y, safeDropCount);
-
-    const item = getItemDefinition(itemId);
-    this.deps.addChatLine(
-      safeDropCount > 1 ? `Tiraste ${item.name} x${safeDropCount}.` : `Tiraste ${item.name}.`
-    );
+    this.deps.addChatLine(OFFLINE_GAMEPLAY_MESSAGE);
   }
 
   toggleEquipFromSlot(slotIndex: number): void {
@@ -305,46 +230,7 @@ export class GameSceneInventoryController {
       return;
     }
 
-    const usability = canUseItem(
-      this.deps.getSelectedClass(),
-      this.deps.getSelectedRace(),
-      this.deps.getPlayerProgress().level,
-      item
-    );
-    if (!usability.allowed) {
-      this.deps.addChatLine(usability.reason ?? "No podés equipar ese objeto.");
-      return;
-    }
-
-    const equipment = this.deps.getEquipment();
-    equipment[item.equipSlot] = stack.itemId;
-    this.deps.syncEquippedArmorOutfit();
-    this.deps.syncEquippedHeldItemVisuals();
-
-    const combat = this.deps.getCombatSnapshot();
-    const parts: string[] = [];
-    if (item.combatModifiers?.attackMinBonus || item.combatModifiers?.attackMaxBonus) {
-      parts.push(`danio ${combat.attackMin}-${combat.attackMax}`);
-    }
-    if ((item.combatModifiers?.damageReductionPercent ?? 0) > 0) {
-      parts.push(`reduccion ${Math.round(combat.damageReductionPercent * 100)}%`);
-    }
-    if ((item.combatModifiers?.magicResistancePercent ?? 0) > 0) {
-      parts.push(`res. magica ${Math.round(combat.magicResistancePercent * 100)}%`);
-    }
-    if ((item.combatModifiers?.magicDamageBonusPercent ?? 0) > 0) {
-      parts.push(`danio magico +${Math.round(combat.magicDamageBonusPercent * 100)}%`);
-    }
-    if (item.canCrit) {
-      parts.push(
-        `crit ${Math.round((item.critChance ?? 0) * 100)}% x${item.critDamage ?? 1.5}`
-      );
-    }
-    const statsText = parts.length > 0 ? ` (${parts.join(", ")})` : "";
-    this.deps.addChatLine(`Equipaste ${item.name}${statsText}.`);
-    this.deps.getGameUi().setEquippedItemIds(
-      Object.values(equipment).filter((id): id is ItemId => id != null)
-    );
+    this.deps.addChatLine(OFFLINE_GAMEPLAY_MESSAGE);
   }
 
   private unequip(slot: EquipmentSlot): void {
@@ -357,14 +243,7 @@ export class GameSceneInventoryController {
       return;
     }
 
-    const item = getItemDefinition(equippedItemId);
-    equipment[slot] = null;
-    this.deps.syncEquippedArmorOutfit();
-    this.deps.syncEquippedHeldItemVisuals();
-    this.deps.addChatLine(`Te quitaste ${item.name}.`);
-    this.deps.getGameUi().setEquippedItemIds(
-      Object.values(equipment).filter((id): id is ItemId => id != null)
-    );
+    this.deps.addChatLine(OFFLINE_GAMEPLAY_MESSAGE);
   }
 
   private getEquippedSlotForItem(itemId: ItemId): EquipmentSlot | null {

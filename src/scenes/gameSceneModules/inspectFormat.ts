@@ -5,6 +5,7 @@ import {
   type CharacterGenderId,
   type PlayerRole,
 } from "../../data/characters";
+import { isMobImmobilizedAt } from "../../../shared/combat";
 import type { ClassId, DummyState, RaceId } from "./types";
 
 export function formatImmobilizeDuration(durationMs: number): string {
@@ -35,8 +36,11 @@ export function formatCharacterInspectLine(
   const factionLabel = role === "admin" ? "GameMaster" : FACTION_LABELS[factionId];
   const classLabelById: Record<ClassId, string> = {
     paladin: "Paladín",
+    clerigo: "Clérigo",
     mago: "Mago",
+    nigromante: "Nigromante",
     druida: "Druida",
+    bardo: "Bardo",
     guerrero: "Guerrero",
     cazador: "Cazador",
     asesino: "Asesino",
@@ -46,9 +50,12 @@ export function formatCharacterInspectLine(
   return `${name} - ${factionLabel} - ${classLabel} ${raceLabel} Nivel ${level}`;
 }
 
-export function getDummyActiveDebuffsForInspect(dummy: DummyState, now: number): string[] {
+export function getDummyActiveDebuffsForInspect(
+  dummy: DummyState,
+  now: number = Date.now()
+): string[] {
   const debuffs: string[] = [];
-  if (now < dummy.immobilizedUntilMs) {
+  if (isMobImmobilizedAt(dummy.immobilizedUntilMs, now)) {
     debuffs.push("Inmovilizado");
   }
   return debuffs;

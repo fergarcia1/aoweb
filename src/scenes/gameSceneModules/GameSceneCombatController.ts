@@ -2,10 +2,29 @@ import Phaser from "phaser";
 import { TILE_SIZE } from "../../config";
 import { tileToFeetWorld } from "../../player/playerSprites";
 import { getItemDefinition, type EquipmentSlot, type ItemId } from "../../items/itemDefinitions";
-import { rollAttackDamage } from "../../../shared/combat";
+import {
+  getImmobilizeMobDurationMs,
+  isMobImmobilizedAt,
+} from "../../../shared/combat";
 import { spellRequiresAnilloEspectral } from "../../data/spells";
 import { getSpellEffectConfig, IMMOBILIZE_SPELL_IDS } from "../../spells/spellEffects";
+import {
+  getSpellBehavior,
+  isInvisibilitySpell,
+  isRemoveImmobilizeSpell,
+  isResurrectSpell,
+  isResurrectSpellId,
+  TARGET_NOT_IMMOBILIZED_MESSAGE,
+} from "../../spells/spellBehaviors";
+import { INVISIBILITY_DURATION_MS } from "../../../game-data/invisibility";
+import {
+  RESURRECT_CHANNEL_MS,
+  RESURRECT_MAX_TILE_DISTANCE,
+  RESURRECT_SPELL_ID,
+  isWithinResurrectRange,
+} from "../../../game-data/resurrect";
 import type { CoreStats } from "../../game/characterStats";
+import { OFFLINE_GAMEPLAY_MESSAGE } from "../../game/mmoMode";
 import type { GameUi } from "../../ui/gameUi";
 import { GAME_FONT, GAME_TEXT_RESOLUTION } from "../../ui/fonts";
 import type { Facing } from "../../player/playerSprites";
@@ -17,12 +36,9 @@ import {
   ATTACK_COOLDOWN_MS,
   ATTACK_MAX_DAMAGE,
   ATTACK_MIN_DAMAGE,
-  INMOVILIZADO_MOB_DURATION_MS,
 } from "./constants";
-import {
-  getMissChanceFromAgility,
-  getStrengthDamageBonus,
-} from "./progressFormulas";
+import { getStrengthDamageBonus } from "./progressFormulas";
+import type { MobModelId } from "../../data/mobs";
 import type {
   DamageType,
   DummyState,
@@ -38,7 +54,7 @@ export type GameSceneCombatDeps = {
   getUiCamera: () => Phaser.Cameras.Scene2D.Camera | undefined;
 
   getGameUi: () => GameUi;
-  getPlayerProgress: () => { hp: number; hpMax: number; mp: number; mpMax: number };
+  getPlayerProgress: () => { level: number; hp: number; hpMax: number; mp: number; mpMax: number };
   getEquipment: () => Record<EquipmentSlot, ItemId | null>;
   getCoreStats: () => CoreStats;
   getFacing: () => Facing;
@@ -46,28 +62,53 @@ export type GameSceneCombatDeps = {
   getCurrentMapId: () => string;
 
   hasLearnedSpell: (spellId: number) => boolean;
-  getMagicSkillLevel: () => number;
+  getSelectedClass: () => import("./types").ClassId;
   hasAnilloEspectralInInventory: () => boolean;
   isPlayerDeadOrGhost: () => boolean;
   isMultiplayerActive: () => boolean;
+  isPlayerAdmin: () => boolean;
 
   stopMeditation: () => void;
   refreshHud: () => void;
-  tryImproveMagicOnSpellCast: () => void;
+
   onPlayerHpDepleted: () => void;
 
   sendAttackToServer: (facing: Facing) => void;
-  sendCastSpellToServer: (spellId: number, tileX: number, tileY: number) => void;
+  sendCastSpellToServer: (
+    spellId: number,
+    tileX: number,
+    tileY: number,
+    targetPlayerId?: string
+  ) => void;
 
   getDummyInAttackRange: () => DummyState | null;
   getDummyHitTile: (dummy: DummyState) => { x: number; y: number };
   killDummy: (dummy: DummyState) => void;
   refreshInspectedDummyLabel: () => void;
   getInspectedDummyId: () => string | null;
+  playMobHitSound?: (modelId: MobModelId) => void;
 
   playSpellEffect: (spellId: number, tileX: number, tileY: number) => void;
+  startResurrectChannelEffect: (
+    casterId: string,
+    tileX: number,
+    tileY: number,
+    endsAtMs: number
+  ) => void;
+  getLocalPlayerId: () => string | null;
   setSuppressServerSpellFxUntil: (until: number) => void;
+  showSpellMagicWords: (spellId: number, spellNombre: string) => void;
+  clearSpellMagicWords: () => void;
   onMeleeImpact?: () => void;
+  applySpellAttributeBuff: (stat: "strength" | "agility", amount: number) => void;
+  clearAllSpellEffects: () => void;
+  applyLocalInvisibility: (durationMs: number) => void;
+  isLocalPlayerImmobilized: (now?: number) => boolean;
+  clearLocalPlayerImmobilize: () => void;
+  findDummyAtTile: (tileX: number, tileY: number) => DummyState | null;
+  hasSpellEnemyTargetAtTile: (tileX: number, tileY: number) => boolean;
+  findDeadAllyPlayerIdAtTile: (tileX: number, tileY: number) => string | undefined;
+  isServerConnected: () => boolean;
 };
 
 /**
@@ -90,6 +131,9 @@ export class GameSceneCombatController {
   }
 
   spellCanTargetDummy(spell: SpellCastRequest): boolean {
+    if (isRemoveImmobilizeSpell(spell.idSpell)) {
+      return true;
+    }
     return (
       spell.danioMax > 0 ||
       spell.danioMin > 0 ||
@@ -97,29 +141,78 @@ export class GameSceneCombatController {
     );
   }
 
+  private isResurrectPending(spell: SpellCastRequest): boolean {
+    return (
+      isResurrectSpellId(spell.idSpell) ||
+      isResurrectSpell(spell.idSpell) ||
+      spell.nombre === "Resucitar"
+    );
+  }
+
   spellCanTargetPlayer(spell: SpellCastRequest): boolean {
+    if (this.isResurrectPending(spell)) {
+      return spell.puedeUsarseEnAliados;
+    }
+    if (isRemoveImmobilizeSpell(spell.idSpell)) {
+      return spell.puedeUsarseEnAliados;
+    }
     return spell.puedeUsarseEnAliados || spell.healMax > 0 || Boolean(spell.remueveDebuff);
+  }
+
+  /** Daño / CC sobre criaturas o jugadores enemigos (no al suelo vacío). */
+  private spellRequiresEnemyTarget(spell: SpellCastRequest): boolean {
+    if (this.isResurrectPending(spell)) {
+      return false;
+    }
+    if (isRemoveImmobilizeSpell(spell.idSpell)) {
+      return false;
+    }
+    const dealsDamage = spell.danioMax > 0 || spell.danioMin > 0;
+    const immobilize = IMMOBILIZE_SPELL_IDS.has(spell.idSpell);
+    if (!dealsDamage && !immobilize) {
+      return false;
+    }
+    const healOnly =
+      (spell.healMax > 0 || spell.healMin > 0) && !dealsDamage && !immobilize;
+    if (healOnly) {
+      return false;
+    }
+    return this.spellCanTargetDummy(spell);
+  }
+
+  private rejectMissingEnemyTarget(tileX: number, tileY: number): boolean {
+    if (this.deps.hasSpellEnemyTargetAtTile(tileX, tileY)) {
+      return false;
+    }
+    this.deps.getGameUi().addCombatLine("No hay objetivo en ese lugar.");
+    this.cancelSpellTargeting("Lanzamiento cancelado.");
+    return true;
   }
 
   beginSpellTargeting(spell: SpellCastRequest): boolean {
     this.deps.stopMeditation();
     const gameUi = this.deps.getGameUi();
+    const isAdmin = this.deps.isPlayerAdmin();
 
     if (this.deps.isPlayerDeadOrGhost()) {
       gameUi.addChatLine("No podés lanzar hechizos en esta forma.");
       return false;
     }
-    if (!this.deps.hasLearnedSpell(spell.idSpell)) {
+    if (!isAdmin && !this.deps.hasLearnedSpell(spell.idSpell)) {
       gameUi.addChatLine(`No conocés ${spell.nombre}.`);
       return false;
     }
-    if (spellRequiresAnilloEspectral(spell.idSpell) && !this.deps.hasAnilloEspectralInInventory()) {
-      gameUi.addChatLine("Necesitas un anillo espectral para usar este hechizo.");
+    if (!isAdmin && spellRequiresAnilloEspectral(spell.idSpell) && !this.deps.hasAnilloEspectralInInventory()) {
+      gameUi.addChatLine("Necesitás un anillo espectral para usar este hechizo.");
       return false;
     }
-    if (spell.nivelMagiaRequerido > this.deps.getMagicSkillLevel()) {
+    if (!isAdmin && !spell.usableBy.includes(this.deps.getSelectedClass())) {
+      gameUi.addChatLine(`Tu clase no puede usar ${spell.nombre}.`);
+      return false;
+    }
+    if (!isAdmin && spell.nivelRequerido > this.deps.getPlayerProgress().level) {
       gameUi.addChatLine(
-        `${spell.nombre} requiere ${spell.nivelMagiaRequerido} puntos de Magia (tenés ${this.deps.getMagicSkillLevel()}).`
+        `${spell.nombre} requiere ser nivel ${spell.nivelRequerido} (sos nivel ${this.deps.getPlayerProgress().level}).`
       );
       return false;
     }
@@ -129,11 +222,13 @@ export class GameSceneCombatController {
       return false;
     }
 
-    this.pendingSpellCast = spell;
+    this.deps.clearSpellMagicWords();
+    const normalizedSpell =
+      spell.nombre === "Resucitar" || isResurrectSpellId(spell.idSpell)
+        ? { ...spell, idSpell: RESURRECT_SPELL_ID }
+        : spell;
+    this.pendingSpellCast = normalizedSpell;
     this.deps.input.setDefaultCursor("crosshair");
-    gameUi.addChatLine(
-      `Objetivo de ${spell.nombre}: hacé click en ${this.getSpellTargetHint(spell)} (ESC para cancelar).`
-    );
     return true;
   }
 
@@ -145,66 +240,233 @@ export class GameSceneCombatController {
     }
   }
 
-  tryCastSpellOnPlayer(): void {
+  private rejectRemoveImmobilizeTarget(): void {
+    this.deps.getGameUi().addChatLine(TARGET_NOT_IMMOBILIZED_MESSAGE);
+    this.cancelSpellTargeting("Lanzamiento cancelado.");
+  }
+
+  private isRemoveImmobilizeTargetValid(
+    spell: SpellCastRequest,
+    targetTileX?: number,
+    targetTileY?: number
+  ): boolean {
+    if (!isRemoveImmobilizeSpell(spell.idSpell)) {
+      return true;
+    }
+
+    const now = this.deps.time.now;
+    const playerTile = this.deps.getPlayerTile();
+    const isSelf =
+      targetTileX === undefined && targetTileY === undefined
+        ? true
+        : targetTileX === playerTile.x && targetTileY === playerTile.y;
+
+    if (isSelf) {
+      return this.deps.isLocalPlayerImmobilized(now);
+    }
+
+    if (targetTileX !== undefined && targetTileY !== undefined) {
+      const dummy = this.deps.findDummyAtTile(targetTileX, targetTileY);
+      if (dummy) {
+        return isMobImmobilizedAt(dummy.immobilizedUntilMs);
+      }
+    }
+
+    return false;
+  }
+
+  private applyRemoveImmobilizeToTarget(
+    spell: SpellCastRequest,
+    targetTileX?: number,
+    targetTileY?: number
+  ): void {
+    const gameUi = this.deps.getGameUi();
+    const playerTile = this.deps.getPlayerTile();
+    const isSelf =
+      targetTileX === undefined && targetTileY === undefined
+        ? true
+        : targetTileX === playerTile.x && targetTileY === playerTile.y;
+
+    if (isSelf) {
+      this.deps.clearLocalPlayerImmobilize();
+      gameUi.addCombatLine(`${spell.nombre} te libera.`);
+      return;
+    }
+
+    if (targetTileX !== undefined && targetTileY !== undefined) {
+      const dummy = this.deps.findDummyAtTile(targetTileX, targetTileY);
+      if (dummy) {
+        dummy.immobilizedUntilMs = 0;
+        gameUi.addCombatLine(`${spell.nombre} libera a ${dummy.name}.`);
+      }
+    }
+  }
+
+  tryCastResurrectOnGhost(
+    targetTileX: number,
+    targetTileY: number,
+    targetPlayerId?: string
+  ): void {
+    const spell = this.pendingSpellCast;
+    if (!spell || !this.isResurrectPending(spell)) {
+      return;
+    }
+
+    const gameUi = this.deps.getGameUi();
+    if (!this.deps.isMultiplayerActive()) {
+      gameUi.addChatLine("Resucitar solo funciona sobre aliados muertos en multijugador.");
+      this.cancelSpellTargeting("Lanzamiento cancelado.");
+      return;
+    }
+    if (!this.deps.isServerConnected()) {
+      gameUi.addCombatLine("Sin conexión al servidor.");
+      this.cancelSpellTargeting("Lanzamiento cancelado.");
+      return;
+    }
+    if (!this.canAffordSpellMana(spell)) {
+      return;
+    }
+
+    const casterTile = this.deps.getPlayerTile();
+    if (!isWithinResurrectRange(casterTile.x, casterTile.y, targetTileX, targetTileY)) {
+      gameUi.addCombatLine(
+        `El fantasma está demasiado lejos (máx ${RESURRECT_MAX_TILE_DISTANCE} tiles).`
+      );
+      this.cancelSpellTargeting("Lanzamiento cancelado.");
+      return;
+    }
+
+    const resolvedTargetId =
+      targetPlayerId ??
+      this.deps.findDeadAllyPlayerIdAtTile(targetTileX, targetTileY);
+    if (!resolvedTargetId) {
+      gameUi.addCombatLine(
+        "No se encontró al jugador muerto. Hacé click sobre el fantasma o muy cerca."
+      );
+      this.cancelSpellTargeting("Lanzamiento cancelado.");
+      return;
+    }
+
+    this.deps.showSpellMagicWords(RESURRECT_SPELL_ID, spell.nombre);
+    this.deps.sendCastSpellToServer(
+      RESURRECT_SPELL_ID,
+      targetTileX,
+      targetTileY,
+      resolvedTargetId
+    );
+    this.cancelSpellTargeting();
+  }
+
+  tryCastSpellOnPlayer(
+    targetTileX?: number,
+    targetTileY?: number,
+    targetPlayerId?: string
+  ): void {
     const spell = this.pendingSpellCast;
     if (!spell) return;
 
     const gameUi = this.deps.getGameUi();
 
-    if (this.deps.isMultiplayerActive()) {
-      if (!this.spellCanTargetPlayer(spell)) {
-        gameUi.addCombatLine(`${spell.nombre} no puede lanzarse sobre aliados.`);
+    if (this.isResurrectPending(spell)) {
+      if (targetTileX === undefined || targetTileY === undefined) {
+        gameUi.addCombatLine("Elegí un fantasma aliado muerto.");
         this.cancelSpellTargeting("Lanzamiento cancelado.");
         return;
       }
+      const ghostId =
+        targetPlayerId ??
+        this.deps.findDeadAllyPlayerIdAtTile(targetTileX, targetTileY);
+      this.tryCastResurrectOnGhost(targetTileX, targetTileY, ghostId);
+      return;
+    }
+
+    if (!this.isRemoveImmobilizeTargetValid(spell, targetTileX, targetTileY)) {
+      this.rejectRemoveImmobilizeTarget();
+      return;
+    }
+
+    if (this.deps.isMultiplayerActive()) {
+      const isSelf = targetTileX === undefined && targetTileY === undefined;
+
+      if (isSelf && !this.spellCanTargetPlayer(spell)) {
+        gameUi.addCombatLine(`${spell.nombre} no puede lanzarse sobre vos.`);
+        this.cancelSpellTargeting("Lanzamiento cancelado.");
+        return;
+      }
+
       if (!this.canAffordSpellMana(spell)) {
         return;
       }
-      const tile = this.deps.getPlayerTile();
-      this.playLocalSpellFx(spell.idSpell, tile.x, tile.y);
+
+      const tile =
+        targetTileX !== undefined && targetTileY !== undefined
+          ? { x: targetTileX, y: targetTileY }
+          : this.deps.getPlayerTile();
+
+      const playerTile = this.deps.getPlayerTile();
+      const targetsEnemyTile =
+        tile.x !== playerTile.x || tile.y !== playerTile.y;
+
+      if (this.spellRequiresEnemyTarget(spell)) {
+        if (!targetsEnemyTile) {
+          gameUi.addCombatLine(`${spell.nombre} no puede lanzarse sobre vos.`);
+          this.cancelSpellTargeting("Lanzamiento cancelado.");
+          return;
+        }
+        if (this.rejectMissingEnemyTarget(tile.x, tile.y)) {
+          return;
+        }
+      }
+
+      const behavior = getSpellBehavior(spell.idSpell);
+      if (isSelf && behavior?.buffEffects && spell.puedeUsarseEnAliados) {
+        for (const buff of behavior.buffEffects) {
+          this.deps.applySpellAttributeBuff(buff.stat, buff.amount);
+          const label = buff.stat === "strength" ? "Fuerza" : "Agilidad";
+          const sign = buff.amount > 0 ? "+" : "";
+          gameUi.addCombatLine(`${spell.nombre}: ${sign}${buff.amount} ${label}.`);
+        }
+        this.deps.refreshHud();
+      }
+
+      if (isSelf && isRemoveImmobilizeSpell(spell.idSpell)) {
+        this.deps.clearLocalPlayerImmobilize();
+        gameUi.addChatLine(`${spell.nombre} te libera.`);
+      }
+
+      const targetsSelf =
+        isSelf || (tile.x === playerTile.x && tile.y === playerTile.y);
+      if (
+        targetsSelf &&
+        spell.puedeUsarseEnAliados &&
+        (spell.healMax > 0 || spell.healMin > 0)
+      ) {
+        const progress = this.deps.getPlayerProgress();
+        const min = Math.max(0, Math.floor(spell.healMin));
+        const max = Math.max(min, Math.floor(spell.healMax));
+        const healAmount = Phaser.Math.Between(min, max);
+        const before = progress.hp;
+        progress.hp = Math.min(progress.hpMax, progress.hp + healAmount);
+        const restored = progress.hp - before;
+        if (restored > 0) {
+          gameUi.addCombatLine(`${spell.nombre} te cura ${restored} HP.`);
+        }
+        this.deps.refreshHud();
+      }
+
+      if (targetsSelf && isInvisibilitySpell(spell.idSpell)) {
+        this.deps.applyLocalInvisibility(INVISIBILITY_DURATION_MS);
+        gameUi.addCombatLine(`${spell.nombre}: te volvés invisible.`);
+      }
+
+      this.playLocalSpellFx(spell.idSpell, spell.nombre, tile.x, tile.y);
       this.deps.sendCastSpellToServer(spell.idSpell, tile.x, tile.y);
-      this.cancelSpellTargeting(`${spell.nombre} lanzado.`);
+      this.cancelSpellTargeting();
       return;
     }
 
-    if (!this.spellCanTargetPlayer(spell)) {
-      gameUi.addCombatLine(`${spell.nombre} no puede lanzarse sobre aliados.`);
-      this.cancelSpellTargeting("Lanzamiento cancelado.");
-      return;
-    }
-    if (!this.spendManaForSpell(spell)) {
-      return;
-    }
-
-    let anyEffect = false;
-    const progress = this.deps.getPlayerProgress();
-
-    if (spell.healMax > 0 || spell.healMin > 0) {
-      const min = Math.max(0, Math.floor(spell.healMin));
-      const max = Math.max(min, Math.floor(spell.healMax));
-      const healAmount = Phaser.Math.Between(min, max);
-      const before = progress.hp;
-      progress.hp = Math.min(progress.hpMax, progress.hp + healAmount);
-      const restored = progress.hp - before;
-      gameUi.addCombatLine(`${spell.nombre} te cura ${restored} HP.`);
-      anyEffect = true;
-    }
-
-    if (spell.remueveDebuff) {
-      gameUi.addCombatLine(`${spell.nombre} remueve ${spell.remueveDebuff}.`);
-      anyEffect = true;
-    }
-
-    const tile = this.deps.getPlayerTile();
-    this.playLocalSpellFx(spell.idSpell, tile.x, tile.y);
-
-    if (!anyEffect) {
-      gameUi.addCombatLine(`${spell.nombre} no tuvo efecto sobre ese objetivo.`);
-    }
-
-    this.deps.tryImproveMagicOnSpellCast();
-    this.deps.refreshHud();
-    this.cancelSpellTargeting(`${spell.nombre} lanzado.`);
+    gameUi.addCombatLine(OFFLINE_GAMEPLAY_MESSAGE);
+    this.cancelSpellTargeting("Lanzamiento cancelado.");
   }
 
   tryCastSpellOnDummy(dummy: DummyState): void {
@@ -213,11 +475,28 @@ export class GameSceneCombatController {
 
     const gameUi = this.deps.getGameUi();
     const mapId = this.deps.getCurrentMapId();
+    const hitTile = this.deps.getDummyHitTile(dummy);
+
+    if (isRemoveImmobilizeSpell(spell.idSpell)) {
+      if (!isMobImmobilizedAt(dummy.immobilizedUntilMs)) {
+        this.rejectRemoveImmobilizeTarget();
+        return;
+      }
+    }
 
     if (this.deps.isMultiplayerActive()) {
       if (!dummy.alive || dummy.mapId !== mapId) {
         gameUi.addCombatLine("Ese objetivo no está disponible.");
         this.cancelSpellTargeting("Lanzamiento cancelado.");
+        return;
+      }
+      if (isRemoveImmobilizeSpell(spell.idSpell)) {
+        if (!this.canAffordSpellMana(spell)) {
+          return;
+        }
+        this.playLocalSpellFx(spell.idSpell, spell.nombre, hitTile.x, hitTile.y);
+        this.deps.sendCastSpellToServer(spell.idSpell, hitTile.x, hitTile.y);
+        this.cancelSpellTargeting();
         return;
       }
       if (!this.spellCanTargetDummy(spell)) {
@@ -228,123 +507,38 @@ export class GameSceneCombatController {
       if (!this.canAffordSpellMana(spell)) {
         return;
       }
-      this.playLocalSpellFx(spell.idSpell, dummy.tileX, dummy.tileY);
-      this.deps.sendCastSpellToServer(spell.idSpell, dummy.tileX, dummy.tileY);
-      this.cancelSpellTargeting(`${spell.nombre} lanzado.`);
+      if (IMMOBILIZE_SPELL_IDS.has(spell.idSpell)) {
+        this.applyInmovilizadoDebuffToDummy(dummy, spell.nombre, spell.idSpell);
+      }
+      this.playLocalSpellFx(spell.idSpell, spell.nombre, hitTile.x, hitTile.y);
+      this.deps.sendCastSpellToServer(spell.idSpell, hitTile.x, hitTile.y);
+      this.cancelSpellTargeting();
       return;
     }
 
-    if (!dummy.alive || dummy.mapId !== mapId) {
-      gameUi.addCombatLine("Ese objetivo no está disponible.");
-      this.cancelSpellTargeting("Lanzamiento cancelado.");
-      return;
-    }
-    if (!this.spellCanTargetDummy(spell)) {
-      gameUi.addCombatLine(`${spell.nombre} no puede lanzarse sobre enemigos.`);
-      this.cancelSpellTargeting("Lanzamiento cancelado.");
-      return;
-    }
-    if (!this.spendManaForSpell(spell)) {
-      return;
-    }
-
-    this.playLocalSpellFx(spell.idSpell, dummy.tileX, dummy.tileY);
-
-    if (IMMOBILIZE_SPELL_IDS.has(spell.idSpell)) {
-      this.applyInmovilizadoDebuffToDummy(dummy, spell.nombre);
-      this.deps.tryImproveMagicOnSpellCast();
-      this.cancelSpellTargeting(`${spell.nombre} lanzado.`);
-      return;
-    }
-
-    const min = Math.max(0, Math.floor(spell.danioMin));
-    const max = Math.max(min, Math.floor(spell.danioMax));
-    const baseDamage = Phaser.Math.Between(min, max);
-    const combat = this.getCombatSnapshot();
-    const damage = Math.max(
-      0,
-      Math.floor(baseDamage * (1 + combat.magicDamageBonusPercent))
-    );
-    const result = this.dealDamageToDummy(dummy, damage);
-
-    if (!getSpellEffectConfig(spell.idSpell)) {
-      this.playAttackFeedback(dummy.tileX, dummy.tileY);
-    }
-    dummy.sprite.setTint(0x9b4dff);
-    this.deps.time.delayedCall(90, () => {
-      if (dummy.alive) dummy.sprite.clearTint();
-    });
-
-    gameUi.addCombatLine(`${spell.nombre} golpea a ${dummy.name} por ${result.damageApplied}.`);
-
-    this.deps.tryImproveMagicOnSpellCast();
-    this.cancelSpellTargeting(`${spell.nombre} lanzado.`);
+    gameUi.addCombatLine(OFFLINE_GAMEPLAY_MESSAGE);
+    this.cancelSpellTargeting("Lanzamiento cancelado.");
   }
 
   tryAttackDummy(): void {
     if (this.deps.isPlayerDeadOrGhost()) {
       return;
     }
-    if (this.deps.isMultiplayerActive()) {
-      this.deps.sendAttackToServer(this.deps.getFacing());
-      return;
-    }
+
+    this.deps.clearSpellMagicWords();
 
     const now = this.deps.time.now;
     if (now < this.nextAttackAt) {
       return;
     }
-
-    const targetDummy = this.deps.getDummyInAttackRange();
-    const gameUi = this.deps.getGameUi();
-    if (!targetDummy) {
-      gameUi.addCombatLine("No hay nadie para golpear.");
-      return;
-    }
-
-    const coreStats = this.deps.getCoreStats();
-    const missChance = getMissChanceFromAgility(coreStats.agility);
-    const didMiss = Math.random() < missChance;
-    const combat = this.getCombatSnapshot();
     this.nextAttackAt = now + ATTACK_COOLDOWN_MS;
 
-    if (didMiss) {
-      this.playAttackFeedback(targetDummy.tileX, targetDummy.tileY);
-      gameUi.addCombatLine(`Fallaste el golpe (${Math.round(missChance * 100)}% falla).`);
+    if (this.deps.isMultiplayerActive()) {
+      this.deps.sendAttackToServer(this.deps.getFacing());
       return;
     }
 
-    const roll = rollAttackDamage(combat.attackMin, combat.attackMax, {
-      canCrit: combat.weaponCanCrit,
-      critChance: combat.weaponCritChance,
-      critDamage: combat.weaponCritDamage,
-    });
-    const result = this.dealDamageToDummy(targetDummy, roll.damage);
-
-    const hitTile = this.deps.getDummyHitTile(targetDummy);
-    this.playAttackFeedback(hitTile.x, hitTile.y);
-
-    targetDummy.sprite.setTint(0xe4b270);
-    const baseScaleX = targetDummy.sprite.scaleX;
-    const baseScaleY = targetDummy.sprite.scaleY;
-    this.deps.tweens.add({
-      targets: targetDummy.sprite,
-      scaleX: baseScaleX * 1.08,
-      scaleY: baseScaleY * 0.92,
-      yoyo: true,
-      duration: 70,
-      ease: "Quad.Out",
-    });
-
-    this.deps.time.delayedCall(90, () => {
-      if (targetDummy.alive) {
-        targetDummy.sprite.clearTint();
-      }
-    });
-
-    gameUi.addCombatLine(
-      `Golpeaste a ${targetDummy.name} por ${result.damageApplied}${roll.isCrit ? " (critico)" : ""}.`
-    );
+    this.deps.getGameUi().addCombatLine(OFFLINE_GAMEPLAY_MESSAGE);
   }
 
   getCombatSnapshot(): PlayerCombatSnapshot {
@@ -473,6 +667,7 @@ export class GameSceneCombatController {
   }
 
   playAttackFeedback(tileX: number, tileY: number): void {
+    this.deps.clearSpellMagicWords();
     const { x, y } = tileToFeetWorld(tileX, tileY, TILE_SIZE);
     const { scene } = this.deps;
 
@@ -507,7 +702,7 @@ export class GameSceneCombatController {
     }
     const damageApplied = Math.max(0, Math.floor(rawDamage));
     dummy.hp = Math.max(0, dummy.hp - damageApplied);
-    if (dummy.behavior === "aggressive" && dummy.attackDamage > 0) {
+    if (dummy.behavior === "aggressive" && dummy.maxHit > 0) {
       dummy.isAggroed = true;
       const playerTile = this.deps.getPlayerTile();
       dummy.facing = this.resolveFacingTowards(
@@ -519,6 +714,9 @@ export class GameSceneCombatController {
       );
     }
     this.showDamageNumber(dummy.sprite.x, dummy.sprite.y - 38, damageApplied, "player");
+    if (damageApplied > 0) {
+      this.deps.playMobHitSound?.(dummy.modelId);
+    }
 
     if (dummy.hp > 0) {
       if (dummy.id === this.deps.getInspectedDummyId()) {
@@ -549,16 +747,6 @@ export class GameSceneCombatController {
     return dy >= 0 ? "down" : "up";
   }
 
-  private getSpellTargetHint(spell: SpellCastRequest): string {
-    if (this.spellCanTargetDummy(spell) && this.spellCanTargetPlayer(spell)) {
-      return "enemigo o aliado";
-    }
-    if (this.spellCanTargetDummy(spell)) {
-      return "enemigo";
-    }
-    return "aliado";
-  }
-
   private canAffordSpellMana(spell: SpellCastRequest): boolean {
     const progress = this.deps.getPlayerProgress();
     if (progress.mp < spell.manaCost) {
@@ -579,18 +767,30 @@ export class GameSceneCombatController {
     return true;
   }
 
-  private playLocalSpellFx(spellId: number, tileX: number, tileY: number): void {
+  private playLocalSpellFx(
+    spellId: number,
+    spellNombre: string,
+    tileX: number,
+    tileY: number
+  ): void {
+    this.deps.showSpellMagicWords(spellId, spellNombre);
     this.deps.playSpellEffect(spellId, tileX, tileY);
     this.deps.setSuppressServerSpellFxUntil(this.deps.time.now + 300);
   }
 
-  private applyInmovilizadoDebuffToDummy(dummy: DummyState, sourceName: string): void {
-    const now = this.deps.time.now;
-    const wasImmobilized = now < dummy.immobilizedUntilMs;
-    dummy.immobilizedUntilMs = Math.max(
-      dummy.immobilizedUntilMs,
-      now + INMOVILIZADO_MOB_DURATION_MS
-    );
+  private applyInmovilizadoDebuffToDummy(
+    dummy: DummyState,
+    sourceName: string,
+    spellId: number
+  ): void {
+    const now = Date.now();
+    const durationMs = getImmobilizeMobDurationMs(spellId);
+    const wasImmobilized = isMobImmobilizedAt(dummy.immobilizedUntilMs, now);
+    dummy.immobilizedUntilMs = Math.max(dummy.immobilizedUntilMs, now + durationMs);
+    dummy.netMoveQueue = [];
+    this.deps.tweens.killTweensOf(dummy.sprite);
+    dummy.isMoving = false;
+    dummy.netMoveTargetTile = undefined;
 
     const gameUi = this.deps.getGameUi();
     if (wasImmobilized) {
@@ -602,9 +802,7 @@ export class GameSceneCombatController {
       return;
     }
     gameUi.addCombatLine(
-      `${sourceName} inmoviliza a ${dummy.name} por ${formatImmobilizeDuration(
-        INMOVILIZADO_MOB_DURATION_MS
-      )}.`
+      `${sourceName} inmoviliza a ${dummy.name} por ${formatImmobilizeDuration(durationMs)}.`
     );
   }
 

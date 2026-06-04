@@ -41,7 +41,14 @@ El cliente debe enviar en el join: `gold`, `hp`, `mp`, `equipment`, `inventory`.
 
 | Módulo | Responsabilidad |
 |--------|-----------------|
-| `GameSceneMapController` | Mapa, cámara, minimapa |
+| `GameSceneMapController` | Mapa, cámara, minimapa, oclusión de escenario |
+| `GameSceneEntitySync` | Profundidad, cara, equipo y mobs en frame |
+| `GameSceneLocalPlayerVisuals` | Alpha de invisibilidad local |
+| `GameSceneFrameInput` | Teclado por frame (movimiento, macros, mapa M) |
+| `mapSceneryOcclusion` | Lógica pura de oclusión árboles/edificios |
+| `gameScenePreload` | `preload()` — assets de mapa, items, FX |
+| `gameSceneHud` | `refreshHud`, minimapa, ubicación en mapa |
+| `gameSceneCreatePlayer` | Sprites del jugador local al entrar al mundo |
 | `GameSceneMobController` | Mobs / dummies locales y red |
 | `GameSceneMultiplayerController` | Conexión, movimiento, join |
 | `GameSceneLocalPlayerSync` | Vitales, oro, inventario e ítems del suelo (servidor → local) |

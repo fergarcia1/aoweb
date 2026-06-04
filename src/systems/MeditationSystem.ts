@@ -1,17 +1,23 @@
 import type Phaser from "phaser";
+import {
+  applyMeditationSpriteVisuals,
+  MEDITATION_FX_OFFSET_Y,
+  getMeditationVisualConfig,
+  type MeditationVisualConfig,
+} from "./meditationVisuals";
 
-const MEDITATION_TEXTURE_KEY = "spell_meditation_fx";
-const MEDITATION_ANIM_KEY = "spell_meditation_anim";
-const MEDITATION_FRAME_SEQUENCE = [0, 2, 4, 6, 8, 10];
-const MEDITATION_FX_OFFSET_Y = -6;
 const MEDITATION_MP_REGEN_INTERVAL_MS = 1000;
-const MEDITATION_MP_REGEN_PERCENT_PER_TICK = 0.12;
+const MEDITATION_MP_REGEN_PERCENT_PER_TICK = 0.08;
 
 export type MeditationCallbacks = {
   isPlayerDeadOrGhost(): boolean;
+  isMultiplayerActive(): boolean;
   getPlayerMp(): number;
   getPlayerMpMax(): number;
   setPlayerMp(value: number): void;
+  getPlayerLevel(): number;
+  getPlayerFactionId(): string;
+  requestServerMeditation?: (active: boolean) => void;
   refreshHud(): void;
   addChatLine(msg: string): void;
   cancelSpellTargeting(): void;
@@ -25,6 +31,7 @@ export class MeditationSystem {
   private isMeditating = false;
   private regenTimerMs = 0;
   private fx?: Phaser.GameObjects.Sprite;
+  private fxConfig?: MeditationVisualConfig;
   private readonly cb: MeditationCallbacks;
 
   constructor(callbacks: MeditationCallbacks) {
@@ -45,11 +52,11 @@ export class MeditationSystem {
 
   start(source: "command" | "hotkey") {
     if (this.cb.isPlayerDeadOrGhost()) {
-      this.cb.addChatLine("No podés meditar estando muerto o en forma fantasma.");
+      this.cb.addChatLine("No podes meditar estando muerto o en forma fantasma.");
       return;
     }
     if (this.cb.getPlayerMp() >= this.cb.getPlayerMpMax()) {
-      this.cb.addChatLine("Ya tenés el maná al máximo.");
+      this.cb.addChatLine("Ya tenes el mana al maximo.");
       return;
     }
 
@@ -58,6 +65,9 @@ export class MeditationSystem {
     this.regenTimerMs = 0;
     this.ensureFx();
     this.syncFxPosition();
+    if (this.cb.isMultiplayerActive()) {
+      this.cb.requestServerMeditation?.(true);
+    }
     this.cb.addChatLine(
       source === "command"
         ? "Comenzaste a meditar."
@@ -69,6 +79,9 @@ export class MeditationSystem {
     if (!this.isMeditating) return;
     this.isMeditating = false;
     this.regenTimerMs = 0;
+    if (this.cb.isMultiplayerActive()) {
+      this.cb.requestServerMeditation?.(false);
+    }
     if (this.fx) {
       this.fx.setVisible(false);
       this.fx.stop();
@@ -81,19 +94,30 @@ export class MeditationSystem {
   update(deltaMs: number) {
     if (!this.isMeditating) return;
 
+    this.ensureFx();
+    if (this.cb.isMultiplayerActive()) {
+      if (this.cb.getPlayerMp() >= this.cb.getPlayerMpMax()) {
+        this.stop("Tu mana esta completo.");
+      }
+      return;
+    }
+
     this.regenTimerMs += deltaMs;
     const manaPerTick = this.cb.getPlayerMpMax() * MEDITATION_MP_REGEN_PERCENT_PER_TICK;
     while (this.regenTimerMs >= MEDITATION_MP_REGEN_INTERVAL_MS) {
       this.regenTimerMs -= MEDITATION_MP_REGEN_INTERVAL_MS;
-      this.cb.setPlayerMp(
-        Math.min(this.cb.getPlayerMpMax(), this.cb.getPlayerMp() + manaPerTick)
+      const nextMp = Math.min(
+        this.cb.getPlayerMpMax(),
+        this.cb.getPlayerMp() + manaPerTick
       );
+      this.cb.setPlayerMp(nextMp);
       this.cb.refreshHud();
     }
     if (this.cb.getPlayerMp() >= this.cb.getPlayerMpMax()) {
-      this.cb.setPlayerMp(this.cb.getPlayerMpMax());
+      const fullMp = this.cb.getPlayerMpMax();
+      this.cb.setPlayerMp(fullMp);
       this.cb.refreshHud();
-      this.stop("Tu maná está completo.");
+      this.stop("Tu mana esta completo.");
     }
   }
 
@@ -109,24 +133,32 @@ export class MeditationSystem {
 
   private ensureFx() {
     const feet = this.cb.getPlayerFeetWorld();
+    const config = getMeditationVisualConfig(
+      this.cb.getPlayerFactionId(),
+      this.cb.getPlayerLevel()
+    );
     if (!this.fx) {
       const scene = this.cb.getScene();
       this.fx = scene.add
         .sprite(
           Math.round(feet.x),
           Math.round(feet.y + MEDITATION_FX_OFFSET_Y),
-          MEDITATION_TEXTURE_KEY,
-          MEDITATION_FRAME_SEQUENCE[0]
+          config.key,
+          0
         )
         .setOrigin(0.5, 1)
-        .setDepth(this.cb.getPlayerDepth() + 0.06)
-        .setScale(1);
+        .setDepth(this.cb.getPlayerDepth() + 0.06);
       const uiCam = this.cb.getUiCamera();
       if (uiCam) {
         uiCam.ignore(this.fx);
       }
     }
+    if (!this.fxConfig || this.fxConfig.key !== config.key) {
+      this.fx.setTexture(config.key, 0);
+      applyMeditationSpriteVisuals(this.fx, config);
+      this.fxConfig = config;
+    }
     this.fx.setVisible(true);
-    this.fx.play(MEDITATION_ANIM_KEY, true);
+    this.fx.play(config.animKey, true);
   }
 }

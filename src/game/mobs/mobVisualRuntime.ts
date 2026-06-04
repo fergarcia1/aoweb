@@ -56,8 +56,11 @@ export function playMobWalkAnimation(
 
   const key = mobWalkAnimKey(modelId, facing);
   if (sprite.scene.anims.exists(key)) {
-    if (sprite.anims.currentAnim?.key !== key) {
-      sprite.play(key, true);
+    // Un ciclo de caminata por tile: reiniciar aunque siga la misma dirección.
+    if (sprite.anims.currentAnim?.key === key) {
+      sprite.anims.restart();
+    } else {
+      sprite.play(key);
     }
     return;
   }

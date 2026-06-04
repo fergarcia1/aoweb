@@ -13,12 +13,16 @@ import type {
   NetWorldItemState,
   WorldSnapshot,
 } from "../../../shared/types";
+import { RESURRECT_REVIVE_HP_RATIO } from "../../../game-data/resurrect";
 import type { Facing } from "../../player/playerSprites";
 import type { MoveDirection } from "./types";
 import {
+  buildJoinBankSlots,
   buildJoinInventorySlots,
   buildMultiplayerJoinPayload,
 } from "./multiplayerJoinPayload";
+import { normalizeNetPlayerState } from "../../../shared/types";
+import type { ServerWelcomeMessage } from "../../../shared/protocol";
 
 export type GameSceneMultiplayerDeps = {
   scene: Phaser.Scene;
@@ -28,6 +32,7 @@ export type GameSceneMultiplayerDeps = {
   getCurrentMapId: () => string;
   getPlayerName: () => string;
   getCharacterId: () => string;
+  getIsNewCharacterForJoin: () => boolean;
   getPlayerTile: () => { x: number; y: number };
   setPlayerTile: (tileX: number, tileY: number) => void;
   getFacing: () => Facing;
@@ -47,6 +52,8 @@ export type GameSceneMultiplayerDeps = {
     mp: number;
     mpMax: number;
     gold: number;
+    exp: number;
+    expToNext: number;
   };
   getEquipment: () => {
     weapon: ItemId | null;
@@ -63,8 +70,15 @@ export type GameSceneMultiplayerDeps = {
 
   syncLocalVitalsFromServer: (state: NetPlayerState | null | undefined) => void;
   syncLocalEquipmentFromServer: (state: NetPlayerState | null | undefined) => void;
-  syncLocalInventoryFromServer: (slots: NetInventorySlotState[] | undefined) => void;
+  syncLocalInventoryFromServer: (
+    slots: NetInventorySlotState[] | undefined,
+    options?: { slotUiOnly?: boolean }
+  ) => void;
   syncLocalGoldFromServer: (gold: number | undefined) => void;
+  syncLocalProgressFromServer: (exp: number, expToNext: number, level: number) => void;
+  syncLocalWelcomeExtras: (welcome: Partial<ServerWelcomeMessage>) => void;
+  getBankState: () => { slots: Array<{ itemId: import("../../items/itemDefinitions").ItemId; count: number } | null>; gold: number };
+  getLearnedSpellIds: () => number[];
   syncWorldItemsFromServer: (items: NetWorldItemState[] | null | undefined) => void;
   applyWorldItemSpawned: (mapId: string, item: NetWorldItemState) => void;
   applyWorldItemUpdated: (mapId: string, item: NetWorldItemState) => void;
@@ -72,8 +86,10 @@ export type GameSceneMultiplayerDeps = {
   syncMobsFromServer: (mobs: NetMobState[] | null | undefined) => void;
   applyNetMobState: (mob: NetMobState) => void;
   applyNetMobLeft: (mobId: string) => void;
-  handleServerPlayerDied: (playerId: string, killerName: string) => void;
+  handleServerPlayerDied: (playerId: string, killerId: string, killerName: string) => void;
+  getUsersKilled: () => number;
   onCharacterAlreadyOnline: (message: string) => void;
+  onLogoutComplete: () => void;
   handleServerUseItemAck: (ack: ServerUseItemAckMessage) => void;
   handleServerPlayerUpdated: (state: NetPlayerState) => void;
 
@@ -97,8 +113,20 @@ export type GameSceneMultiplayerDeps = {
     source: "player" | "mob"
   ) => void;
   playSpellEffect: (spellId: number, tileX: number, tileY: number) => void;
+  playSpawnEffectAtTile: (tileX: number, tileY: number) => void;
+  startResurrectChannelEffect: (
+    casterId: string,
+    tileX: number,
+    tileY: number,
+    endsAtMs: number
+  ) => void;
+  stopResurrectChannelEffect: (casterId: string) => void;
   getSuppressServerSpellFxUntil: () => number;
   getPlayerSprite: () => Phaser.GameObjects.Sprite;
+  getLocalPlayerId: () => string | null;
+  applyLocalRevivedFromServer: (hp: number) => void;
+  isPlayerDeadOrGhost: () => boolean;
+  playFootstepSound: () => void;
 
   applyMapTransition: (
     transition: {
@@ -123,7 +151,9 @@ export type GameSceneMultiplayerDeps = {
   syncPlayerNameLabelPosition: () => void;
   refreshMapLocationLabel: () => void;
   refreshMinimap: () => void;
+  updateDynamicMapObject: (tileX: number, tileY: number, objIndex: number) => void;
 
+  playMobHitSoundForId: (mobId: string) => void;
   findDummyById: (id: string) => { alive: boolean; sprite: Phaser.GameObjects.Sprite } | null;
   tintDummySprite: (dummy: { sprite: Phaser.GameObjects.Sprite; alive: boolean }, tint: number) => void;
   clearDummyTint: (dummy: { sprite: Phaser.GameObjects.Sprite; alive: boolean }) => void;
@@ -168,15 +198,21 @@ export class GameSceneMultiplayerController {
         onChatLine: (text) => this.deps.addChatLine(text),
         onCombatLine: (text) => {
           this.deps.addCombatLine(text);
-          this.deps.addChatLine(text);
         },
-        onWelcome: (_playerId, mapId, player, inventory, gold) => {
+        onWelcome: (welcome) => {
+          const player = normalizeNetPlayerState(welcome.player);
           if (player) {
-            this.onAuthoritativeJoin(player, mapId, inventory, gold);
+            this.onAuthoritativeJoin(
+              player,
+              welcome.mapId,
+              welcome.inventory,
+              welcome.gold,
+              welcome
+            );
           }
-          if (player && this.deps.getCurrentMapId() !== mapId) {
+          if (player && this.deps.getCurrentMapId() !== welcome.mapId) {
             this.deps.addChatLine(
-              "Multijugador online solo en Pueblo: fuiste movido al punto de entrada."
+              "Multijugador online solo en Ullathorpe: fuiste movido al punto de entrada."
             );
           }
         },
@@ -190,14 +226,24 @@ export class GameSceneMultiplayerController {
         onMobUpdated: (mob) => this.deps.applyNetMobState(mob),
         onMobLeft: (mobId) => this.deps.applyNetMobLeft(mobId),
         onGameEvent: (event) => this.onGameEvent(event),
-        onPlayerDied: (playerId, killerName) =>
-          this.deps.handleServerPlayerDied(playerId, killerName),
+        onPlayerDied: (playerId, killerId, killerName) =>
+          this.deps.handleServerPlayerDied(playerId, killerId, killerName),
         onCharacterAlreadyOnline: (message) =>
           this.deps.onCharacterAlreadyOnline(message),
+        onLogoutComplete: () => this.deps.onLogoutComplete(),
         onUseItemAck: (ack) => this.deps.handleServerUseItemAck(ack),
         onInventoryUpdated: (inventory, gold) => {
-          this.deps.syncLocalInventoryFromServer(inventory);
+          this.deps.syncLocalInventoryFromServer(inventory, { slotUiOnly: true });
           this.deps.syncLocalGoldFromServer(gold);
+        },
+        onBankUpdated: (bankGold, bankInventory) => {
+          this.deps.syncLocalWelcomeExtras({ bankGold, bankInventory });
+        },
+        onSpellsUpdated: (learnedSpellIds) => {
+          this.deps.syncLocalWelcomeExtras({ learnedSpellIds });
+        },
+        onPlayerProgressUpdated: (exp, expToNext, level) => {
+          this.deps.syncLocalProgressFromServer(exp, expToNext, level);
         },
         onWorldItemSpawned: (mapId, item) =>
           this.deps.applyWorldItemSpawned(mapId, item),
@@ -225,6 +271,13 @@ export class GameSceneMultiplayerController {
             mp: progress.mp,
             mpMax: progress.mpMax,
             gold: progress.gold,
+            bankGold: this.deps.getBankState().gold,
+            bankInventory: buildJoinBankSlots(this.deps.getBankState().slots),
+            learnedSpellIds: this.deps.getLearnedSpellIds(),
+            exp: progress.exp,
+            expToNext: progress.expToNext,
+            usersKilled: this.deps.getUsersKilled(),
+            isNewCharacter: this.deps.getIsNewCharacterForJoin(),
             equipment: this.buildJoinEquipmentPayload(),
             inventory: buildJoinInventorySlots(this.deps.getInventory()),
           });
@@ -234,11 +287,13 @@ export class GameSceneMultiplayerController {
     this.bridge.connect();
   }
 
-  disconnect(): void {
+  disconnect(options?: { skipRestoreLocalMobs?: boolean }): void {
     this.networkMovePending = false;
     this.bridge?.disconnect();
     this.bridge = null;
-    this.deps.restoreLocalMobsAfterDisconnect();
+    if (!options?.skipRestoreLocalMobs) {
+      this.deps.restoreLocalMobsAfterDisconnect();
+    }
   }
 
   syncServerInventoryIfActive(): void {
@@ -246,6 +301,26 @@ export class GameSceneMultiplayerController {
       return;
     }
     this.bridge.sendSyncInventory(buildJoinInventorySlots(this.deps.getInventory()));
+  }
+
+  syncServerBankIfActive(): void {
+    if (!this.bridge?.isActive()) {
+      return;
+    }
+    const bank = this.deps.getBankState();
+    this.bridge.sendSyncBank(
+      bank.gold,
+      buildJoinBankSlots(bank.slots),
+      this.deps.getPlayerProgress().gold
+    );
+  }
+
+  getRemotePlayers() {
+    return this.bridge?.getRemotePlayers();
+  }
+
+  sendAttack(facing: Facing) {
+    this.bridge?.sendAttack(facing);
   }
 
   tryNetworkStep(dir: MoveDirection): void {
@@ -259,40 +334,76 @@ export class GameSceneMultiplayerController {
 
     if (
       !this.deps.isTileWalkable(nextX, nextY) ||
-      this.deps.isTileOccupiedByRemotePlayer(nextX, nextY)
+      (!this.deps.isPlayerDeadOrGhost() &&
+        this.deps.isTileOccupiedByRemotePlayer(nextX, nextY))
     ) {
       if (this.deps.isMoving()) {
         this.deps.killPlayerTweens();
         this.deps.setIsMoving(false);
       }
-      if (this.deps.getFacing() !== dir.facing) {
+      const facingChanged = this.deps.getFacing() !== dir.facing;
+      if (facingChanged) {
         this.deps.setFacing(dir.facing);
         this.deps.playFacingAnim("idle");
+        this.bridge!.sendMove(dir.facing);
       }
-      this.networkMovePending = true;
-      this.bridge!.sendMove(dir.facing);
       return;
     }
 
     this.networkMovePending = true;
+    this.startLocalStepTween(nextX, nextY, dir.facing);
     this.bridge!.sendMove(dir.facing);
+  }
+
+  /** Animación inmediata del paso (predicción cliente); el servidor confirma con player_moved. */
+  private startLocalStepTween(tileX: number, tileY: number, facing: Facing): void {
+    this.deps.killPlayerTweens();
+    this.deps.setPlayerTile(tileX, tileY);
+    this.deps.setFacing(facing);
+    this.deps.setIsMoving(true);
+    this.deps.playFootstepSound();
+    this.deps.refreshMapLocationLabel();
+    this.deps.refreshMinimap();
+    const target = this.deps.getPlayerFeetWorldForTile(tileX, tileY);
+    this.deps.playFacingAnim("walk");
+    this.deps.tweenPlayerTo(
+      target,
+      this.deps.getLocalPlayerStepDurationMs(),
+      () => {
+        this.deps.syncPlayerFacePosition();
+        this.deps.syncEquippedHeldItemVisuals();
+      },
+      () => {
+        this.deps.setPlayerPosition(target.x, target.y);
+        this.deps.syncPlayerFacePosition();
+        this.deps.syncEquippedHeldItemVisuals();
+        this.deps.setIsMoving(false);
+        this.deps.playFacingAnim("idle");
+        this.networkMovePending = false;
+      }
+    );
   }
 
   onAuthoritativeJoin(
     player: NetPlayerState,
     mapId: string,
     inventory?: NetInventorySlotState[],
-    gold?: number
+    gold?: number,
+    welcome?: Partial<ServerWelcomeMessage>
   ): void {
     this.deps.killAllLocalMobs();
     this.deps.syncLocalVitalsFromServer(player);
     this.deps.syncLocalEquipmentFromServer(player);
     this.deps.syncLocalInventoryFromServer(inventory);
     this.deps.syncLocalGoldFromServer(gold);
+    if (welcome) {
+      this.deps.syncLocalWelcomeExtras(welcome);
+    }
 
     if (player.role || this.deps.isAdminCharacterName(this.deps.getPlayerName())) {
       this.deps.applyServerPlayerRole(player.role);
     }
+    this.deps.handleServerPlayerUpdated(player);
 
     if (mapId !== this.deps.getCurrentMapId()) {
       this.deps.applyMapTransition(
@@ -343,6 +454,26 @@ export class GameSceneMultiplayerController {
     this.bridge?.sendPickupWorldItem();
   }
 
+  sendBankAction(
+    action: "deposit_item" | "withdraw_item" | "deposit_gold" | "withdraw_gold",
+    amount: number,
+    slotIndex?: number
+  ): void {
+    this.bridge?.sendBankAction(action, amount, slotIndex);
+  }
+
+  sendShopBuy(role: "blacksmith" | "armorer" | "tailor" | "alchemist" | "mage", itemId: string, amount: number): void {
+    this.bridge?.sendShopBuy(role, itemId, amount);
+  }
+
+  sendShopSell(role: "blacksmith" | "armorer" | "tailor" | "alchemist" | "mage", inventorySlot: number, amount: number): void {
+    this.bridge?.sendShopSell(role, inventorySlot, amount);
+  }
+
+  sendSpellShopBuy(spellId: number): void {
+    this.bridge?.sendSpellShopBuy(spellId);
+  }
+
   sendRevive(
     source: "priest" | "ally",
     tileX?: number,
@@ -350,6 +481,18 @@ export class GameSceneMultiplayerController {
     mapId?: string
   ): void {
     this.bridge?.sendRevive(source, tileX, tileY, mapId);
+  }
+
+  sendBecomeRenegade(): void {
+    this.bridge?.sendBecomeRenegade();
+  }
+
+  sendSuicide(): void {
+    this.bridge?.sendSuicide();
+  }
+
+  sendRequestLogout(): void {
+    this.bridge?.sendRequestLogout();
   }
 
   onPlayerMoved(player: NetPlayerState): void {
@@ -371,6 +514,58 @@ export class GameSceneMultiplayerController {
       return;
     }
 
+    if (event.kind === "resurrect_channel") {
+      const localId = this.deps.getLocalPlayerId();
+      const channelSec = Math.round((event.endsAtMs - Date.now()) / 1000);
+      this.deps.startResurrectChannelEffect(
+        event.casterId,
+        event.casterTileX,
+        event.casterTileY,
+        event.endsAtMs
+      );
+      if (localId && event.casterId === localId) {
+        this.deps.addCombatLine(
+          `Canalizando resurrección sobre ${event.targetName} (${Math.max(1, channelSec)}s)...`
+        );
+      } else if (localId && event.targetId === localId) {
+        this.deps.addCombatLine(
+          `${event.casterName} te está resucitando (${Math.max(1, channelSec)}s)...`
+        );
+      }
+      return;
+    }
+
+    if (event.kind === "map_object_updated") {
+      this.deps.updateDynamicMapObject(event.tileX, event.tileY, event.objIndex);
+      return;
+    }
+
+    if (event.kind === "resurrect_complete") {
+      this.deps.stopResurrectChannelEffect(event.casterId);
+      const localId = this.deps.getLocalPlayerId();
+      if (localId && event.targetId === localId && this.deps.isPlayerDeadOrGhost()) {
+        const hpMax = this.deps.getPlayerProgress().hpMax;
+        const hp = Math.max(1, Math.floor(hpMax * RESURRECT_REVIVE_HP_RATIO));
+        this.deps.applyLocalRevivedFromServer(hp);
+        this.deps.addCombatLine("Un aliado te revivió con Resucitar.");
+      } else {
+        this.deps.playSpawnEffectAtTile(event.tileX, event.tileY);
+      }
+      if (localId && event.casterId === localId) {
+        this.deps.addCombatLine(`Resucitaste a ${event.targetName}.`);
+      }
+      return;
+    }
+
+    if (event.kind === "resurrect_cancel") {
+      this.deps.stopResurrectChannelEffect(event.casterId);
+      const localId = this.deps.getLocalPlayerId();
+      if (localId && event.casterId === localId) {
+        this.deps.addCombatLine(event.reason);
+      }
+      return;
+    }
+
     if (event.kind !== "damage") {
       return;
     }
@@ -380,6 +575,9 @@ export class GameSceneMultiplayerController {
     if (event.targetKind === "mob") {
       const dummy = this.deps.findDummyById(event.targetId);
       if (dummy?.alive) {
+        if (event.amount > 0) {
+          this.deps.playMobHitSoundForId(event.targetId);
+        }
         this.deps.showDamageNumber(dummy.sprite.x, dummy.sprite.y - 38, event.amount, "player");
         this.deps.tintDummySprite(dummy, 0xe4b270);
         this.deps.scene.time.delayedCall(90, () => {
@@ -396,9 +594,10 @@ export class GameSceneMultiplayerController {
     }
 
     if (event.targetId === this.bridge?.getPlayerId()) {
-      const damage = this.deps.applyIncomingDamage(event.amount, "physical");
+      const damage = Math.max(0, Math.floor(event.amount));
       if (damage > 0) {
         const player = this.deps.getPlayerSprite();
+        // El HP lo sincroniza player_updated (daño ya mitigado en servidor).
         this.deps.showDamageNumber(player.x, player.y - 44, damage, "mob");
       }
       return;
@@ -433,17 +632,31 @@ export class GameSceneMultiplayerController {
   }
 
   syncLocalPlayerFromServer(state: NetPlayerState): void {
-    this.networkMovePending = false;
+    if (state.mapId !== this.deps.getCurrentMapId()) {
+      this.networkMovePending = false;
+      this.deps.applyMapTransition(
+        {
+          toMapId: state.mapId,
+          toTileX: state.tileX,
+          toTileY: state.tileY,
+          facing: state.facing,
+        },
+        { silent: true }
+      );
+      return;
+    }
 
     const tile = this.deps.getPlayerTile();
     const moved = state.tileX !== tile.x || state.tileY !== tile.y;
     const facingChanged = state.facing !== this.deps.getFacing();
 
     if (!moved && !facingChanged) {
+      this.networkMovePending = false;
       return;
     }
 
     if (moved && !this.bridge?.getSpawnSynced()) {
+      this.networkMovePending = false;
       this.bridge?.setSpawnSynced(true);
       this.snapLocalPlayerToTile(state);
       return;
@@ -462,6 +675,7 @@ export class GameSceneMultiplayerController {
         this.snapLocalPlayerToTile(state);
         return;
       }
+      this.networkMovePending = false;
       if (facingChanged) {
         this.deps.setFacing(state.facing);
         this.deps.playFacingAnim("walk");
@@ -474,34 +688,14 @@ export class GameSceneMultiplayerController {
       const dist =
         Math.abs(state.tileX - currentTile.x) + Math.abs(state.tileY - currentTile.y);
       if (dist === 0) {
+        this.networkMovePending = false;
         this.deps.setFacing(state.facing);
         this.deps.playFacingAnim("idle");
         return;
       }
       if (dist === 1) {
-        this.deps.killPlayerTweens();
-        this.deps.setPlayerTile(state.tileX, state.tileY);
-        this.deps.setFacing(state.facing);
-        this.deps.setIsMoving(true);
-        this.deps.refreshMapLocationLabel();
-        this.deps.refreshMinimap();
-        const target = this.deps.getPlayerFeetWorldForTile(state.tileX, state.tileY);
-        this.deps.playFacingAnim("walk");
-        this.deps.tweenPlayerTo(
-          target,
-          this.deps.getLocalPlayerStepDurationMs(),
-          () => {
-            this.deps.syncPlayerFacePosition();
-            this.deps.syncEquippedHeldItemVisuals();
-          },
-          () => {
-            this.deps.setPlayerPosition(target.x, target.y);
-            this.deps.syncPlayerFacePosition();
-            this.deps.syncEquippedHeldItemVisuals();
-            this.deps.setIsMoving(false);
-            this.deps.playFacingAnim("idle");
-          }
-        );
+        this.networkMovePending = false;
+        this.startLocalStepTween(state.tileX, state.tileY, state.facing);
         return;
       }
 
@@ -509,6 +703,7 @@ export class GameSceneMultiplayerController {
       return;
     }
 
+    this.networkMovePending = false;
     this.deps.setFacing(state.facing);
     this.deps.playFacingAnim("idle");
   }

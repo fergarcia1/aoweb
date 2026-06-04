@@ -16,7 +16,19 @@ export type Outfit =
   | "dragonBlanco"
   | "dragonBlancoBajos"
   | "dragonRojo"
-  | "dragonRojoBajos";
+  | "dragonRojoBajos"
+  | "armaduraAse"
+  | "dragonBlancoFem"
+  | "placasDoradas"
+  | "atuendoBanquero"
+  | "ropaEleganteBajos"
+  | "tunicaClerigo"
+  | "tunicaDruidaBajos"
+  | "tunicaRmQuince"
+  | "placasRojasBajos"
+  | "caballeroDeMuerte"
+  | "caballeroDeMuerteBajos"
+  | "caballeroOscuro";
 
 const VALID_OUTFITS = new Set<string>([
   "base",
@@ -34,6 +46,18 @@ const VALID_OUTFITS = new Set<string>([
   "dragonBlancoBajos",
   "dragonRojo",
   "dragonRojoBajos",
+  "armaduraAse",
+  "dragonBlancoFem",
+  "placasDoradas",
+  "atuendoBanquero",
+  "ropaEleganteBajos",
+  "tunicaClerigo",
+  "tunicaDruidaBajos",
+  "tunicaRmQuince",
+  "placasRojasBajos",
+  "caballeroDeMuerte",
+  "caballeroDeMuerteBajos",
+  "caballeroOscuro",
 ]);
 
 /** itemId de armadura → outfit visual. */

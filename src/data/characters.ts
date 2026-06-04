@@ -1,4 +1,9 @@
 import type { CharacterClassId } from "./items";
+import type {
+  CharacterGenderId,
+  CharacterRaceId,
+} from "../../shared/characterTypes";
+import { GHOST_RACE_ID } from "../../shared/characterTypes";
 import {
   FACTION_LABELS,
   normalizeFactionId,
@@ -6,24 +11,14 @@ import {
 } from "../../shared/faction";
 
 export type { CharacterFactionId } from "../../shared/faction";
+export type { CharacterGenderId, CharacterRaceId } from "../../shared/characterTypes";
+export { GHOST_RACE_ID } from "../../shared/characterTypes";
 export { FACTION_LABELS, normalizeFactionId, canFactionsFight } from "../../shared/faction";
 
 export const CHARACTER_SLOT_COUNT = 6;
-const STORAGE_KEY = "aoweb_character_slots_v2";
+const STORAGE_KEY = "aoweb_character_slots_v3";
 const ACTIVE_SLOT_KEY = "aoweb_active_character_slot";
 
-export type CharacterRaceId =
-  | "human"
-  | "elf"
-  | "drow"
-  | "dwarf"
-  | "gnome"
-  | "orc"
-  | "fantasma";
-
-/** Raza visual al morir (sprites en fantasma_std / fantasma_faces). No es seleccionable. */
-export const GHOST_RACE_ID: CharacterRaceId = "fantasma";
-export type CharacterGenderId = "male" | "female";
 export type SavedCharacter = {
   id: string;
   name: string;
@@ -42,8 +37,11 @@ export type CharacterSlot = SavedCharacter | null;
 
 export const CLASS_LABELS: Record<CharacterClassId, string> = {
   paladin: "Paladín",
+  clerigo: "Clérigo",
   mago: "Mago",
+  nigromante: "Nigromante",
   druida: "Druida",
+  bardo: "Bardo",
   guerrero: "Guerrero",
   cazador: "Cazador",
   asesino: "Asesino",
@@ -72,7 +70,9 @@ export const GENDER_UI_LABELS: Record<CharacterGenderId, string> = {
 /** Color del nombre en mundo / HUD / selección de personaje. */
 export const FACTION_NAME_COLORS: Record<CharacterFactionId, { fill: string; stroke: string }> = {
   ciudadano: { fill: "#4da6ff", stroke: "#001a33" },
+  armada: { fill: "#4da6ff", stroke: "#001a33" },
   caos: { fill: "#ff5252", stroke: "#330808" },
+  renegado: { fill: "#b0b0b0", stroke: "#2a2a2a" },
 };
 
 export function getFactionNameColors(factionId: CharacterFactionId) {
@@ -110,8 +110,11 @@ export const ALL_RACES: CharacterRaceId[] = [
 
 export const ALL_CLASSES: CharacterClassId[] = [
   "paladin",
+  "clerigo",
   "mago",
+  "nigromante",
   "druida",
+  "bardo",
   "guerrero",
   "cazador",
   "asesino",
@@ -137,28 +140,10 @@ function createDefaultSlots(): CharacterSlot[] {
       faceIndex: 0,
       factionId: "ciudadano",
       level: 50,
-      homeMapId: "pueblo",
+      homeMapId: "mapa1",
     },
-    {
-      id: "demo-orc-warrior",
-      name: "Grok",
-      classId: "guerrero",
-      raceId: "orc",
-      genderId: "male",
-      faceIndex: 0,
-      factionId: "caos",
-      level: 1,
-    },
-    {
-      id: "demo-gnome-mage",
-      name: "Zyx",
-      classId: "mago",
-      raceId: "gnome",
-      genderId: "male",
-      faceIndex: 0,
-      factionId: "ciudadano",
-      level: 50,
-    },
+    null,
+    null,
     null,
     null,
     null,
@@ -206,10 +191,13 @@ function normalizeSlots(raw: unknown): CharacterSlot[] {
     }
     const faceIndex =
       typeof record.faceIndex === "number" ? Math.max(0, Math.floor(record.faceIndex)) : 0;
-    const homeMapId =
+    let homeMapId =
       typeof record.homeMapId === "string" && record.homeMapId.trim().length > 0
         ? record.homeMapId.trim()
         : undefined;
+    if (homeMapId && ["pueblo", "bosque", "montana", "desierto"].includes(homeMapId)) {
+      homeMapId = "mapa1";
+    }
     slots[index] = {
       id: record.id,
       name: record.name,
@@ -280,7 +268,7 @@ export function saveCharacterToSlot(slotIndex: number, character: SavedCharacter
 /** Sincroniza nivel (y hogar) del slot con el progreso guardado en partida. */
 export function patchSavedCharacterMeta(
   characterId: string,
-  patch: { level?: number; homeMapId?: string }
+  patch: { level?: number; homeMapId?: string; factionId?: CharacterFactionId }
 ): void {
   const slots = loadCharacterSlots();
   const index = slots.findIndex((slot) => slot?.id === characterId);
@@ -295,6 +283,10 @@ export function patchSavedCharacterMeta(
         ? Math.max(1, Math.floor(patch.level))
         : current.level,
     homeMapId: patch.homeMapId ?? current.homeMapId,
+    factionId:
+      patch.factionId !== undefined
+        ? normalizeFactionId(patch.factionId)
+        : current.factionId,
   };
   saveCharacterSlots(slots);
 }

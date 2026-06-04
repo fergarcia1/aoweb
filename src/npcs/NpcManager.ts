@@ -11,6 +11,7 @@ import {
   type Facing,
   tileToFeetWorld,
 } from "../player/playerSprites";
+import { resolveStaticNpcFaceColumn } from "../player/faceColumn";
 import { faceTextureKey, getFaceFrame } from "../player/raceFaces";
 import { getRaceFaceLayout } from "../player/raceFaceLayout";
 import { inferClasesBajasFromSpritesheetName } from "../game/armorUtils";
@@ -20,6 +21,7 @@ import {
   getInteractiveHitAreaWorldBounds,
 } from "../game/hitboxUtils";
 import { getNpcsForMap, getNpcOccupiedTiles } from "./npcDefinitions";
+import { getStaticNpcBodyScale } from "./npcBodyScale";
 import type { StaticNpcDefinition } from "./types";
 
 const NPC_NAME_COLORS = { fill: "#ffd966", stroke: "#3d3010" };
@@ -46,15 +48,61 @@ export class NpcManager {
   ) {}
 
   syncForMap(mapId: string) {
-    if (this.currentMapId === mapId) {
+    const definitions = getNpcsForMap(mapId);
+    if (this.currentMapId === mapId && this.matchesDefinitions(definitions)) {
       return;
     }
     this.clear();
     this.currentMapId = mapId;
 
+    for (const definition of definitions) {
+      this.spawn(definition);
+    }
+  }
+
+  /** Recrea NPCs del mapa actual (útil tras editar npcDefinitions sin cambiar de mapa). */
+  forceRespawnForCurrentMap() {
+    if (!this.currentMapId) {
+      return;
+    }
+    const mapId = this.currentMapId;
+    this.clear();
+    this.currentMapId = mapId;
     for (const definition of getNpcsForMap(mapId)) {
       this.spawn(definition);
     }
+  }
+
+  private matchesDefinitions(definitions: StaticNpcDefinition[]): boolean {
+    if (this.entries.size !== definitions.length) {
+      return false;
+    }
+    for (const definition of definitions) {
+      const entry = this.entries.get(definition.id);
+      if (!entry || !this.definitionVisualEquals(entry.definition, definition)) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  private definitionVisualEquals(
+    a: StaticNpcDefinition,
+    b: StaticNpcDefinition
+  ): boolean {
+    return (
+      a.faceIndex === b.faceIndex &&
+      (a.faceCara ?? null) === (b.faceCara ?? null) &&
+      a.raceId === b.raceId &&
+      a.genderId === b.genderId &&
+      a.bodyTextureKey === b.bodyTextureKey &&
+      a.facing === b.facing &&
+      a.tileX === b.tileX &&
+      a.tileY === b.tileY &&
+      a.faceDropY === b.faceDropY &&
+      a.faceOffsetX === b.faceOffsetX &&
+      (a.faceScale ?? 1) === (b.faceScale ?? 1)
+    );
   }
 
   clear() {
@@ -105,6 +153,10 @@ export class NpcManager {
   private spawn(definition: StaticNpcDefinition) {
     const feet = tileToFeetWorld(definition.tileX, definition.tileY, TILE_SIZE);
     const depth = this.depthFromFeetY(feet.y);
+    const bodyScale = getStaticNpcBodyScale(
+      definition.bodyTextureKey,
+      definition.raceId
+    );
 
     const body = this.scene.add.sprite(
       feet.x,
@@ -113,11 +165,16 @@ export class NpcManager {
       0
     );
     applyPlayerOrigin(body);
+    body.setScale(bodyScale);
     body.setDepth(depth);
     this.playIdle(body, definition);
-    this.enableNpcInteraction(body);
+    this.enableNpcInteraction(body, bodyScale);
 
     const faceLayout = getRaceFaceLayout(definition.raceId, definition.genderId);
+    const faceColumn = resolveStaticNpcFaceColumn(
+      definition.faceIndex,
+      definition.faceCara
+    );
     const face = this.scene.add.sprite(
       feet.x,
       feet.y,
@@ -125,15 +182,15 @@ export class NpcManager {
       getFaceFrame(
         definition.raceId,
         definition.genderId,
-        definition.faceIndex,
+        faceColumn,
         definition.facing
       )
     );
     face.setOrigin(0.5, 1);
-    face.setScale(faceLayout.scale);
+    face.setScale(faceLayout.scale * (definition.faceScale ?? 1));
     face.setDepth(depth + 0.02);
-    this.syncFacePosition(body, face, definition);
-    this.enableNpcInteraction(face);
+    this.syncFacePosition(body, face, definition, bodyScale);
+    this.enableNpcInteraction(face, bodyScale);
 
     const label = this.scene.add
       .text(feet.x, feet.y + 2, definition.displayName, {
@@ -155,10 +212,10 @@ export class NpcManager {
     this.entries.set(definition.id, { definition, body, face, label });
   }
 
-  private enableNpcInteraction(sprite: Phaser.GameObjects.Sprite) {
+  private enableNpcInteraction(sprite: Phaser.GameObjects.Sprite, bodyScale: number) {
     const hitArea = buildHitboxFrameRect(sprite, {
-      width: NPC_HITBOX_WIDTH_PX,
-      height: NPC_HITBOX_HEIGHT_PX,
+      width: NPC_HITBOX_WIDTH_PX * bodyScale,
+      height: NPC_HITBOX_HEIGHT_PX * bodyScale,
       offsetX: 0,
       offsetY: 0,
     });
@@ -178,7 +235,8 @@ export class NpcManager {
   private syncFacePosition(
     body: Phaser.GameObjects.Sprite,
     face: Phaser.GameObjects.Sprite,
-    definition: StaticNpcDefinition
+    definition: StaticNpcDefinition,
+    bodyScale: number
   ) {
     const offset = getRaceFaceLayout(definition.raceId, definition.genderId).offset[
       definition.facing

@@ -2,9 +2,15 @@ import Phaser from "phaser";
 import type { CharacterGenderId, CharacterRaceId } from "../data/characters";
 import type { Facing } from "./playerSprites";
 
+import {
+  FACE_SHEET_COLUMN_COUNT,
+  caraToFaceColumnIndex,
+  clampFaceColumnIndex,
+} from "./faceColumn";
+
 export const FACE_FRAME_W = 20;
 export const FACE_FRAME_H = 32;
-export const FACE_COUNT = 11;
+export const FACE_COUNT = FACE_SHEET_COLUMN_COUNT;
 
 const FRAME_W = FACE_FRAME_W;
 const FRAME_H = FACE_FRAME_H;
@@ -76,15 +82,8 @@ export function setupRaceFacesTextures(scene: Phaser.Scene): void {
   }
 }
 
-export function clampFaceIndex(faceIndex: number): number {
-  if (FACE_COUNT <= 0) return 0;
-  const normalized = faceIndex % FACE_COUNT;
-  return normalized < 0 ? normalized + FACE_COUNT : normalized;
-}
-
-export function caraToFaceColumnIndex(cara: number): number {
-  return clampFaceIndex(Math.floor(cara) - 1);
-}
+export const clampFaceIndex = clampFaceColumnIndex;
+export { caraToFaceColumnIndex };
 
 export function getFaceFrame(
   raceId: CharacterRaceId,
@@ -105,3 +104,5 @@ export function getFaceFrameFromCara(
 ): number {
   return getFaceFrame(raceId, genderId, caraToFaceColumnIndex(cara), facing);
 }
+
+export { resolveStaticNpcFaceColumn } from "./faceColumn";

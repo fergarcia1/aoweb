@@ -3,9 +3,10 @@ import type { Facing } from "../../shared/types";
 import type { EquipmentSlot, ItemId } from "../items/itemDefinitions";
 import type { InventorySlot } from "../items/inventoryStack";
 
-import { INVENTORY_SLOT_COUNT } from "../../game-data/constants";
+import { INVENTORY_COLS, INVENTORY_ROWS, INVENTORY_SLOT_COUNT } from "../../game-data/constants";
+import { normalizeItemId } from "../../game-data/items/definitions";
 
-export { INVENTORY_SLOT_COUNT };
+export { INVENTORY_COLS, INVENTORY_ROWS, INVENTORY_SLOT_COUNT };
 export const MACRO_SLOT_COUNT = 10;
 
 const STORAGE_PREFIX = "aoweb_progress_v1_";
@@ -26,6 +27,7 @@ export type SavedMacroBinding = {
   keyCode: string | null;
   action: "cast_spell" | "use_item" | "equip_item";
   itemId: ItemId | null;
+  inventorySlotIndex?: number | null;
   spellId: number | null;
 };
 
@@ -84,8 +86,12 @@ function normalizeInventory(slots: unknown): InventorySlot[] {
       typeof stack.count === "number" &&
       stack.count > 0
     ) {
+      const itemId = normalizeItemId(stack.itemId);
+      if (!itemId) {
+        continue;
+      }
       inventory[i] = {
-        itemId: stack.itemId as ItemId,
+        itemId,
         count: Math.floor(stack.count),
       };
     }
@@ -107,7 +113,7 @@ function normalizeEquipment(raw: unknown): Record<EquipmentSlot, ItemId | null> 
   for (const slot of ["weapon", "shield", "helmet", "armor"] as EquipmentSlot[]) {
     const value = record[slot];
     if (typeof value === "string") {
-      equipment[slot] = value as ItemId;
+      equipment[slot] = normalizeItemId(value);
     }
   }
   return equipment;
@@ -120,6 +126,7 @@ function normalizeMacroBindings(raw: unknown): SavedMacroBinding[] {
     keyCode: null,
     action: "use_item",
     itemId: null,
+    inventorySlotIndex: null,
     spellId: null,
   }));
   if (!Array.isArray(raw)) {
@@ -137,7 +144,15 @@ function normalizeMacroBindings(raw: unknown): SavedMacroBinding[] {
         binding.action === "equip_item"
           ? binding.action
           : "use_item",
-      itemId: typeof binding.itemId === "string" ? (binding.itemId as ItemId) : null,
+      itemId:
+        typeof binding.itemId === "string"
+          ? normalizeItemId(binding.itemId)
+          : null,
+      inventorySlotIndex:
+        typeof binding.inventorySlotIndex === "number" &&
+        Number.isFinite(binding.inventorySlotIndex)
+          ? Math.floor(binding.inventorySlotIndex)
+          : null,
       spellId:
         typeof binding.spellId === "number" && Number.isFinite(binding.spellId)
           ? Math.floor(binding.spellId)

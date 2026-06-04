@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   deleteCharacterProgress,
+  INVENTORY_SLOT_COUNT,
   loadCharacterProgress,
   saveCharacterProgress,
   type SavedCharacterProgress,
@@ -16,7 +17,7 @@ function makeSnapshot(
     tileX: 1,
     tileY: 2,
     facing: "down",
-    inventory: Array(20).fill(null),
+    inventory: Array(INVENTORY_SLOT_COUNT).fill(null),
     equipment: { weapon: null, shield: null, helmet: null, armor: null },
     equippedOutfit: "base",
     playerProgress: {

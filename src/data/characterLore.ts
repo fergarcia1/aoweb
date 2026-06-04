@@ -4,10 +4,16 @@ import type { CharacterFactionId, CharacterRaceId } from "./characters";
 export const CLASS_DESCRIPTIONS: Record<CharacterClassId, string> = {
   paladin:
     "Soldados de fe inquebrantable. Dominan el combate cuerpo a cuerpo y cuentan con magia limitada, pero su vitalidad y habilidad con la espada los convierten en aliados confiables.",
+  clerigo:
+    "Sacerdotes guerreros que combinan armadura y armas del paladín con gorros y magia de apoyo. Sanan y protegen al grupo en combate.",
   mago:
     "Maestros de las artes arcanas. Su poder destructivo es formidable, aunque su cuerpo frágil exige mantener la distancia en combate.",
+  nigromante:
+    "Hechiceros de la muerte. Visten túnicas y gorros, y canalizan su poder a través de bastones y báculos.",
   druida:
     "Guardianes de la naturaleza que equilibran sanación, control y daño mágico. Versátiles en grupo y en aventuras solitarias.",
+  bardo:
+    "Artistas del combate que visten túnicas y gorros. Canalizan magia con nudillos y dominan hechizos musicales como el Lamento de las almas.",
   guerrero:
     "Combatientes frontales con gran resistencia y golpes contundentes. Ideales para resistir el daño y proteger al equipo.",
   cazador:
@@ -36,6 +42,10 @@ export const RACE_DESCRIPTIONS: Record<CharacterRaceId, string> = {
 export const FACTION_DESCRIPTIONS: Record<CharacterFactionId, string> = {
   ciudadano:
     "Los Ciudadanos defienden el orden del reino. No pueden atacar a otros ciudadanos, pero sí enfrentar a los seguidores del Caos.",
+  armada:
+    "La Armada Real protege el reino y sus aliados. No puede atacar a otros miembros de la armada ni a ciudadanos leales.",
   caos:
     "Los seguidores del Caos pueden atacar a ciudadanos y a otros caóticos. Viven fuera de la ley del reino.",
+  renegado:
+    "Los Renegados traicionaron al imperio. Pueden atacar a cualquiera. Tras 100 asesinatos de usuarios pueden unirse al Caos.",
 };

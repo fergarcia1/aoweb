@@ -22,6 +22,14 @@ wss.on("connection", (socket) => {
 
 world.start();
 
+process.on("uncaughtException", (error) => {
+  console.error("[fatal] uncaughtException:", error);
+});
+
+process.on("unhandledRejection", (reason) => {
+  console.error("[fatal] unhandledRejection:", reason);
+});
+
 httpServer.on("error", (error: NodeJS.ErrnoException) => {
   if (error.code === "EADDRINUSE") {
     console.error(

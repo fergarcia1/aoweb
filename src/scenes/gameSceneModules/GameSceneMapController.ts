@@ -1,7 +1,6 @@
 import Phaser from "phaser";
 import { TILE_SIZE } from "../../config";
 import {
-  EDGE_TRANSITION_TRIGGER_DISTANCE,
   getMap,
   getWorldMapBiomeColor,
   getWorldMapGridBounds,
@@ -9,8 +8,18 @@ import {
   WORLD_MAP_CELLS,
   type GameMap,
 } from "../../maps";
+import { isPlayerUnderLegacyRoof } from "../../../shared/mapWalkability";
+import { syncMapSceneryOcclusion } from "./mapSceneryOcclusion";
 import { getTileDefinition, TILE } from "../../maps/tileDefinitions";
 import { spawnMapObjectImage } from "../../maps/mapObjects";
+import { getManualSignPlacementsForMap } from "../../maps/mapa1SignPlacements";
+import {
+  getLegacyObjGrhId,
+  resolveImportedObjDef,
+  shouldSpawnLegacyCsmObj,
+  type GrhIndexEntry,
+} from "../../maps/legacyMapObjects";
+import { spawnMapSignAtTile } from "../../maps/mapSignRender";
 import {
   createGrassTile,
   createTerrainTile,
@@ -42,6 +51,8 @@ export type GameSceneMapDeps = {
   getPlayerTile: () => { x: number; y: number };
   refreshMinimap: () => void;
   onViewportLayout: () => void;
+  setDoorTileOverride: (tileX: number, tileY: number, isOpen: boolean) => void;
+  isMapTileWalkable: (tileX: number, tileY: number) => boolean;
 };
 
 /**
@@ -54,6 +65,10 @@ export class GameSceneMapController {
   private uiCamera?: Phaser.Cameras.Scene2D.Camera;
   private readonly mapTrees: Phaser.GameObjects.Image[] = [];
   private readonly mapBuildings: Phaser.GameObjects.Image[] = [];
+  private readonly mapRoofs: Phaser.GameObjects.Image[] = [];
+  private readonly dynamicObjs = new Map<string, Phaser.GameObjects.Image>();
+  private lastRoofTileKey = "";
+  private lastRoofHidden = false;
   private worldMapOverlay?: Phaser.GameObjects.Container;
   private worldMapCurrentMarker?: Phaser.GameObjects.Arc;
   private worldMapPanelGeom = { x: 0, y: 0, w: 0, h: 0 };
@@ -71,6 +86,10 @@ export class GameSceneMapController {
 
   getMapBuildings(): readonly Phaser.GameObjects.Image[] {
     return this.mapBuildings;
+  }
+
+  getMapRoofs(): readonly Phaser.GameObjects.Image[] {
+    return this.mapRoofs;
   }
 
   getUiCamera(): Phaser.Cameras.Scene2D.Camera | undefined {
@@ -93,25 +112,35 @@ export class GameSceneMapController {
     this.mapTrees.length = 0;
     this.mapBuildings.forEach((building) => building.destroy());
     this.mapBuildings.length = 0;
+    this.mapRoofs.forEach((roof) => roof.destroy());
+    this.mapRoofs.length = 0;
+    this.dynamicObjs.forEach((obj) => obj.destroy());
+    this.dynamicObjs.clear();
+    this.lastRoofTileKey = "";
+    this.lastRoofHidden = false;
 
-    for (let y = 0; y < map.height; y += 1) {
-      for (let x = 0; x < map.width; x += 1) {
-        const tile = map.tiles[y][x];
-        const tileDefinition = getTileDefinition(tile);
-        const px = x * TILE_SIZE;
-        const py = y * TILE_SIZE;
+    if (map.legacyCsmData) {
+      this.drawLegacyMap(map);
+    } else {
+      for (let y = 0; y < map.height; y += 1) {
+        for (let x = 0; x < map.width; x += 1) {
+          const tile = map.tiles[y][x];
+          const tileDefinition = getTileDefinition(tile);
+          const px = x * TILE_SIZE;
+          const py = y * TILE_SIZE;
 
-        if (tileDefinition.renderAs === "ao_grass") {
-          this.mapTiles.add(createGrassTile(scene, px, py, x, y));
-        } else if (tileDefinition.renderAs === "ao_water") {
-          this.mapTiles.add(createTerrainTile(scene, px, py, pickWaterFrame(x, y)));
-        } else {
-          this.mapOverlay.fillStyle(tileDefinition.color, 1);
-          this.mapOverlay.fillRect(px, py, TILE_SIZE, TILE_SIZE);
-        }
+          if (tileDefinition.renderAs === "ao_grass") {
+            this.mapTiles.add(createGrassTile(scene, px, py, x, y));
+          } else if (tileDefinition.renderAs === "ao_water") {
+            this.mapTiles.add(createTerrainTile(scene, px, py, pickWaterFrame(x, y)));
+          } else {
+            this.mapOverlay.fillStyle(tileDefinition.color, 1);
+            this.mapOverlay.fillRect(px, py, TILE_SIZE, TILE_SIZE);
+          }
 
-        if (tileDefinition.decoration === "tree") {
-          this.drawTreeTile(px, py);
+          if (tileDefinition.decoration === "tree") {
+            this.drawTreeTile(px, py);
+          }
         }
       }
     }
@@ -134,9 +163,194 @@ export class GameSceneMapController {
       this.mapBuildings.push(building);
     }
 
-    const scenery = [...this.mapTrees, ...this.mapBuildings];
-    if (this.uiCamera && scenery.length > 0) {
+    const grhIndex = scene.cache.json.get("grh_index") as
+      | Record<string, GrhIndexEntry>
+      | undefined;
+    if (grhIndex) {
+      if (map.legacyObjs) {
+        for (const obj of map.legacyObjs) {
+          if (!shouldSpawnLegacyCsmObj(obj)) {
+            continue;
+          }
+          const img = this.spawnLegacyObj(obj.objIndex, obj.tileX, obj.tileY, grhIndex);
+          if (img) {
+            this.dynamicObjs.set(`${obj.tileX},${obj.tileY}`, img);
+          }
+        }
+      }
+      for (const sign of getManualSignPlacementsForMap(map.id)) {
+        const img = spawnMapSignAtTile(scene, sign, grhIndex, (feetY) =>
+          this.deps.depthFromFeetY(feetY)
+        );
+        if (img) {
+          this.mapBuildings.push(img);
+          this.dynamicObjs.set(`${sign.tileX},${sign.tileY}`, img);
+        }
+      }
+    }
+
+    this.refreshSceneryUiCameraIgnore();
+  }
+
+  /** Mantiene árboles/edificios en la cámara del mundo (no en la UI). */
+  refreshSceneryUiCameraIgnore(): void {
+    if (!this.uiCamera) {
+      return;
+    }
+    const scenery = [
+      ...this.mapTrees,
+      ...this.mapBuildings,
+      ...this.mapRoofs,
+      ...Array.from(this.dynamicObjs.values()),
+    ];
+    if (scenery.length > 0) {
       this.uiCamera.ignore(scenery);
+    }
+  }
+
+  private drawLegacyMap(map: GameMap) {
+    const { scene } = this.deps;
+    const legacy = map.legacyCsmData!;
+    const grhIndex = scene.cache.json.get("grh_index");
+
+    if (!grhIndex) {
+      console.warn("grh_index.json no cargado.");
+      return;
+    }
+
+    const drawGrh = (
+      grhId: number,
+      px: number,
+      py: number,
+      tileX: number,
+      tileY: number,
+      layer: "ground" | "above",
+      options?: { asRoofLayer?: boolean }
+    ) => {
+      if (grhId <= 0) return null;
+      let grh = grhIndex[grhId];
+      if (!grh) return null;
+      // Resolve animation to first frame for maps (usually trees/water are animated, we just use frame 1 for now)
+      if (grh.numFrames > 1 && grh.frames) {
+        grh = grhIndex[grh.frames[0]];
+      }
+      if (!grh || !grh.fileNum) return null;
+
+      const textureKey = `grh_file_${grh.fileNum}`;
+      if (!scene.textures.exists(textureKey)) return null;
+
+      const img = scene.add
+        .image(
+          px + TILE_SIZE / 2 - grh.pixelWidth / 2 - grh.sX,
+          py + TILE_SIZE - grh.pixelHeight - grh.sY,
+          textureKey
+        )
+        .setOrigin(0, 0)
+        .setCrop(grh.sX, grh.sY, grh.pixelWidth, grh.pixelHeight);
+
+      if (layer === "ground") {
+        this.mapTiles.add(img);
+      } else if (options?.asRoofLayer) {
+        img.setDepth(100000);
+        this.mapRoofs.push(img);
+      } else {
+        const tileFeetY = py + TILE_SIZE;
+        img.setDepth(this.deps.depthFromFeetY(tileFeetY));
+        img.setData("grhPixelHeight", grh.pixelHeight);
+        img.setData("mapTileX", tileX);
+        img.setData("mapTileY", tileY);
+        this.mapBuildings.push(img);
+      }
+      return img;
+    };
+
+    for (let x = 0; x < map.width; x += 1) {
+      for (let y = 0; y < map.height; y += 1) {
+        const px = x * TILE_SIZE;
+        const py = y * TILE_SIZE;
+        drawGrh(legacy.L1[y][x], px, py, x, y, "ground");
+        drawGrh(legacy.L2[y][x], px, py, x, y, "ground");
+        drawGrh(legacy.L3[y][x], px, py, x, y, "above");
+        const l4Grh = legacy.L4[y][x];
+        if (l4Grh > 0) {
+          drawGrh(l4Grh, px, py, x, y, "above", { asRoofLayer: true });
+        }
+      }
+    }
+  }
+
+  private spawnLegacyObj(
+    objIndex: number,
+    tileX: number,
+    tileY: number,
+    grhIndex: Record<string, GrhIndexEntry>
+  ): Phaser.GameObjects.Image | null {
+    const { scene } = this.deps;
+    const def = resolveImportedObjDef(objIndex);
+    if (!def) {
+      return null;
+    }
+
+    const grhId = getLegacyObjGrhId(def, objIndex);
+    let grh = grhIndex[grhId];
+    if (grh?.numFrames && grh.numFrames > 1 && grh.frames?.[0]) {
+      grh = grhIndex[grh.frames[0]];
+    }
+    if (
+      !grh?.fileNum ||
+      grh.pixelWidth === undefined ||
+      grh.pixelHeight === undefined ||
+      grh.sX === undefined ||
+      grh.sY === undefined
+    ) {
+      return null;
+    }
+
+    const textureKey = `grh_file_${grh.fileNum}`;
+    if (!scene.textures.exists(textureKey)) {
+      return null;
+    }
+
+    const px = tileX * TILE_SIZE;
+    const py = tileY * TILE_SIZE;
+    const tileFeetY = py + TILE_SIZE;
+
+    const img = scene.add
+      .image(
+        px + TILE_SIZE / 2 - grh.pixelWidth / 2 - grh.sX,
+        py + TILE_SIZE - grh.pixelHeight - grh.sY,
+        textureKey
+      )
+      .setOrigin(0, 0)
+      .setCrop(grh.sX, grh.sY, grh.pixelWidth, grh.pixelHeight);
+
+    img.setDepth(this.deps.depthFromFeetY(tileFeetY));
+    img.setData("grhPixelHeight", grh.pixelHeight);
+    img.setData("mapTileX", tileX);
+    img.setData("mapTileY", tileY);
+    this.mapBuildings.push(img);
+    return img;
+  }
+
+  updateDynamicObject(tileX: number, tileY: number, newObjIndex: number): void {
+    const key = `${tileX},${tileY}`;
+    const img = this.dynamicObjs.get(key);
+    if (img) {
+      img.destroy();
+      this.dynamicObjs.delete(key);
+    }
+    const grhIndex = this.deps.scene.cache.json.get("grh_index");
+    if (grhIndex) {
+      const newImg = this.spawnLegacyObj(newObjIndex, tileX, tileY, grhIndex);
+      if (newImg) {
+        this.dynamicObjs.set(key, newImg);
+
+        const def = resolveImportedObjDef(newObjIndex);
+        if (def && (def.indexAbierta > 0 || def.indexCerrada > 0)) {
+          const isOpen = newObjIndex === def.indexAbierta;
+          this.deps.setDoorTileOverride(tileX, tileY, isOpen);
+        }
+      }
     }
   }
 
@@ -155,6 +369,10 @@ export class GameSceneMapController {
 
   updateWorldBackgroundColor(): void {
     const map = this.deps.getCurrentMap();
+    if (map.backgroundColor) {
+      this.deps.scene.cameras.main.setBackgroundColor(map.backgroundColor);
+      return;
+    }
     const outsideTile = map.outsideTile ?? TILE.GRASS;
     const outsideColor = getTileDefinition(outsideTile).color;
     this.deps.scene.cameras.main.setBackgroundColor(outsideColor);
@@ -186,6 +404,7 @@ export class GameSceneMapController {
       this.mapOverlay,
       ...this.mapTrees,
       ...this.mapBuildings,
+      ...this.mapRoofs,
       this.deps.getPlayer(),
       this.deps.getPlayerFace(),
       this.deps.getPlayerNameLabel(),
@@ -195,6 +414,7 @@ export class GameSceneMapController {
     ]);
 
     this.applyCameraLayout();
+    this.refreshSceneryUiCameraIgnore();
   }
 
   applyCameraLayout(): void {
@@ -227,28 +447,15 @@ export class GameSceneMapController {
     return getGameViewport(scene.scale.width, scene.scale.height);
   }
 
+  /** Área completa del mapa; no recortar por zonas de transición de borde. */
   getMinimapBounds() {
     const map = this.deps.getCurrentMap();
-    let minTileX = 0;
-    let minTileY = 0;
-    let maxTileX = map.width - 1;
-    let maxTileY = map.height - 1;
-    const edgeTransitions = map.edgeTransitions;
-
-    if (edgeTransitions?.left) {
-      minTileX = Math.min(maxTileX, EDGE_TRANSITION_TRIGGER_DISTANCE + 1);
-    }
-    if (edgeTransitions?.right) {
-      maxTileX = Math.max(minTileX, map.width - 2 - EDGE_TRANSITION_TRIGGER_DISTANCE);
-    }
-    if (edgeTransitions?.up) {
-      minTileY = Math.min(maxTileY, EDGE_TRANSITION_TRIGGER_DISTANCE + 1);
-    }
-    if (edgeTransitions?.down) {
-      maxTileY = Math.max(minTileY, map.height - 2 - EDGE_TRANSITION_TRIGGER_DISTANCE);
-    }
-
-    return { minTileX, minTileY, maxTileX, maxTileY };
+    return {
+      minTileX: 0,
+      minTileY: 0,
+      maxTileX: Math.max(0, map.width - 1),
+      maxTileY: Math.max(0, map.height - 1),
+    };
   }
 
   createWorldMapOverlay(): void {
@@ -277,6 +484,63 @@ export class GameSceneMapController {
     const marker = this.getWorldMapMarkerScreenPosition();
     if (!marker) return;
     this.worldMapCurrentMarker.setPosition(marker.x, marker.y);
+  }
+
+  getDrawPosition(tileX: number, tileY: number): { x: number; y: number } {
+    return {
+      x: tileX * TILE_SIZE,
+      y: tileY * TILE_SIZE,
+    };
+  }
+
+  isPlayerUnderRoof(tileX: number, tileY: number): boolean {
+    return isPlayerUnderLegacyRoof(this.deps.getCurrentMap(), tileX, tileY);
+  }
+
+  /** Paredes al sur del jugador (tileY mayor) dibujan por encima; al norte, detrás. */
+  syncBuildingDepths(playerTileX: number, playerTileY: number, playerDepth: number): void {
+    for (const building of this.mapBuildings) {
+      const ty = building.getData("mapTileY") as number | undefined;
+      if (ty === undefined) {
+        continue;
+      }
+      if (ty > playerTileY) {
+        building.setDepth(playerDepth + 0.2);
+      } else if (ty < playerTileY) {
+        building.setDepth(playerDepth - 0.2);
+      } else {
+        building.setDepth(playerDepth + 0.15);
+      }
+    }
+  }
+
+  updateRoofTransparency(tileX: number, tileY: number): void {
+    const isUnderRoof = this.isPlayerUnderRoof(tileX, tileY);
+
+    const targetAlpha = isUnderRoof ? 0.0 : 1.0;
+    for (const roof of this.mapRoofs) {
+      // Opt: Solo si cambió
+      if (roof.alpha !== targetAlpha) {
+        roof.setAlpha(targetAlpha);
+        roof.setVisible(targetAlpha > 0);
+      }
+    }
+  }
+
+  syncSceneryOcclusion(playerTileX: number, playerTileY: number): void {
+    const player = this.deps.getPlayer();
+    syncMapSceneryOcclusion({
+      map: this.deps.getCurrentMap(),
+      playerTileX,
+      playerTileY,
+      playerX: player.x,
+      playerY: player.y,
+      isMapTileWalkable: this.deps.isMapTileWalkable,
+      trees: this.mapTrees,
+      buildings: this.mapBuildings,
+      onUpdateRoofTransparency: (tx, ty) => this.updateRoofTransparency(tx, ty),
+      isPlayerUnderRoof: (tx, ty) => this.isPlayerUnderRoof(tx, ty),
+    });
   }
 
   private drawTreeTile(px: number, py: number): void {

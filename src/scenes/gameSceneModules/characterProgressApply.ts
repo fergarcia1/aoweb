@@ -6,7 +6,6 @@ import { normalizeOutfit } from "../../../game-data/outfits";
 import type { Facing } from "../../player/playerSprites";
 import type { EquipmentSlot, ItemId } from "../../items/itemDefinitions";
 import type { InventorySlot } from "../../items/inventoryStack";
-import type { SkillId } from "../../game/skills";
 import type { SavedCharacterProgress } from "../../game/characterProgressStorage";
 import type { DeathPhase } from "../../systems/DeathSystem";
 import type { PlayerProgressState } from "./types";
@@ -20,7 +19,6 @@ export function applySavedProgressToSceneState(input: {
   setEquippedOutfit: (outfit: ReturnType<typeof normalizeOutfit>) => void;
   clearEquippedArmorVisual: () => void;
   setPlayerProgress: (progress: PlayerProgressState) => void;
-  setSkillLevels: (levels: Record<SkillId, number>) => void;
   setLearnedSpellIds: (ids: number[]) => void;
   setMacroBindings: (bindings: SavedCharacterProgress["macroBindings"]) => void;
   setKillStats: (stats: SavedCharacterProgress["killStats"]) => void;
@@ -34,11 +32,23 @@ export function applySavedProgressToSceneState(input: {
       slot ? { itemId: slot.itemId, count: slot.count } : null
     )
   );
-  input.setEquipment({ ...progress.equipment });
+  const equipment = { ...progress.equipment };
+  const inInventory = new Set<string>();
+  for (const stack of progress.inventory) {
+    if (stack?.itemId && stack.count > 0) {
+      inInventory.add(stack.itemId);
+    }
+  }
+  for (const slot of ["weapon", "shield", "helmet", "armor"] as const) {
+    const itemId = equipment[slot];
+    if (itemId && !inInventory.has(itemId)) {
+      equipment[slot] = null;
+    }
+  }
+  input.setEquipment(equipment);
   input.setEquippedOutfit("base");
   input.clearEquippedArmorVisual();
   input.setPlayerProgress({ ...progress.playerProgress });
-  input.setSkillLevels({ ...progress.skillLevels });
   input.setLearnedSpellIds([...progress.learnedSpellIds]);
   input.setMacroBindings(progress.macroBindings.map((b) => ({ ...b })));
   input.setKillStats({ ...progress.killStats });

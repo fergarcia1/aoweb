@@ -62,7 +62,7 @@ const RACE_BODY_PATHS: Record<string, string> = Object.fromEntries(
 
 /** Armaduras y ropa equipable (el cuerpo base va por raza). */
 const PLAYER_TEXTURE_KEYS: Record<Exclude<Outfit, "base">, string> = {
-  citizen: "citizenClothesBajos_std",
+  citizen: "citizenClothes_std",
   cuero: "cuero_std",
   placas: "placas_std",
   placasRojas: "placasRojas_std",
@@ -76,6 +76,18 @@ const PLAYER_TEXTURE_KEYS: Record<Exclude<Outfit, "base">, string> = {
   dragonBlancoBajos: "dragonBlancoBajos_std",
   dragonRojo: "dragonRojo_std",
   dragonRojoBajos: "dragonRojoBajos_std",
+  armaduraAse: "armaduraAse_std",
+  dragonBlancoFem: "dragonBlancoFem_std",
+  placasDoradas: "placasDoradas_std",
+  atuendoBanquero: "atuendoBanquero_std",
+  ropaEleganteBajos: "ropaEleganteBajos_std",
+  tunicaClerigo: "tunicaClerigo_std",
+  tunicaDruidaBajos: "tunicaDruidaBajos",
+  tunicaRmQuince: "tunicaRmQuinceBajos",
+  placasRojasBajos: "placasRojasBajos_std",
+  caballeroDeMuerte: "caballeroDeMuerte_std",
+  caballeroDeMuerteBajos: "caballeroDeMuerteBajos_std",
+  caballeroOscuro: "caballeroOscuro_std",
 };
 const OUTFIT_FEET_OFFSET: Record<Outfit, { x: number; y: number }> = {
   base: { x: 0, y: 0 },
@@ -93,9 +105,21 @@ const OUTFIT_FEET_OFFSET: Record<Outfit, { x: number; y: number }> = {
   dragonBlancoBajos: { x: 0, y: 0 },
   dragonRojo: { x: 0, y: 0 },
   dragonRojoBajos: { x: 0, y: 0 },
+  armaduraAse: { x: 0, y: 0 },
+  dragonBlancoFem: { x: 0, y: 0 },
+  placasDoradas: { x: 0, y: 0 },
+  atuendoBanquero: { x: 0, y: 0 },
+  ropaEleganteBajos: { x: 0, y: 0 },
+  tunicaClerigo: { x: 0, y: 0 },
+  tunicaDruidaBajos: { x: 0, y: 0 },
+  tunicaRmQuince: { x: 0, y: 0 },
+  placasRojasBajos: { x: 0, y: 0 },
+  caballeroDeMuerte: { x: 0, y: 0 },
+  caballeroDeMuerteBajos: { x: 0, y: 0 },
+  caballeroOscuro: { x: 0, y: 0 },
 };
 const PLAYER_SHEET_PATHS: Record<Exclude<Outfit, "base">, string> = {
-  citizen: "/assets/ao/armors/citizenClothesBajos_std.png",
+  citizen: "/assets/ao/armors/citizenClothes_std.png",
   cuero: "/assets/ao/armors/cuero_std.png",
   placas: "/assets/ao/armors/placas_std.png",
   placasRojas: "/assets/ao/armors/placasRojas_std.png",
@@ -109,10 +133,22 @@ const PLAYER_SHEET_PATHS: Record<Exclude<Outfit, "base">, string> = {
   dragonBlancoBajos: "/assets/ao/armors/dragonBlancoBajos_std.png",
   dragonRojo: "/assets/ao/armors/dragonRojo_std.png",
   dragonRojoBajos: "/assets/ao/armors/dragonRojoBajos_std.png",
+  armaduraAse: "/assets/ao/armors/armaduraAse_std.png",
+  dragonBlancoFem: "/assets/ao/armors/dragonBlancoFem_std.png",
+  placasDoradas: "/assets/ao/armors/placasDoradas_std.png",
+  atuendoBanquero: "/assets/ao/armors/atuendoBanquero_std.png",
+  ropaEleganteBajos: "/assets/ao/armors/ropaEleganteBajos_std.png",
+  tunicaClerigo: "/assets/ao/armors/tunicaClerigo_std.png",
+  tunicaDruidaBajos: "/assets/ao/armors/tunicaDruidaBajos.png",
+  tunicaRmQuince: "/assets/ao/armors/tunicaRmQuinceBajos.png",
+  placasRojasBajos: "/assets/ao/armors/placasRojasBajos_std.png",
+  caballeroDeMuerte: "/assets/ao/armors/caballeroDeMuerte_std.png",
+  caballeroDeMuerteBajos: "/assets/ao/armors/caballeroDeMuerteBajos_std.png",
+  caballeroOscuro: "/assets/ao/armors/caballeroOscuro_std.png",
 };
 
 const PLAYER_BAJOS_TEXTURE_KEYS: Record<Exclude<Outfit, "base">, string> = {
-  citizen: PLAYER_TEXTURE_KEYS.citizen,
+  citizen: "citizenClothesBajos_std",
   cuero: armorBajosTextureKey(PLAYER_TEXTURE_KEYS.cuero),
   placas: armorBajosTextureKey(PLAYER_TEXTURE_KEYS.placas),
   placasRojas: armorBajosTextureKey(PLAYER_TEXTURE_KEYS.placasRojas),
@@ -126,10 +162,22 @@ const PLAYER_BAJOS_TEXTURE_KEYS: Record<Exclude<Outfit, "base">, string> = {
   dragonBlancoBajos: PLAYER_TEXTURE_KEYS.dragonBlancoBajos,
   dragonRojo: armorBajosTextureKey(PLAYER_TEXTURE_KEYS.dragonRojo),
   dragonRojoBajos: PLAYER_TEXTURE_KEYS.dragonRojoBajos,
+  armaduraAse: armorBajosTextureKey(PLAYER_TEXTURE_KEYS.armaduraAse),
+  dragonBlancoFem: armorBajosTextureKey(PLAYER_TEXTURE_KEYS.dragonBlancoFem),
+  placasDoradas: armorBajosTextureKey(PLAYER_TEXTURE_KEYS.placasDoradas),
+  atuendoBanquero: armorBajosTextureKey(PLAYER_TEXTURE_KEYS.atuendoBanquero),
+  ropaEleganteBajos: PLAYER_TEXTURE_KEYS.ropaEleganteBajos,
+  tunicaClerigo: armorBajosTextureKey(PLAYER_TEXTURE_KEYS.tunicaClerigo),
+  tunicaDruidaBajos: PLAYER_TEXTURE_KEYS.tunicaDruidaBajos,
+  tunicaRmQuince: PLAYER_TEXTURE_KEYS.tunicaRmQuince,
+  placasRojasBajos: PLAYER_TEXTURE_KEYS.placasRojasBajos,
+  caballeroDeMuerte: armorBajosTextureKey(PLAYER_TEXTURE_KEYS.caballeroDeMuerte),
+  caballeroDeMuerteBajos: PLAYER_TEXTURE_KEYS.caballeroDeMuerteBajos,
+  caballeroOscuro: armorBajosTextureKey(PLAYER_TEXTURE_KEYS.caballeroOscuro),
 };
 
 const PLAYER_BAJOS_SHEET_PATHS: Record<Exclude<Outfit, "base">, string> = {
-  citizen: PLAYER_SHEET_PATHS.citizen,
+  citizen: "/assets/ao/armors/citizenClothesBajos_std.png",
   cuero: inferBajosSpritesheetPath(PLAYER_SHEET_PATHS.cuero),
   placas: inferBajosSpritesheetPath(PLAYER_SHEET_PATHS.placas),
   placasRojas: inferBajosSpritesheetPath(PLAYER_SHEET_PATHS.placasRojas),
@@ -143,12 +191,28 @@ const PLAYER_BAJOS_SHEET_PATHS: Record<Exclude<Outfit, "base">, string> = {
   dragonBlancoBajos: PLAYER_SHEET_PATHS.dragonBlancoBajos,
   dragonRojo: inferBajosSpritesheetPath(PLAYER_SHEET_PATHS.dragonRojo),
   dragonRojoBajos: PLAYER_SHEET_PATHS.dragonRojoBajos,
+  armaduraAse: inferBajosSpritesheetPath(PLAYER_SHEET_PATHS.armaduraAse),
+  dragonBlancoFem: inferBajosSpritesheetPath(PLAYER_SHEET_PATHS.dragonBlancoFem),
+  placasDoradas: inferBajosSpritesheetPath(PLAYER_SHEET_PATHS.placasDoradas),
+  atuendoBanquero: inferBajosSpritesheetPath(PLAYER_SHEET_PATHS.atuendoBanquero),
+  ropaEleganteBajos: PLAYER_SHEET_PATHS.ropaEleganteBajos,
+  tunicaClerigo: inferBajosSpritesheetPath(PLAYER_SHEET_PATHS.tunicaClerigo),
+  tunicaDruidaBajos: PLAYER_SHEET_PATHS.tunicaDruidaBajos,
+  tunicaRmQuince: PLAYER_SHEET_PATHS.tunicaRmQuince,
+  placasRojasBajos: PLAYER_SHEET_PATHS.placasRojasBajos,
+  caballeroDeMuerte: inferBajosSpritesheetPath(PLAYER_SHEET_PATHS.caballeroDeMuerte),
+  caballeroDeMuerteBajos: PLAYER_SHEET_PATHS.caballeroDeMuerteBajos,
+  caballeroOscuro: inferBajosSpritesheetPath(PLAYER_SHEET_PATHS.caballeroOscuro),
 };
+
+/** Spritesheet de orcos para ropa de ciudadano (mismo ítem, visual distinto). */
+const CITIZEN_ORC_SHEET_PATH = "/assets/ao/armors/citizenClothesOrc_std.png";
 
 export type PlayerArmorVisualOptions = {
   clasesBajas?: boolean;
   spritesheetStdPath?: string;
   spritesheetBajosPath?: string;
+  spritesheetPathsByRace?: Partial<Record<CharacterRaceId, string>>;
 };
 
 const playerInsetAliases = new Map<string, string>();
@@ -287,6 +351,11 @@ export function registerPlayerSprites(scene: Phaser.Scene): void {
       loadArmorSpritesheet(scene, bajosKey, bajosPath);
     }
   }
+  loadArmorSpritesheet(
+    scene,
+    textureKeyFromAssetPath(CITIZEN_ORC_SHEET_PATH),
+    CITIZEN_ORC_SHEET_PATH
+  );
 }
 
 /** Registra un spritesheet de armadura con ruta explícita (p. ej. desde datos del ítem). */
@@ -481,10 +550,33 @@ function shouldUseBajosArmorSheet(
   armorVisual?: PlayerArmorVisualOptions,
   raceId?: CharacterRaceId
 ): boolean {
+  if (raceId && armorVisual?.spritesheetPathsByRace?.[raceId]) {
+    return false;
+  }
   if (armorVisual?.clasesBajas === true) {
     return true;
   }
   return raceId != null && isShortRace(raceId);
+}
+
+function resolveEquippedArmorSheetPath(
+  outfit: Exclude<Outfit, "base">,
+  armorVisual?: PlayerArmorVisualOptions,
+  raceId?: CharacterRaceId
+): string {
+  if (raceId && armorVisual?.spritesheetPathsByRace?.[raceId]) {
+    return armorVisual.spritesheetPathsByRace[raceId]!;
+  }
+  const useBajos = shouldUseBajosArmorSheet(armorVisual, raceId);
+  if (armorVisual?.spritesheetStdPath || armorVisual?.spritesheetBajosPath) {
+    return useBajos
+      ? armorVisual.spritesheetBajosPath ??
+          inferBajosSpritesheetPath(
+            armorVisual.spritesheetStdPath ?? PLAYER_SHEET_PATHS[outfit]
+          )
+      : armorVisual.spritesheetStdPath ?? PLAYER_SHEET_PATHS[outfit];
+  }
+  return useBajos ? PLAYER_BAJOS_SHEET_PATHS[outfit] : PLAYER_SHEET_PATHS[outfit];
 }
 
 /** Clave de animación registrada en preload (evita `citizen_bajos` si solo hay un spritesheet). */
@@ -493,15 +585,8 @@ function resolveAnimOutfitKey(
   armorVisual?: PlayerArmorVisualOptions,
   raceId?: CharacterRaceId
 ): string {
-  if (armorVisual?.spritesheetStdPath || armorVisual?.spritesheetBajosPath) {
-    const useBajos = shouldUseBajosArmorSheet(armorVisual, raceId);
-    const assetPath = useBajos
-      ? armorVisual.spritesheetBajosPath ??
-        inferBajosSpritesheetPath(
-          armorVisual.spritesheetStdPath ?? PLAYER_SHEET_PATHS[outfit]
-        )
-      : armorVisual.spritesheetStdPath ?? PLAYER_SHEET_PATHS[outfit];
-    return textureKeyFromAssetPath(assetPath);
+  if (armorVisual?.spritesheetStdPath || armorVisual?.spritesheetBajosPath || armorVisual?.spritesheetPathsByRace) {
+    return textureKeyFromAssetPath(resolveEquippedArmorSheetPath(outfit, armorVisual, raceId));
   }
 
   const useBajos = shouldUseBajosArmorSheet(armorVisual, raceId);
@@ -528,13 +613,8 @@ function resolveArmorTextureKey(
   armorVisual?: PlayerArmorVisualOptions,
   raceId?: CharacterRaceId
 ): string {
-  if (armorVisual?.spritesheetStdPath || armorVisual?.spritesheetBajosPath) {
-    const useBajos = shouldUseBajosArmorSheet(armorVisual, raceId);
-    const assetPath = useBajos
-      ? armorVisual.spritesheetBajosPath ??
-        inferBajosSpritesheetPath(armorVisual.spritesheetStdPath ?? PLAYER_SHEET_PATHS[outfit])
-      : armorVisual.spritesheetStdPath ?? PLAYER_SHEET_PATHS[outfit];
-    return textureKeyFromAssetPath(assetPath);
+  if (armorVisual?.spritesheetStdPath || armorVisual?.spritesheetBajosPath || armorVisual?.spritesheetPathsByRace) {
+    return textureKeyFromAssetPath(resolveEquippedArmorSheetPath(outfit, armorVisual, raceId));
   }
 
   if (shouldUseBajosArmorSheet(armorVisual, raceId)) {
@@ -566,12 +646,32 @@ export function getDefaultArmorVisualForOutfit(
 ): PlayerArmorVisualOptions {
   return {
     clasesBajas:
-      outfit === "citizen" ||
       outfit === "dragonNegroBajos" ||
       outfit === "dragonBlancoBajos" ||
       outfit === "dragonRojoBajos",
     spritesheetStdPath: PLAYER_SHEET_PATHS[outfit],
     spritesheetBajosPath: PLAYER_BAJOS_SHEET_PATHS[outfit],
+  };
+}
+
+export function buildEquippedArmorVisualFromItem(item: {
+  equipSlot?: string;
+  outfitOverride?: Outfit;
+  clasesBajas?: boolean;
+  spritesheetStdPath?: string;
+  spritesheetBajosPath?: string;
+  spritesheetPathsByRace?: Partial<Record<CharacterRaceId, string>>;
+}): PlayerArmorVisualOptions | undefined {
+  if (item.equipSlot !== "armor" || !item.outfitOverride || item.outfitOverride === "base") {
+    return undefined;
+  }
+  const outfit = item.outfitOverride;
+  const defaults = getDefaultArmorVisualForOutfit(outfit);
+  return {
+    clasesBajas: item.clasesBajas ?? false,
+    spritesheetStdPath: item.spritesheetStdPath ?? defaults.spritesheetStdPath,
+    spritesheetBajosPath: item.spritesheetBajosPath ?? defaults.spritesheetBajosPath,
+    spritesheetPathsByRace: item.spritesheetPathsByRace,
   };
 }
 

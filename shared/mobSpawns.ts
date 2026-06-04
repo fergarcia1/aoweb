@@ -1,15 +1,16 @@
-import { MAP_MOB_SPAWNS, MOB_SPAWNS } from "../src/data/mobs";
-import { getMap } from "../src/maps/index";
-import { getNpcOccupiedTiles } from "../src/npcs/npcDefinitions";
-import { DEFAULT_MAP_ID } from "./constants";
+import { MAP_MOB_SPAWNS_BY_MAP_ID, MOB_DEFINITIONS } from "../game-data/mobs";
+import { getMap } from "./maps";
+import { getNpcOccupiedTiles } from "./npcDefinitions";
+import { DEFAULT_MOB_HITBOX, DEFAULT_MAP_ID } from "./constants";
 import { getMapSpawnTile, isMapTileWalkable } from "./mapWalkability";
+import { EDGE_TRANSITION_TRIGGER_DISTANCE } from "./mapConstants";
 
 export const TRAINING_DUMMY_ID = "training_dummy_spawn";
 export const TRAINING_DUMMY_HP = 10_000;
 /** Hitbox del muñeco de entrenamiento (debe coincidir con el cliente). */
-export const TRAINING_DUMMY_HITBOX_OFFSET_Y = -32;
-export const TRAINING_DUMMY_HITBOX_WIDTH_TILES = 1;
-export const TRAINING_DUMMY_HITBOX_HEIGHT_TILES = 2;
+export const TRAINING_DUMMY_HITBOX_OFFSET_Y = DEFAULT_MOB_HITBOX.offsetY;
+export const TRAINING_DUMMY_HITBOX_WIDTH_TILES = DEFAULT_MOB_HITBOX.widthTiles;
+export const TRAINING_DUMMY_HITBOX_HEIGHT_TILES = DEFAULT_MOB_HITBOX.heightTiles;
 
 function tileKey(tileX: number, tileY: number) {
   return `${tileX},${tileY}`;
@@ -24,7 +25,7 @@ function shuffleInPlace<T>(items: T[]) {
 
 /** Mapas con entradas en `mobs.json` → `mapSpawns`. */
 export function getMapIdsWithMobSpawns(): string[] {
-  return [...new Set(MAP_MOB_SPAWNS.map((entry) => entry.mapId))];
+  return [...MAP_MOB_SPAWNS_BY_MAP_ID.keys()];
 }
 
 /** Todos los tiles caminables del mapa (opcional: sin el tile de spawn de jugadores). */
@@ -40,8 +41,10 @@ export function collectMobSpawnCandidateTiles(
   );
   const candidates: { x: number; y: number }[] = [];
 
-  for (let y = 0; y < mapDef.height; y += 1) {
-    for (let x = 0; x < mapDef.width; x += 1) {
+  const padding = EDGE_TRANSITION_TRIGGER_DISTANCE;
+
+  for (let y = padding; y < mapDef.height - padding; y += 1) {
+    for (let x = padding; x < mapDef.width - padding; x += 1) {
       if (!isMapTileWalkable(mapId, x, y)) continue;
       if (excludeSpawn && x === spawn.tileX && y === spawn.tileY) continue;
       if (npcBlocked.has(tileKey(x, y))) continue;
@@ -82,12 +85,13 @@ export type MobPlacement = {
   hitboxOffsetY: number;
   hitboxWidthTiles: number;
   hitboxHeightTiles: number;
+  npcId?: number;
 };
 
 /** Mobs de un mapa: cantidad según `mapSpawns`, tiles al azar sin repetir. */
 export function buildInitialMobPlacements(mapId: string): MobPlacement[] {
-  const mapSpawns = MOB_SPAWNS.filter((spawn) => spawn.mapId === mapId);
-  if (mapSpawns.length === 0) {
+  const mapEntries = MAP_MOB_SPAWNS_BY_MAP_ID.get(mapId);
+  if (!mapEntries?.length) {
     return [];
   }
 
@@ -113,22 +117,34 @@ export function buildInitialMobPlacements(mapId: string): MobPlacement[] {
     return { x: spawn.tileX + 1, y: spawn.tileY };
   };
 
-  const placements: MobPlacement[] = mapSpawns.map((mobSpawn) => {
-    const tile = takeRandomFreeTile();
-    return {
-      spawnId: mobSpawn.id,
-      mobId: mobSpawn.mobId,
-      name: mobSpawn.name,
-      maxHp: mobSpawn.maxHp,
-      tileX: tile.x,
-      tileY: tile.y,
-      mapId,
-      behavior: mobSpawn.behavior,
-      hitboxOffsetY: mobSpawn.hitboxOffsetY,
-      hitboxWidthTiles: mobSpawn.hitboxWidthTiles,
-      hitboxHeightTiles: mobSpawn.hitboxHeightTiles,
-    };
-  });
+  const placements: MobPlacement[] = [];
+
+  for (const entry of mapEntries) {
+    const base = MOB_DEFINITIONS[entry.mobId];
+    for (let index = 0; index < entry.count; index += 1) {
+      const isExplicitTile = entry.tileX !== undefined && entry.tileY !== undefined;
+      const tile = isExplicitTile
+        ? { x: entry.tileX!, y: entry.tileY! }
+        : takeRandomFreeTile();
+      if (isExplicitTile) {
+        used.add(tileKey(tile.x, tile.y));
+      }
+      placements.push({
+        spawnId: `${entry.mobId}_${entry.mapId}_${index + 1}`,
+        mobId: entry.mobId,
+        name: base.name,
+        maxHp: base.maxHp,
+        tileX: tile.x,
+        tileY: tile.y,
+        mapId,
+        behavior: base.behavior,
+        hitboxOffsetY: base.hitboxOffsetY,
+        hitboxWidthTiles: base.hitboxWidthTiles,
+        hitboxHeightTiles: base.hitboxHeightTiles,
+        npcId: base.npcId,
+      });
+    }
+  }
 
   if (mapId === DEFAULT_MAP_ID) {
     const preferredTraining = {
@@ -154,6 +170,7 @@ export function buildInitialMobPlacements(mapId: string): MobPlacement[] {
       hitboxOffsetY: TRAINING_DUMMY_HITBOX_OFFSET_Y,
       hitboxWidthTiles: TRAINING_DUMMY_HITBOX_WIDTH_TILES,
       hitboxHeightTiles: TRAINING_DUMMY_HITBOX_HEIGHT_TILES,
+      npcId: undefined, // Let the dummy use modelId logic
     });
   }
 

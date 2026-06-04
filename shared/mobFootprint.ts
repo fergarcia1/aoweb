@@ -34,3 +34,33 @@ export function mobFootprintOccupiesTile(
     hitboxHeightTiles
   ).some((tile) => tile.x === tileX && tile.y === tileY);
 }
+
+/** Ancla de click/hechizos (coincide con getDummyHitTile del cliente). */
+export function getMobHitAnchorTile(
+  anchorTileX: number,
+  anchorTileY: number,
+  hitboxOffsetTiles: number
+): { x: number; y: number } {
+  return { x: anchorTileX, y: anchorTileY + hitboxOffsetTiles };
+}
+
+/** Footprint de objetivo (click, hechizos); distinto del bloqueo de movimiento. */
+export function mobTargetFootprintOccupiesTile(
+  tileX: number,
+  tileY: number,
+  anchorTileX: number,
+  anchorTileY: number,
+  hitboxOffsetTiles: number,
+  hitboxWidthTiles: number,
+  hitboxHeightTiles: number
+): boolean {
+  const hit = getMobHitAnchorTile(anchorTileX, anchorTileY, hitboxOffsetTiles);
+  return mobFootprintOccupiesTile(
+    tileX,
+    tileY,
+    hit.x,
+    hit.y,
+    hitboxWidthTiles,
+    hitboxHeightTiles
+  );
+}

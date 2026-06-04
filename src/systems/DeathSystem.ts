@@ -1,5 +1,9 @@
 import type { StaticNpcDefinition } from "../npcs/types";
-import { getPriestSpawnForHome, PRIEST_REVIVE_MAX_TILE_DISTANCE } from "../game/deathConfig";
+import { getPriestSpawnForHome, GHOST_PLAYER_ALPHA, PRIEST_REVIVE_MAX_TILE_DISTANCE } from "../game/deathConfig";
+import {
+  findWalkableTileBeside,
+  getNearestPriestSpawn,
+} from "../game/priestSpawn";
 import {
   getItemDefinition,
   itemDropsOnDeath,
@@ -15,6 +19,7 @@ import {
   saveCharacterSlots,
 } from "../data/characters";
 import { getMap } from "../maps/index";
+import { isMapTileWalkable } from "../../shared/mapWalkability";
 
 export type DeathPhase = "alive" | "ghost_offer" | "ghost";
 
@@ -65,6 +70,8 @@ export type DeathCallbacks = {
   ) => void;
   /** En multijugador el servidor dropea el loot al morir. */
   isServerAuthoritativeLoot?: () => boolean;
+  /** Marca revive en sacerdote pendiente de confirmación del servidor. */
+  setServerReviveSyncPending?: (value: boolean) => void;
 };
 
 export class DeathSystem {
@@ -109,16 +116,23 @@ export class DeathSystem {
   handlePlayerDeath() {
     if (this.deathPhase !== "alive") return;
 
+    const serverAuthoritative = this.cb.isServerAuthoritativeLoot?.() ?? false;
     this.deathPhase = "ghost_offer";
     this.cb.setPlayerHp(0);
     this.cb.refreshHud();
-    this.cb.scheduleProgressSave();
+    if (!serverAuthoritative) {
+      this.cb.scheduleProgressSave();
+    }
     this.cb.stopMeditation("Caíste en combate.");
     this.cb.cancelSpellTargeting();
 
-    this.dropAllItemsOnDeath();
+    if (!serverAuthoritative) {
+      this.dropAllItemsOnDeath();
+    }
     this.applyGhostVisual();
-    this.cb.persistCharacterProgress();
+    if (!serverAuthoritative) {
+      this.cb.persistCharacterProgress();
+    }
     this.cb.getDeathOverlay()?.show(this.cb.getGameViewportRect());
     this.cb.addCombatLine("Has muerto. Perdiste tu equipamiento y tu inventario.");
     this.cb.addChatLine(
@@ -127,12 +141,21 @@ export class DeathSystem {
   }
 
   dropAllItemsOnDeath() {
+    if (this.cb.isServerAuthoritativeLoot?.() ?? false) {
+      return;
+    }
+
     const inventory = this.cb.getInventory();
     const tile = this.cb.getPlayerTile();
-    const spawnOnGround = !(this.cb.isServerAuthoritativeLoot?.() ?? false);
+    const serverAuthoritative = this.cb.isServerAuthoritativeLoot?.() ?? false;
+    const spawnOnGround = !serverAuthoritative;
+    const inventoryWasEmpty = inventory.every((slot) => slot === null);
     let droppedInventoryStacks = 0;
     let droppedEquipmentPieces = 0;
     let keptProtectedItems = 0;
+
+    const equipment = this.cb.getEquipment();
+    const droppedItemIds = new Set<ItemId>();
 
     for (let slotIndex = 0; slotIndex < inventory.length; slotIndex += 1) {
       const stack = inventory[slotIndex];
@@ -147,26 +170,47 @@ export class DeathSystem {
       if (spawnOnGround) {
         this.cb.createWorldItem(stack.itemId, tile.x, tile.y, stack.count);
       }
-      this.cb.clearInventorySlot(slotIndex);
+      if (!serverAuthoritative) {
+        this.cb.clearInventorySlot(slotIndex);
+      }
+      droppedItemIds.add(stack.itemId);
       droppedInventoryStacks += 1;
     }
 
     const equipmentSlots: EquipmentSlot[] = ["weapon", "shield", "helmet", "armor"];
-    const equipment = this.cb.getEquipment();
     for (const slot of equipmentSlots) {
       const itemId = equipment[slot];
       if (!itemId) continue;
 
+      if (droppedItemIds.has(itemId)) {
+        if (!serverAuthoritative) {
+          this.cb.clearEquipmentSlot(slot);
+        }
+        continue;
+      }
+
+      // Inventario ya vacío en MMO: el servidor dropeó todo; no duplicar equipados en el suelo.
+      if (serverAuthoritative || inventoryWasEmpty) {
+        if (!serverAuthoritative) {
+          this.cb.clearEquipmentSlot(slot);
+        }
+        continue;
+      }
+
       const item = getItemDefinition(itemId);
       if (!itemDropsOnDeath(item)) {
-        const { added } = addToInventory(inventory as (InventorySlot | null)[], itemId, 1);
-        if (added > 0) {
-          this.cb.clearEquipmentSlot(slot);
-          keptProtectedItems += 1;
+        if (!serverAuthoritative) {
+          const { added } = addToInventory(inventory as (InventorySlot | null)[], itemId, 1);
+          if (added > 0) {
+            this.cb.clearEquipmentSlot(slot);
+            keptProtectedItems += 1;
+          } else {
+            this.cb.addChatLine(
+              `No hay espacio para guardar ${item.name}; sigue equipado pero oculto como fantasma.`
+            );
+          }
         } else {
-          this.cb.addChatLine(
-            `No hay espacio para guardar ${item.name}; sigue equipado pero oculto como fantasma.`
-          );
+          keptProtectedItems += 1;
         }
         continue;
       }
@@ -174,21 +218,27 @@ export class DeathSystem {
       if (spawnOnGround) {
         this.cb.createWorldItem(itemId, tile.x, tile.y, 1);
       }
-      this.cb.clearEquipmentSlot(slot);
+      if (!serverAuthoritative) {
+        this.cb.clearEquipmentSlot(slot);
+      }
       droppedEquipmentPieces += 1;
     }
 
-    if (!this.cb.getEquipment().armor) {
+    if (!serverAuthoritative && !this.cb.getEquipment().armor) {
       this.cb.setEquippedOutfit("base");
       this.cb.setEquippedArmorVisual(undefined);
     }
 
     if (droppedInventoryStacks > 0 || droppedEquipmentPieces > 0 || keptProtectedItems > 0) {
-      this.cb.refreshInventoryUi();
+      if (!serverAuthoritative) {
+        this.cb.refreshInventoryUi();
+      }
     }
 
     if (droppedInventoryStacks > 0 || droppedEquipmentPieces > 0) {
-      this.cb.addChatLine("Soltaste todo lo que llevabas puesto y en tu inventario.");
+      if (!serverAuthoritative) {
+        this.cb.addChatLine("Soltaste todo lo que llevabas puesto y en tu inventario.");
+      }
     }
     if (keptProtectedItems > 0) {
       this.cb.addChatLine("Conservaste los objetos que no se pueden dropear al morir.");
@@ -223,9 +273,9 @@ export class DeathSystem {
     if (helmet) helmet.setVisible(false);
 
     player.clearTint();
-    player.setAlpha(1);
+    player.setAlpha(GHOST_PLAYER_ALPHA);
     face.clearTint();
-    face.setAlpha(1);
+    face.setAlpha(GHOST_PLAYER_ALPHA);
     this.cb.syncPlayerBodyAndFace();
     this.cb.playFacingAnim("idle");
   }
@@ -255,7 +305,6 @@ export class DeathSystem {
       helmet.setAlpha(1);
     }
     this.cb.syncEquippedHeldItemVisuals();
-    this.cb.playFacingAnim("idle");
   }
 
   stayAsGhost() {
@@ -270,9 +319,7 @@ export class DeathSystem {
 
   acceptPriestRevival() {
     if (this.deathPhase === "alive") return;
-    if (!this.isNearHomePriest()) {
-      this.teleportToHomePriest();
-    }
+    this.teleportToNearestPriest();
     this.reviveAtPriest();
   }
 
@@ -281,9 +328,7 @@ export class DeathSystem {
       this.cb.addChatLine("Solo podés usar /hogar cuando estás muerto o en forma fantasma.");
       return;
     }
-    if (!this.isNearHomePriest()) {
-      this.teleportToHomePriest();
-    }
+    this.teleportToNearestPriest();
     this.reviveAtPriest();
   }
 
@@ -300,9 +345,17 @@ export class DeathSystem {
     return distance <= PRIEST_REVIVE_MAX_TILE_DISTANCE;
   }
 
-  teleportToHomePriest() {
-    const priest = getPriestSpawnForHome(this.homeMapId);
-    const beside = this.findWalkableTileBeside(priest.tileX, priest.tileY);
+  teleportToNearestPriest() {
+    const tile = this.cb.getPlayerTile();
+    const priest = getNearestPriestSpawn(
+      this.cb.getCurrentMapId(),
+      tile.x,
+      tile.y,
+      this.homeMapId
+    );
+    const beside = findWalkableTileBeside(priest.tileX, priest.tileY, (x, y) =>
+      isMapTileWalkable(priest.mapId, x, y)
+    );
 
     if (priest.mapId !== this.cb.getCurrentMapId()) {
       this.cb.changeMap({
@@ -317,19 +370,8 @@ export class DeathSystem {
     this.cb.teleportPlayerLocal(beside.tileX, beside.tileY);
   }
 
-  findWalkableTileBeside(tileX: number, tileY: number): { tileX: number; tileY: number } {
-    const candidates = [
-      { tileX: tileX - 1, tileY },
-      { tileX: tileX + 1, tileY },
-      { tileX, tileY: tileY - 1 },
-      { tileX, tileY: tileY + 1 },
-    ];
-    for (const candidate of candidates) {
-      if (this.cb.isTileWalkable(candidate.tileX, candidate.tileY)) {
-        return candidate;
-      }
-    }
-    return { tileX, tileY };
+  teleportToHomePriest() {
+    this.teleportToNearestPriest();
   }
 
   tryReviveAtPriestNpc(priest: StaticNpcDefinition) {
@@ -362,25 +404,38 @@ export class DeathSystem {
     this.cb.setPlayerHp(progress.hpMax);
     this.cb.refreshHud();
     const tile = this.cb.getPlayerTile();
+    this.cb.setServerReviveSyncPending?.(true);
     this.cb.notifyServerRevive?.("priest", tile.x, tile.y, this.cb.getCurrentMapId());
     this.cb.scheduleProgressSave();
     this.cb.addCombatLine("El sacerdote te devolvió la vida.");
-    this.cb.addChatLine(`Fuiste revivido por el sacerdote en ${getMap(this.homeMapId).name}.`);
+    const priest = getNearestPriestSpawn(
+      this.cb.getCurrentMapId(),
+      tile.x,
+      tile.y,
+      this.homeMapId
+    );
+    this.cb.addChatLine(`Fuiste revivido por el sacerdote en ${getMap(priest.mapId).name}.`);
     this.cb.playSpawnEffect();
   }
 
   reviveFromAlly() {
     if (this.deathPhase === "alive") return;
+    const progress = this.cb.getPlayerProgress();
+    this.applyRevivedFromServer(Math.max(1, Math.floor(progress.hpMax * 0.35)));
+    const tile = this.cb.getPlayerTile();
+    this.cb.notifyServerRevive?.("ally", tile.x, tile.y, this.cb.getCurrentMapId());
+    this.cb.addCombatLine("Un aliado te revivió.");
+  }
+
+  /** Revive autoritativo del servidor (hechizo Resucitar); no reenvía revive al servidor. */
+  applyRevivedFromServer(hp: number) {
+    if (this.deathPhase === "alive") return;
     this.deathPhase = "alive";
     this.cb.getDeathOverlay()?.hide();
     this.clearGhostVisual();
-    const progress = this.cb.getPlayerProgress();
-    this.cb.setPlayerHp(Math.max(1, Math.floor(progress.hpMax * 0.35)));
+    this.cb.setPlayerHp(Math.max(1, Math.floor(hp)));
     this.cb.refreshHud();
-    const tile = this.cb.getPlayerTile();
-    this.cb.notifyServerRevive?.("ally", tile.x, tile.y, this.cb.getCurrentMapId());
     this.cb.scheduleProgressSave();
-    this.cb.addCombatLine("Un aliado te revivió.");
     this.cb.playSpawnEffect();
   }
 

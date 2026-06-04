@@ -9,6 +9,7 @@ export function getMultiplayerWsUrl(): string {
   return `${protocol}//${host}:3001`;
 }
 
+/** Siempre MMO salvo tests/build con VITE_MULTIPLAYER=0 explícito. */
 export function isMultiplayerEnabled(): boolean {
   const flag = import.meta.env.VITE_MULTIPLAYER as string | undefined;
   if (flag === "0" || flag === "false") {

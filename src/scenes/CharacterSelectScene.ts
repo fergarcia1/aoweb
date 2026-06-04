@@ -6,6 +6,7 @@ import {
   formatRaceGenderLabel,
   getFactionNameColors,
   setActiveCharacterSlotIndex,
+  saveCharacterSlots,
   type CharacterSlot,
   type SavedCharacter,
 } from "../data/characters";
@@ -165,6 +166,31 @@ export class CharacterSelectScene extends Phaser.Scene {
         })
         .setOrigin(0.5);
       container.add(playHint);
+
+      const deleteBtn = this.add
+        .text(SLOT_WIDTH / 2 - 16, -SLOT_HEIGHT / 2 + 16, "✖", {
+          fontFamily: "Segoe UI, Tahoma, sans-serif",
+          fontSize: "18px",
+          color: "#ff4444",
+          fontStyle: "bold",
+        })
+        .setOrigin(0.5)
+        .setInteractive({ useHandCursor: true });
+
+      deleteBtn.on("pointerover", () => deleteBtn.setColor("#ff0000"));
+      deleteBtn.on("pointerout", () => deleteBtn.setColor("#ff4444"));
+      deleteBtn.on("pointerdown", (pointer: any, localX: any, localY: any, event: any) => {
+        event.stopPropagation();
+      });
+      deleteBtn.on("pointerup", (pointer: any, localX: any, localY: any, event: any) => {
+        event.stopPropagation();
+        if (confirm(`¿Estás seguro de que querés borrar a ${character.name}?`)) {
+          this.slots[index] = null;
+          saveCharacterSlots(this.slots);
+          this.scene.restart();
+        }
+      });
+      container.add(deleteBtn);
     }
 
     const hitArea = this.add

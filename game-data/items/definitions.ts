@@ -1,5 +1,6 @@
 import type { Facing } from "../../shared/types";
 import type { Outfit } from "../outfits";
+import type { ItemSpecialUse } from "./itemSpecialUse";
 import type {
   ArmorData,
   CharacterClassId,
@@ -7,6 +8,7 @@ import type {
   HelmetData,
   HelmetItemId,
   MiscItemData,
+  MiscItemId,
   ShieldData,
   ShieldItemId,
   WeaponData,
@@ -34,13 +36,25 @@ export type ItemId =
   | "armor_tunica_nigro"
   | "armor_tunica_azul"
   | "armor_tunica_cruz"
-  | "armor_citizen_bajos"
+  | "armor_citizen"
   | "armor_dragon_negro"
   | "armor_dragon_negro_bajos"
   | "armor_dragon_blanco"
   | "armor_dragon_blanco_bajos"
   | "armor_dragon_rojo"
   | "armor_dragon_rojo_bajos"
+  | "armor_asesino"
+  | "armor_dragon_blanco_fem"
+  | "armor_placas_doradas"
+  | "armor_atuendo_banquero"
+  | "armor_ropa_elegante_bajos"
+  | "armor_tunica_clerigo"
+  | "armor_tunica_druida_bajos"
+  | "armor_tunica_rm_quince"
+  | "armor_placas_rojas_bajos"
+  | "armor_caballero_muerte"
+  | "armor_caballero_muerte_bajos"
+  | "armor_caballero_oscuro"
   | "potion_hp"
   | "potion_mp"
   | "potion_strength"
@@ -48,7 +62,7 @@ export type ItemId =
   | "scroll_implosion"
   | "scroll_paralizar"
   | "scroll_tormenta"
-  | "anillo_espectral";
+  | MiscItemId;
 
 export type ItemType = "weapon" | "shield" | "helmet" | "armor" | "consumable" | "misc";
 
@@ -72,6 +86,8 @@ export type ItemConsumableEffects = {
   /** Bonificación temporal de Fuerza o Agilidad (pociones verde/amarilla). */
   attributeBuff?: "strength" | "agility";
 };
+
+export type { ItemSpecialUse };
 
 export const DEFAULT_MAX_ITEM_STACK = 10_000;
 
@@ -105,6 +121,10 @@ export type ItemDefinition = {
   equippedFrameHeight?: number;
   equippedIdleFrame?: number;
   equippedWalkFrame?: number;
+  /** Uso especial (barca, montura, gema de clan, forma druida, etc.). */
+  specialUse?: ItemSpecialUse;
+  /** Si true, doble click en inventario intenta usar el objeto. */
+  usableFromInventory?: boolean;
   /** Columnas de la grilla (p. ej. 6 en hoja 192×192). */
   equippedSheetCols?: number;
   /** Columnas de animación por fila SWAD. */
@@ -122,6 +142,9 @@ export type ItemDefinition = {
   clasesBajas?: boolean;
   spritesheetStdPath?: string;
   spritesheetBajosPath?: string;
+  spritesheetPathsByRace?: Partial<
+    Record<"human" | "elf" | "drow" | "dwarf" | "gnome" | "orc" | "fantasma", string>
+  >;
   /** Si true, no se dropea al morir y permanece en inventario/equipo (ej. barca). */
   noDropeaAlMorir?: boolean;
   /** @deprecated Usar noDropeaAlMorir. Si false, no se dropea al morir. */
@@ -299,6 +322,7 @@ function buildArmorItemDefinition(armor: ArmorData): ItemDefinition {
     clasesBajas: armor.clasesBajas,
     spritesheetStdPath: armor.spritesheetStdPath,
     spritesheetBajosPath: armor.spritesheetBajosPath,
+    spritesheetPathsByRace: armor.spritesheetPathsByRace,
     outfitOverride: armor.outfitOverride,
   };
   applyDeathDropPolicy(definition, armor);
@@ -340,7 +364,7 @@ const CONSUMABLE_DEFINITIONS = Object.fromEntries(
 function buildMiscItemDefinition(misc: MiscItemData): ItemDefinition {
   const textureKey = `item_${misc.itemId}`;
   const definition: ItemDefinition = {
-    id: misc.itemId,
+    id: misc.itemId as MiscItemId,
     idItem: misc.idItem,
     name: misc.nombre,
     type: "misc",
@@ -350,6 +374,8 @@ function buildMiscItemDefinition(misc: MiscItemData): ItemDefinition {
     value: misc.valor,
     nivelMinimo: misc.nivelMinimo,
     usableBy: misc.usableBy,
+    specialUse: misc.specialUse,
+    usableFromInventory: misc.usableFromInventory,
   };
   applyDeathDropPolicy(definition, misc);
   return definition;
@@ -357,7 +383,7 @@ function buildMiscItemDefinition(misc: MiscItemData): ItemDefinition {
 
 const MISC_DEFINITIONS = Object.fromEntries(
   MISC_ITEMS.map((misc) => [misc.itemId, buildMiscItemDefinition(misc)])
-) as Record<MiscItemData["itemId"], ItemDefinition>;
+) as Record<MiscItemId, ItemDefinition>;
 
 export const ITEM_DEFINITIONS: Record<ItemId, ItemDefinition> = {
   ...WEAPON_DEFINITIONS,
@@ -368,12 +394,38 @@ export const ITEM_DEFINITIONS: Record<ItemId, ItemDefinition> = {
   ...MISC_DEFINITIONS,
 };
 
+/** IDs legacy → id actual del catálogo. */
+const ITEM_ID_ALIASES: Record<string, ItemId> = {
+  armor_citizen_bajos: "armor_citizen",
+};
+
+export function normalizeItemId(itemId: string): ItemId | null {
+  const resolved = (ITEM_ID_ALIASES[itemId] ?? itemId) as ItemId;
+  return resolved in ITEM_DEFINITIONS ? resolved : null;
+}
+
+export function tryGetItemDefinition(itemId: string): ItemDefinition | undefined {
+  const resolved = normalizeItemId(itemId);
+  if (!resolved) {
+    return undefined;
+  }
+  return ITEM_DEFINITIONS[resolved];
+}
+
 export function getItemDefinition(itemId: ItemId): ItemDefinition {
-  return ITEM_DEFINITIONS[itemId];
+  const definition = tryGetItemDefinition(itemId);
+  if (!definition) {
+    throw new Error(`Unknown item id: ${itemId}`);
+  }
+  return definition;
 }
 
 export function getItemMaxStack(itemId: ItemId): number {
-  return ITEM_DEFINITIONS[itemId].maxStack ?? DEFAULT_MAX_ITEM_STACK;
+  const definition = tryGetItemDefinition(itemId);
+  if (!definition) {
+    return DEFAULT_MAX_ITEM_STACK;
+  }
+  return definition.maxStack ?? DEFAULT_MAX_ITEM_STACK;
 }
 
 export const ALL_ITEM_IDS = Object.keys(ITEM_DEFINITIONS) as ItemId[];

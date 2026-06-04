@@ -7,6 +7,7 @@ import {
   MOB_VISUAL_CONFIGS,
   MOB_WALK_ANIM_FRAME_RATE_SCALE,
   mobTextureKey,
+  resolveDirectionSheetFacingLayout,
 } from "./mobVisualConfig";
 import { getMobWalkFrameIndices } from "./mobFrameIndex";
 
@@ -21,9 +22,7 @@ function getMobStepDurationMs(modelId: MobModelId): number {
   return Math.ceil(STEP_DURATION_MS / ratio);
 }
 
-function computeMobWalkFrameRate(modelId: MobModelId): number {
-  const visual = MOB_VISUAL_CONFIGS[modelId];
-  const walkCount = visual.walkFrames.length;
+function computeMobWalkFrameRate(modelId: MobModelId, walkCount: number): number {
   const stepSeconds = getMobStepDurationMs(modelId) / 1000;
   const syncedRate = walkCount / stepSeconds;
   return Math.max(1, syncedRate * MOB_WALK_ANIM_FRAME_RATE_SCALE);
@@ -44,7 +43,6 @@ function getTextureFrameMax(scene: Phaser.Scene, textureKey: string): number {
 export function registerMobWalkAnimations(scene: Phaser.Scene): void {
   (Object.keys(MOB_VISUAL_CONFIGS) as MobModelId[]).forEach((modelId) => {
     const visual = MOB_VISUAL_CONFIGS[modelId];
-    const frameRate = computeMobWalkFrameRate(modelId);
 
     FACINGS.forEach((facing) => {
       const walkKey = mobAnimationKey(modelId, facing);
@@ -57,7 +55,12 @@ export function registerMobWalkAnimations(scene: Phaser.Scene): void {
           ? mobTextureKey(modelId, facing)
           : mobTextureKey(modelId);
 
-      const frameIndices = getMobWalkFrameIndices(visual, facing).filter((frame) => {
+      const walkFrames =
+        visual.type === "directionSheets"
+          ? resolveDirectionSheetFacingLayout(visual, facing).walkFrames
+          : getMobWalkFrameIndices(visual, facing);
+
+      const frameIndices = walkFrames.filter((frame) => {
         const max = getTextureFrameMax(scene, textureKey);
         return max >= 0 && frame >= 0 && frame <= max;
       });
@@ -65,6 +68,8 @@ export function registerMobWalkAnimations(scene: Phaser.Scene): void {
       if (frameIndices.length === 0) {
         return;
       }
+
+      const frameRate = computeMobWalkFrameRate(modelId, frameIndices.length);
 
       scene.anims.create({
         key: walkKey,

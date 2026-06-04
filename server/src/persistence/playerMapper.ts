@@ -1,18 +1,21 @@
 import type { PlayerSession } from "../PlayerSession";
 import type {
+  BankSlotSnapshot,
   CharacterRow,
   CharacterSnapshot,
   PersistedCharacterSnapshot,
+  SpellSnapshot,
 } from "./types";
+import { expRequiredForLevel } from "../../../game-data/progressFormulas";
 
 /**
  * Maps runtime PlayerSession -> persistence snapshot.
- * Inventory/bank/skills/spells are placeholders until server-side authority is completed.
  */
 export function buildSnapshotFromPlayerSession(
   session: PlayerSession,
   accountId: string | null = null
 ): PersistedCharacterSnapshot {
+  const level = Math.max(1, Math.floor(session.level));
   const character: CharacterSnapshot = {
     id: session.characterId,
     accountId: session.accountId ?? accountId,
@@ -27,12 +30,15 @@ export function buildSnapshotFromPlayerSession(
     classId: session.classId,
     factionId: session.factionId,
     faceIndex: session.faceIndex,
-    level: session.level,
+    level,
+    exp: Math.max(0, Math.floor(session.exp)),
+    expToNext: Math.max(1, Math.floor(session.expToNext)),
     hp: session.hp,
     hpMax: session.hpMax,
     mp: session.mp,
     mpMax: session.mpMax,
     gold: session.gold,
+    bankGold: Math.max(0, Math.floor(session.bankGold)),
     equipment: {
       weaponItemId: session.equipment.weaponId,
       shieldItemId: session.equipment.shieldId,
@@ -47,12 +53,16 @@ export function buildSnapshotFromPlayerSession(
     },
   };
 
+  const spells: SpellSnapshot[] = [...session.learnedSpellIds]
+    .filter((id) => Number.isFinite(id) && id > 0)
+    .sort((a, b) => a - b)
+    .map((spellId) => ({ spellId }));
+
   return {
     character,
     inventorySlots: session.inventorySlots.map((slot) => ({ ...slot })),
-    bankSlots: [],
-    skills: [],
-    spells: [],
+    bankSlots: session.bankSlots.map((slot) => ({ ...slot })),
+    spells,
   };
 }
 
@@ -72,11 +82,14 @@ export function mapCharacterSnapshotToRow(snapshot: CharacterSnapshot): Characte
     faction_id: snapshot.factionId,
     face_index: snapshot.faceIndex,
     level: snapshot.level,
+    exp: snapshot.exp,
+    exp_to_next: snapshot.expToNext,
     hp: snapshot.hp,
     hp_max: snapshot.hpMax,
     mp: snapshot.mp,
     mp_max: snapshot.mpMax,
     gold: snapshot.gold,
+    bank_gold: snapshot.bankGold,
     weapon_item_id: snapshot.equipment.weaponItemId,
     shield_item_id: snapshot.equipment.shieldItemId,
     helmet_item_id: snapshot.equipment.helmetItemId,
@@ -88,7 +101,15 @@ export function mapCharacterSnapshotToRow(snapshot: CharacterSnapshot): Characte
   };
 }
 
-export function mapCharacterRowToSnapshot(row: CharacterRow): PersistedCharacterSnapshot {
+export function mapCharacterRowToSnapshot(
+  row: CharacterRow,
+  extras?: {
+    inventorySlots?: PersistedCharacterSnapshot["inventorySlots"];
+    bankSlots?: BankSlotSnapshot[];
+    spells?: SpellSnapshot[];
+  }
+): PersistedCharacterSnapshot {
+  const level = Math.max(1, Math.floor(row.level));
   return {
     character: {
       id: row.id,
@@ -104,12 +125,16 @@ export function mapCharacterRowToSnapshot(row: CharacterRow): PersistedCharacter
       classId: row.class_id,
       factionId: row.faction_id,
       faceIndex: row.face_index,
-      level: row.level,
+      level,
+      exp: Math.max(0, Math.floor(row.exp)),
+      expToNext:
+        row.exp_to_next > 0 ? Math.floor(row.exp_to_next) : expRequiredForLevel(level),
       hp: row.hp,
       hpMax: row.hp_max,
       mp: row.mp,
       mpMax: row.mp_max,
       gold: row.gold,
+      bankGold: Math.max(0, Math.floor(row.bank_gold)),
       equipment: {
         weaponItemId: row.weapon_item_id,
         shieldItemId: row.shield_item_id,
@@ -123,9 +148,8 @@ export function mapCharacterRowToSnapshot(row: CharacterRow): PersistedCharacter
         expiresAtMs: row.attr_buffs_expires_at_ms,
       },
     },
-    inventorySlots: [],
-    bankSlots: [],
-    skills: [],
-    spells: [],
+    inventorySlots: extras?.inventorySlots ?? [],
+    bankSlots: extras?.bankSlots ?? [],
+    spells: extras?.spells ?? [],
   };
 }

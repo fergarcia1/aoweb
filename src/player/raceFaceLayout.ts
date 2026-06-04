@@ -37,8 +37,24 @@ const RACE_FACE_LAYOUT: Record<string, FaceLayout> = {
   elf_female: layout(0.75, 35),
   drow_male: layout(0.75, 35),
   drow_female: layout(0.75, 35),
-  dwarf_male: layout(0.78, 32),
-  dwarf_female: layout(0.78, 32),
+  dwarf_male: {
+    scale: 0.78,
+    offset: {
+      down: { x: -0.5, y: 23 },
+      up: { x: -0.5, y: 26 },
+      left: { x: 2, y: 26 },
+      right: { x: -1, y: 26 },
+    },
+  },
+  dwarf_female: {
+    scale: 0.78,
+    offset: {
+      down: { x: -0.5, y: 27 },
+      up: { x: -0.5, y: 32 },
+      left: { x: 2, y: 31 },
+      right: { x: -2, y: 31 },
+    },
+  },
   gnome_male: layout(0.75, 27),
   gnome_female: layout(0.75, 27),
   orc_male: layout(0.82, 39),

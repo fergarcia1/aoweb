@@ -19,8 +19,8 @@ export { ATTRIBUTE_POTION_BUFF_DURATION_MS, ATTRIBUTE_POTION_BUFF_MAX, STAT_MAX,
 const BASELINE_STRENGTH = 19;
 
 export const RACE_BASE_STATS: Record<CharacterRaceId, CoreStats> = {
-  human: { strength: 19, agility: 17, intelligence: 16, constitution: 19 },
-  elf: { strength: 17, agility: 20, intelligence: 20, constitution: 16 },
+  human: { strength: 19, agility: 18, intelligence: 15, constitution: 19 },
+  elf: { strength: 17, agility: 20, intelligence: 20, constitution: 17 },
   drow: { strength: 18, agility: 19, intelligence: 19, constitution: 17 },
   dwarf: { strength: 19, agility: 18, intelligence: 15, constitution: 21 },
   gnome: { strength: 15, agility: 18, intelligence: 21, constitution: 15 },
@@ -30,14 +30,18 @@ export const RACE_BASE_STATS: Record<CharacterRaceId, CoreStats> = {
 
 export const CLASS_STAT_MODIFIERS: Record<CharacterClassId, CoreStats> = {
   paladin: { strength: 2, constitution: 3, agility: 0, intelligence: -2 },
+  clerigo: { strength: 0, constitution: 2, agility: 1, intelligence: 2 },
   mago: { strength: -3, constitution: -1, agility: -3, intelligence: 4 },
+  nigromante: { strength: -1, constitution: -1, agility: -1, intelligence: 4 },
   druida: { strength: -1, constitution: -1, agility: 1, intelligence: 3 },
+  bardo: { strength: 0, constitution: 1, agility: 3, intelligence: 2 },
   guerrero: { strength: 4, constitution: 4, agility: 2, intelligence: -10 },
   cazador: { strength: 2, constitution: 3, agility: 2, intelligence: -10 },
   asesino: { strength: 1, constitution: 2, agility: 4, intelligence: 1 },
 };
 
 import { CLASS_USES_MANA } from "../../game-data/classes";
+import { getMaxVitalsAtLevel } from "../../game-data/vitalProgression";
 
 export { CLASS_USES_MANA };
 
@@ -101,18 +105,24 @@ export function applyStatsWithPotionBuffs(
   };
 }
 
+/** Vida y maná iniciales / máximos base: 2 por punto de CON e INT. */
 export function getBaseVitalsFromStats(stats: CoreStats): { hpMax: number; mpMax: number } {
   return {
-    hpMax: 62 + stats.constitution * 2,
-    mpMax: 12 + stats.intelligence * 2,
+    hpMax: Math.max(1, stats.constitution * 2),
+    mpMax: Math.max(0, stats.intelligence * 2),
   };
 }
 
 export function getPreviewVitals(
   stats: CoreStats,
-  classId: CharacterClassId
+  classId: CharacterClassId,
+  race: CharacterRaceId,
+  level = 1
 ): CharacterPreviewVitals {
-  const { hpMax, mpMax } = getBaseVitalsFromStats(stats);
+  const { hpMax, mpMax } = getMaxVitalsAtLevel(race, classId, level, {
+    constitution: stats.constitution,
+    intelligence: stats.intelligence,
+  });
   return {
     hp: hpMax,
     mana: CLASS_USES_MANA[classId] ? mpMax : 0,

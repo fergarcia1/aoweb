@@ -10,6 +10,8 @@ import { getItemDefinition, type ItemId } from "../../items/itemDefinitions";
 import type { GameMap } from "../../maps";
 import { tileToFeetWorld } from "../../player/playerSprites";
 import type { NetWorldItemState } from "../../../shared/types";
+import { findNearestWalkableDropTile } from "../../../shared/deathLootPlacement";
+import { isWorldItemDropTileAllowed } from "../../../shared/mapEdgeZones";
 import type { WorldItemEntry } from "./types";
 
 export type WorldItemManagerDeps = {
@@ -232,6 +234,7 @@ export class WorldItemManager {
   }
 
   private upsertNetState(state: NetWorldItemState): void {
+    console.log(`[CLIENT-SYNC] upsertNetState intentando crear id=${state.id}, itemId=${state.itemId} en ${state.tileX},${state.tileY}`);
     const index = this.findIndexByWorldItemId(state.id);
     if (index !== -1) {
       this.entries[index].sprite.destroy();
@@ -245,13 +248,18 @@ export class WorldItemManager {
         entry.worldItemId !== state.id
     );
     if (occupied) {
+      console.warn(`[CLIENT-SYNC] upsertNetState IGNORADO por colision en ${state.tileX},${state.tileY}`);
       return;
     }
 
     if (state.itemId === "gold") {
       this.addGoldSprite(state.tileX, state.tileY, state.count, state.id);
+      console.log(`[CLIENT-SYNC] oro creado`);
     } else if (state.itemId !== "gold" && isKnownItemId(state.itemId)) {
       this.addItemSprite(state.itemId as ItemId, state.tileX, state.tileY, state.count, state.id);
+      console.log(`[CLIENT-SYNC] sprite item creado para ${state.itemId}`);
+    } else {
+      console.warn(`[CLIENT-SYNC] upsertNetState IGNORADO: no es gold ni conocido (${state.itemId})`);
     }
   }
 
@@ -292,6 +300,7 @@ export class WorldItemManager {
       sprite,
     };
     sprite.on("pointerdown", () => this.deps.onInspect(worldItem));
+    this.deps.uiCamera?.ignore(sprite);
     this.entries.push(worldItem);
   }
 
@@ -322,28 +331,15 @@ export class WorldItemManager {
     targetTileX: number,
     targetTileY: number
   ): { x: number; y: number } | null {
-    if (
-      this.deps.isMapTileWalkable(targetTileX, targetTileY) &&
-      !this.isTileOccupied(targetTileX, targetTileY)
-    ) {
-      return { x: targetTileX, y: targetTileY };
-    }
-
-    const map = this.deps.getCurrentMap();
-    const maxDistance = map.width + map.height;
-    for (let distance = 1; distance <= maxDistance; distance += 1) {
-      for (let dy = -distance; dy <= distance; dy += 1) {
-        for (let dx = -distance; dx <= distance; dx += 1) {
-          if (Math.abs(dx) + Math.abs(dy) !== distance) continue;
-          const x = targetTileX + dx;
-          const y = targetTileY + dy;
-          if (!this.deps.isMapTileWalkable(x, y)) continue;
-          if (this.isTileOccupied(x, y)) continue;
-          return { x, y };
-        }
-      }
-    }
-
-    return null;
+    const mapId = this.deps.getCurrentMapId();
+    const tile = findNearestWalkableDropTile(
+      targetTileX,
+      targetTileY,
+      (tileX, tileY) =>
+        isWorldItemDropTileAllowed(mapId, tileX, tileY, (x, y) =>
+          this.deps.isMapTileWalkable(x, y)
+        ) && !this.isTileOccupied(tileX, tileY)
+    );
+    return tile ? { x: tile.tileX, y: tile.tileY } : null;
   }
 }

@@ -2,6 +2,7 @@ import type Phaser from "phaser";
 import type {
   ClientMessage,
   NetInventorySlotState,
+  ServerWelcomeMessage,
   ServerUseItemAckMessage,
 } from "../../shared/protocol";
 import type {
@@ -27,13 +28,7 @@ export type MultiplayerBridgeCallbacks = {
   onStatus: (message: string) => void;
   onChatLine: (text: string) => void;
   onCombatLine: (text: string) => void;
-  onWelcome: (
-    playerId: string,
-    mapId: string,
-    player: NetPlayerState | null,
-    inventory: NetInventorySlotState[] | undefined,
-    gold?: number
-  ) => void;
+  onWelcome: (welcome: ServerWelcomeMessage) => void;
   onSnapshot: (snapshot: WorldSnapshot) => void;
   onPlayerJoined: (player: NetPlayerState) => void;
   onPlayerLeft: (playerId: string) => void;
@@ -42,17 +37,24 @@ export type MultiplayerBridgeCallbacks = {
   onMobUpdated: (mob: NetMobState) => void;
   onMobLeft: (mobId: string) => void;
   onGameEvent: (event: GameEvent) => void;
-  onPlayerDied: (playerId: string, killerName: string) => void;
+  onPlayerDied: (playerId: string, killerId: string, killerName: string) => void;
   onUseItemAck: (ack: ServerUseItemAckMessage) => void;
   onInventoryUpdated: (
     inventory: NetInventorySlotState[] | undefined,
     gold?: number
   ) => void;
+  onBankUpdated: (
+    bankGold: number,
+    bankInventory: Array<{ slotIndex: number; itemId: string | null; amount: number }>
+  ) => void;
+  onSpellsUpdated: (learnedSpellIds: number[]) => void;
+  onPlayerProgressUpdated: (exp: number, expToNext: number, level: number) => void;
   onWorldItemSpawned: (mapId: string, item: NetWorldItemState) => void;
   onWorldItemUpdated: (mapId: string, item: NetWorldItemState) => void;
   onWorldItemRemoved: (mapId: string, worldItemId: string) => void;
   getJoinPayload: () => MultiplayerJoinPayload;
   onCharacterAlreadyOnline?: (message: string) => void;
+  onLogoutComplete?: () => void;
 };
 
 /**
@@ -87,12 +89,14 @@ export class MultiplayerBridge {
     );
 
     const wsUrl = getMultiplayerWsUrl();
-    this.networkClient = new NetworkClient(wsUrl, {
+    this.networkClient = new NetworkClient(
+      wsUrl,
+      {
       onConnected: () => {
         this.callbacks.onStatus("Conectando al servidor...");
         this.requestJoin();
       },
-      onDisconnected: () => {
+      onDisconnected: ({ code, reason, willReconnect }) => {
         this.playerId = null;
         this.spawnSynced = false;
         this.remotePlayers?.clear();
@@ -100,13 +104,32 @@ export class MultiplayerBridge {
           this.skipNextDisconnectNotice = false;
           return;
         }
+        if (willReconnect) {
+          this.callbacks.onStatus("Reconectando al servidor...");
+          this.callbacks.onChatLine(
+            "Perdiste la conexión con el servidor. Reintentando automáticamente..."
+          );
+          return;
+        }
+        if (code === 4003) {
+          this.skipNextDisconnectNotice = true;
+          return;
+        }
         this.callbacks.onStatus("Desconectado del servidor");
-        this.callbacks.onChatLine("Perdiste la conexión con el servidor.");
+        const detail =
+          code === 4002
+            ? " (personaje ya conectado en otra pestaña)"
+            : reason.trim()
+              ? ` (${reason.trim()})`
+              : code > 0
+                ? ` (código ${code})`
+                : "";
+        this.callbacks.onChatLine(`Perdiste la conexión con el servidor${detail}.`);
       },
-      onWelcome: (playerId, mapId, player, inventory, gold) => {
-        this.playerId = playerId;
-        this.callbacks.onWelcome(playerId, mapId, player, inventory, gold);
-        this.callbacks.onStatus(`Online — ${mapId}`);
+      onWelcome: (welcome) => {
+        this.playerId = welcome.playerId;
+        this.callbacks.onWelcome(welcome);
+        this.callbacks.onStatus(`Online — ${welcome.mapId}`);
         this.callbacks.onChatLine("Conectado al servidor multijugador.");
       },
       onSnapshot: (snapshot) => this.callbacks.onSnapshot(snapshot),
@@ -127,9 +150,24 @@ export class MultiplayerBridge {
       onMobLeft: (mobId) => this.callbacks.onMobLeft(mobId),
       onCombatLog: (text) => this.callbacks.onCombatLine(text),
       onGameEvent: (event) => this.callbacks.onGameEvent(event),
-      onPlayerDied: (playerId, killerName) =>
-        this.callbacks.onPlayerDied(playerId, killerName),
+      onPlayerDied: (playerId, killerId, killerName) =>
+        this.callbacks.onPlayerDied(playerId, killerId, killerName),
       onUseItemAck: (ack) => this.callbacks.onUseItemAck(ack),
+      onInventoryUpdated: (inventory, gold) =>
+        this.callbacks.onInventoryUpdated(inventory, gold),
+      onBankUpdated: (bankGold, bankInventory) =>
+        this.callbacks.onBankUpdated(bankGold, bankInventory),
+      onSpellsUpdated: (learnedSpellIds) =>
+        this.callbacks.onSpellsUpdated(learnedSpellIds),
+      onPlayerProgressUpdated: (exp, expToNext, level) =>
+        this.callbacks.onPlayerProgressUpdated(exp, expToNext, level),
+      onWorldItemSpawned: (mapId, item) =>
+        this.callbacks.onWorldItemSpawned(mapId, item),
+      onWorldItemUpdated: (mapId, item) =>
+        this.callbacks.onWorldItemUpdated(mapId, item),
+      onWorldItemRemoved: (mapId, worldItemId) =>
+        this.callbacks.onWorldItemRemoved(mapId, worldItemId),
+      onLogoutComplete: () => this.callbacks.onLogoutComplete?.(),
       onChat: (from, text) => {
         this.callbacks.onChatLine(`${from}: ${text}`);
       },
@@ -142,7 +180,9 @@ export class MultiplayerBridge {
         this.callbacks.onStatus(message);
         this.callbacks.onChatLine(message);
       },
-    });
+    },
+    { autoReconnect: true }
+    );
 
     registerMultiplayerClient(this.networkClient);
     this.networkClient.connect();
@@ -152,8 +192,8 @@ export class MultiplayerBridge {
   disconnect() {
     if (this.networkClient) {
       unregisterMultiplayerClient(this.networkClient);
+      this.networkClient = null;
     }
-    this.networkClient = null;
     this.remotePlayers?.clear();
     this.remotePlayers = null;
     this.playerId = null;
@@ -204,12 +244,24 @@ export class MultiplayerBridge {
     this.networkClient?.sendAttack(facing);
   }
 
-  sendCastSpell(spellId: number, tileX: number, tileY: number) {
-    this.networkClient?.sendCastSpell(spellId, tileX, tileY);
+  sendCastSpell(spellId: number, tileX: number, tileY: number, targetPlayerId?: string) {
+    this.networkClient?.sendCastSpell(spellId, tileX, tileY, targetPlayerId);
   }
 
   sendRevive(source: "priest" | "ally", tileX?: number, tileY?: number, mapId?: string) {
     this.networkClient?.sendRevive(source, tileX, tileY, mapId);
+  }
+
+  sendInteractMap(tileX: number, tileY: number) {
+    this.networkClient?.sendInteractMap(tileX, tileY);
+  }
+
+  sendSuicide() {
+    this.networkClient?.sendSuicide();
+  }
+
+  sendBecomeRenegade() {
+    this.networkClient?.sendBecomeRenegade();
   }
 
   sendAdminCommand(command: string, args: string[]) {
@@ -218,6 +270,10 @@ export class MultiplayerBridge {
 
   sendUseItem(itemId: string, inventorySlot?: number) {
     this.networkClient?.sendUseItem(itemId, inventorySlot);
+  }
+
+  sendSyncVitals(patch: { hp?: number; mp?: number }) {
+    this.networkClient?.sendSyncVitals(patch);
   }
 
   sendEquipItem(
@@ -242,6 +298,18 @@ export class MultiplayerBridge {
     this.networkClient?.sendSyncInventory(inventory);
   }
 
+  sendSyncBank(
+    bankGold: number,
+    bankInventory: Array<{
+      slotIndex: number;
+      itemId: string | null;
+      amount: number;
+    }>,
+    gold?: number
+  ) {
+    this.networkClient?.sendSyncBank(bankGold, bankInventory, gold);
+  }
+
   sendDropItem(inventorySlot: number, amount: number) {
     this.networkClient?.sendDropItem(inventorySlot, amount);
   }
@@ -254,9 +322,41 @@ export class MultiplayerBridge {
     this.networkClient?.sendPickupWorldItem();
   }
 
+  sendBankAction(
+    action: Extract<ClientMessage, { type: "bank_action" }>["action"],
+    amount: number,
+    slotIndex?: number
+  ) {
+    this.networkClient?.sendBankAction(action, amount, slotIndex);
+  }
+
+  sendShopBuy(role: Extract<ClientMessage, { type: "shop_buy" }>["role"], itemId: string, amount: number) {
+    this.networkClient?.sendShopBuy(role, itemId, amount);
+  }
+
+  sendShopSell(role: Extract<ClientMessage, { type: "shop_sell" }>["role"], inventorySlot: number, amount: number) {
+    this.networkClient?.sendShopSell(role, inventorySlot, amount);
+  }
+
+  sendSpellShopBuy(spellId: number) {
+    this.networkClient?.sendSpellShopBuy(spellId);
+  }
+
+  sendMeditation(active: boolean) {
+    this.networkClient?.sendMeditation(active);
+  }
+
+  sendRequestLogout() {
+    this.networkClient?.sendRequestLogout();
+  }
+
   updateRemote(player: NetPlayerState, mapId: string) {
     if (!this.playerId) return;
     this.remotePlayers?.updateRemote(player, this.playerId, mapId);
+  }
+
+  getRemotePlayerSprite(id: string): Phaser.GameObjects.Sprite | undefined {
+    return this.remotePlayers?.getPlayerSprite(id);
   }
 
   syncFromSnapshot(players: NetPlayerState[], mapId: string) {

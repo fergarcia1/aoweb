@@ -1,0 +1,4334 @@
+{
+  "meta": {
+    "sourceIac": "tools/imperium-clasico-ref/Cliente/Recursos/Scripts.IAC",
+    "sourceBmpDir": "tools/imperium-clasico-ref/Cliente/Recursos/Graficos",
+    "generatedAt": "2026-05-31T15:38:41.668Z",
+    "bodyCount": 141,
+    "stats": {
+      "ready": 134,
+      "missing_bmp": 0,
+      "missing_body_index": 7,
+      "other": 0
+    },
+    "directionRowsConvention": "S W A D → down up left right (misma convención que mobs/npc_bodies)"
+  },
+  "byBodyId": {
+    "1": {
+      "status": "ready",
+      "bodyId": 1,
+      "texturePath": "/assets/ao/imperium/npc_bodies/body_1.png",
+      "textureKey": "imperium_npc_body_1",
+      "frameWidth": 26,
+      "frameHeight": 46,
+      "sheetCols": 6,
+      "walkFrames": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "directionRows": {
+        "down": 0,
+        "up": 1,
+        "left": 2,
+        "right": 3
+      },
+      "headOffsetX": 0,
+      "headOffsetY": -38,
+      "walkGrhs": [
+        4582,
+        4584,
+        4581,
+        4583
+      ],
+      "mirrorRightFromLeft": true
+    },
+    "3": {
+      "status": "ready",
+      "bodyId": 3,
+      "texturePath": "/assets/ao/imperium/npc_bodies/body_3.png",
+      "textureKey": "imperium_npc_body_3",
+      "frameWidth": 26,
+      "frameHeight": 46,
+      "sheetCols": 6,
+      "walkFrames": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "directionRows": {
+        "down": 0,
+        "up": 1,
+        "left": 2,
+        "right": 3
+      },
+      "headOffsetX": 0,
+      "headOffsetY": -38,
+      "walkGrhs": [
+        4590,
+        4592,
+        4589,
+        4591
+      ],
+      "mirrorRightFromLeft": true
+    },
+    "4": {
+      "status": "ready",
+      "bodyId": 4,
+      "texturePath": "/assets/ao/imperium/npc_bodies/body_4.png",
+      "textureKey": "imperium_npc_body_4",
+      "frameWidth": 25,
+      "frameHeight": 48,
+      "sheetCols": 8,
+      "walkFrames": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7
+      ],
+      "directionRows": {
+        "down": 0,
+        "up": 1,
+        "left": 2,
+        "right": 3
+      },
+      "headOffsetX": 0,
+      "headOffsetY": -28,
+      "walkGrhs": [
+        4574,
+        4576,
+        4573,
+        4575
+      ],
+      "mirrorRightFromLeft": true
+    },
+    "5": {
+      "status": "ready",
+      "bodyId": 5,
+      "texturePath": "/assets/ao/imperium/npc_bodies/body_5.png",
+      "textureKey": "imperium_npc_body_5",
+      "frameWidth": 24,
+      "frameHeight": 31,
+      "sheetCols": 8,
+      "walkFrames": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7
+      ],
+      "directionRows": {
+        "down": 0,
+        "up": 1,
+        "left": 2,
+        "right": 3
+      },
+      "headOffsetX": 0,
+      "headOffsetY": -28,
+      "walkGrhs": [
+        4517,
+        4519,
+        4516,
+        4518
+      ],
+      "mirrorRightFromLeft": true
+    },
+    "6": {
+      "status": "ready",
+      "bodyId": 6,
+      "texturePath": "/assets/ao/imperium/npc_bodies/body_6.png",
+      "textureKey": "imperium_npc_body_6",
+      "frameWidth": 51,
+      "frameHeight": 35,
+      "sheetCols": 8,
+      "walkFrames": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7
+      ],
+      "directionRows": {
+        "down": 0,
+        "up": 1,
+        "left": 2,
+        "right": 3
+      },
+      "headOffsetX": 0,
+      "headOffsetY": -28,
+      "walkGrhs": [
+        4521,
+        4523,
+        4520,
+        4522
+      ],
+      "mirrorRightFromLeft": true
+    },
+    "8": {
+      "status": "ready",
+      "bodyId": 8,
+      "texturePath": "/assets/ao/imperium/npc_bodies/body_8.png",
+      "textureKey": "imperium_npc_body_8",
+      "frameWidth": 29,
+      "frameHeight": 33,
+      "sheetCols": 3,
+      "walkFrames": [
+        0,
+        1,
+        2
+      ],
+      "directionRows": {
+        "down": 0,
+        "up": 1,
+        "left": 2,
+        "right": 3
+      },
+      "headOffsetX": 0,
+      "headOffsetY": -28,
+      "walkGrhs": [
+        4529,
+        4531,
+        4528,
+        4530
+      ],
+      "mirrorRightFromLeft": true
+    },
+    "9": {
+      "status": "ready",
+      "bodyId": 9,
+      "texturePath": "/assets/ao/imperium/npc_bodies/body_9.png",
+      "textureKey": "imperium_npc_body_9",
+      "frameWidth": 32,
+      "frameHeight": 25,
+      "sheetCols": 2,
+      "walkFrames": [
+        0,
+        1
+      ],
+      "directionRows": {
+        "down": 0,
+        "up": 1,
+        "left": 2,
+        "right": 3
+      },
+      "headOffsetX": 0,
+      "headOffsetY": -28,
+      "walkGrhs": [
+        4533,
+        4535,
+        4532,
+        4534
+      ],
+      "mirrorRightFromLeft": true
+    },
+    "10": {
+      "status": "ready",
+      "bodyId": 10,
+      "texturePath": "/assets/ao/imperium/npc_bodies/body_10.png",
+      "textureKey": "imperium_npc_body_10",
+      "frameWidth": 75,
+      "frameHeight": 50,
+      "sheetCols": 4,
+      "walkFrames": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "directionRows": {
+        "down": 0,
+        "up": 1,
+        "left": 2,
+        "right": 3
+      },
+      "headOffsetX": 0,
+      "headOffsetY": -28,
+      "walkGrhs": [
+        4537,
+        4539,
+        4536,
+        4538
+      ],
+      "mirrorRightFromLeft": true
+    },
+    "11": {
+      "status": "ready",
+      "bodyId": 11,
+      "texturePath": "/assets/ao/imperium/npc_bodies/body_11.png",
+      "textureKey": "imperium_npc_body_11",
+      "frameWidth": 24,
+      "frameHeight": 48,
+      "sheetCols": 8,
+      "walkFrames": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7
+      ],
+      "directionRows": {
+        "down": 0,
+        "up": 1,
+        "left": 2,
+        "right": 3
+      },
+      "headOffsetX": 0,
+      "headOffsetY": -28,
+      "walkGrhs": [
+        4541,
+        4543,
+        4540,
+        4542
+      ],
+      "mirrorRightFromLeft": true
+    },
+    "12": {
+      "status": "ready",
+      "bodyId": 12,
+      "texturePath": "/assets/ao/imperium/npc_bodies/body_12.png",
+      "textureKey": "imperium_npc_body_12",
+      "frameWidth": 25,
+      "frameHeight": 32,
+      "sheetCols": 8,
+      "walkFrames": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7
+      ],
+      "directionRows": {
+        "down": 0,
+        "up": 1,
+        "left": 2,
+        "right": 3
+      },
+      "headOffsetX": 0,
+      "headOffsetY": -28,
+      "walkGrhs": [
+        4545,
+        4547,
+        4544,
+        4546
+      ],
+      "mirrorRightFromLeft": true
+    },
+    "13": {
+      "status": "ready",
+      "bodyId": 13,
+      "texturePath": "/assets/ao/imperium/npc_bodies/body_13.png",
+      "textureKey": "imperium_npc_body_13",
+      "frameWidth": 32,
+      "frameHeight": 25,
+      "sheetCols": 3,
+      "walkFrames": [
+        0,
+        1,
+        2
+      ],
+      "directionRows": {
+        "down": 0,
+        "up": 1,
+        "left": 2,
+        "right": 3
+      },
+      "headOffsetX": 0,
+      "headOffsetY": -28,
+      "walkGrhs": [
+        4549,
+        4551,
+        4548,
+        4550
+      ],
+      "mirrorRightFromLeft": true
+    },
+    "14": {
+      "status": "ready",
+      "bodyId": 14,
+      "texturePath": "/assets/ao/imperium/npc_bodies/body_14.png",
+      "textureKey": "imperium_npc_body_14",
+      "frameWidth": 25,
+      "frameHeight": 32,
+      "sheetCols": 8,
+      "walkFrames": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7
+      ],
+      "directionRows": {
+        "down": 0,
+        "up": 1,
+        "left": 2,
+        "right": 3
+      },
+      "headOffsetX": 0,
+      "headOffsetY": -28,
+      "walkGrhs": [
+        4553,
+        4555,
+        4552,
+        4554
+      ],
+      "mirrorRightFromLeft": true
+    },
+    "15": {
+      "status": "ready",
+      "bodyId": 15,
+      "texturePath": "/assets/ao/imperium/npc_bodies/body_15.png",
+      "textureKey": "imperium_npc_body_15",
+      "frameWidth": 28,
+      "frameHeight": 51,
+      "sheetCols": 8,
+      "walkFrames": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7
+      ],
+      "directionRows": {
+        "down": 0,
+        "up": 1,
+        "left": 2,
+        "right": 3
+      },
+      "headOffsetX": 0,
+      "headOffsetY": -28,
+      "walkGrhs": [
+        4557,
+        4559,
+        4556,
+        4558
+      ],
+      "mirrorRightFromLeft": true
+    },
+    "16": {
+      "status": "ready",
+      "bodyId": 16,
+      "texturePath": "/assets/ao/imperium/npc_bodies/body_16.png",
+      "textureKey": "imperium_npc_body_16",
+      "frameWidth": 25,
+      "frameHeight": 48,
+      "sheetCols": 8,
+      "walkFrames": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7
+      ],
+      "directionRows": {
+        "down": 0,
+        "up": 1,
+        "left": 2,
+        "right": 3
+      },
+      "headOffsetX": 0,
+      "headOffsetY": -28,
+      "walkGrhs": [
+        4561,
+        4563,
+        4560,
+        4562
+      ],
+      "mirrorRightFromLeft": true
+    },
+    "17": {
+      "status": "ready",
+      "bodyId": 17,
+      "texturePath": "/assets/ao/imperium/npc_bodies/body_17.png",
+      "textureKey": "imperium_npc_body_17",
+      "frameWidth": 35,
+      "frameHeight": 48,
+      "sheetCols": 3,
+      "walkFrames": [
+        0,
+        1,
+        2
+      ],
+      "directionRows": {
+        "down": 0,
+        "up": 1,
+        "left": 2,
+        "right": 3
+      },
+      "headOffsetX": 0,
+      "headOffsetY": -28,
+      "walkGrhs": [
+        4564,
+        4564,
+        4564,
+        4564
+      ],
+      "mirrorRightFromLeft": true
+    },
+    "18": {
+      "status": "ready",
+      "bodyId": 18,
+      "texturePath": "/assets/ao/imperium/npc_bodies/body_18.png",
+      "textureKey": "imperium_npc_body_18",
+      "frameWidth": 25,
+      "frameHeight": 48,
+      "sheetCols": 3,
+      "walkFrames": [
+        0,
+        1,
+        2
+      ],
+      "directionRows": {
+        "down": 0,
+        "up": 1,
+        "left": 2,
+        "right": 3
+      },
+      "headOffsetX": 0,
+      "headOffsetY": -28,
+      "walkGrhs": [
+        4566,
+        4568,
+        4565,
+        4567
+      ],
+      "mirrorRightFromLeft": true
+    },
+    "19": {
+      "status": "ready",
+      "bodyId": 19,
+      "texturePath": "/assets/ao/imperium/npc_bodies/body_19.png",
+      "textureKey": "imperium_npc_body_19",
+      "frameWidth": 24,
+      "frameHeight": 48,
+      "sheetCols": 3,
+      "walkFrames": [
+        0,
+        1,
+        2
+      ],
+      "directionRows": {
+        "down": 0,
+        "up": 1,
+        "left": 2,
+        "right": 3
+      },
+      "headOffsetX": 0,
+      "headOffsetY": -28,
+      "walkGrhs": [
+        4570,
+        4572,
+        4569,
+        4571
+      ],
+      "mirrorRightFromLeft": true
+    },
+    "22": {
+      "status": "ready",
+      "bodyId": 22,
+      "texturePath": "/assets/ao/imperium/npc_bodies/body_22.png",
+      "textureKey": "imperium_npc_body_22",
+      "frameWidth": 26,
+      "frameHeight": 46,
+      "sheetCols": 6,
+      "walkFrames": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "directionRows": {
+        "down": 0,
+        "up": 1,
+        "left": 2,
+        "right": 3
+      },
+      "headOffsetX": 0,
+      "headOffsetY": -38,
+      "walkGrhs": [
+        4578,
+        4580,
+        4577,
+        4579
+      ],
+      "mirrorRightFromLeft": true
+    },
+    "26": {
+      "status": "ready",
+      "bodyId": 26,
+      "texturePath": "/assets/ao/imperium/npc_bodies/body_26.png",
+      "textureKey": "imperium_npc_body_26",
+      "frameWidth": 256,
+      "frameHeight": 256,
+      "sheetCols": 1,
+      "walkFrames": [
+        0
+      ],
+      "directionRows": {
+        "down": 0,
+        "up": 1,
+        "left": 2,
+        "right": 3
+      },
+      "headOffsetX": 0,
+      "headOffsetY": 0,
+      "walkGrhs": [
+        7000,
+        7000,
+        7000,
+        7000
+      ],
+      "mirrorRightFromLeft": true
+    },
+    "34": {
+      "status": "ready",
+      "bodyId": 34,
+      "texturePath": "/assets/ao/imperium/npc_bodies/body_34.png",
+      "textureKey": "imperium_npc_body_34",
+      "frameWidth": 26,
+      "frameHeight": 46,
+      "sheetCols": 3,
+      "walkFrames": [
+        0,
+        1,
+        2
+      ],
+      "directionRows": {
+        "down": 0,
+        "up": 1,
+        "left": 2,
+        "right": 3
+      },
+      "headOffsetX": 0,
+      "headOffsetY": -28,
+      "walkGrhs": [
+        4614,
+        4616,
+        4613,
+        4615
+      ],
+      "mirrorRightFromLeft": true
+    },
+    "35": {
+      "status": "ready",
+      "bodyId": 35,
+      "texturePath": "/assets/ao/imperium/npc_bodies/body_35.png",
+      "textureKey": "imperium_npc_body_35",
+      "frameWidth": 26,
+      "frameHeight": 46,
+      "sheetCols": 6,
+      "walkFrames": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "directionRows": {
+        "down": 0,
+        "up": 1,
+        "left": 2,
+        "right": 3
+      },
+      "headOffsetX": 0,
+      "headOffsetY": -38,
+      "walkGrhs": [
+        4618,
+        4620,
+        4617,
+        4619
+      ],
+      "mirrorRightFromLeft": true
+    },
+    "37": {
+      "status": "ready",
+      "bodyId": 37,
+      "texturePath": "/assets/ao/imperium/npc_bodies/body_37.png",
+      "textureKey": "imperium_npc_body_37",
+      "frameWidth": 26,
+      "frameHeight": 46,
+      "sheetCols": 7,
+      "walkFrames": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6
+      ],
+      "directionRows": {
+        "down": 0,
+        "up": 1,
+        "left": 2,
+        "right": 3
+      },
+      "headOffsetX": 0,
+      "headOffsetY": -38,
+      "walkGrhs": [
+        4622,
+        4624,
+        4621,
+        4623
+      ],
+      "mirrorRightFromLeft": true
+    },
+    "42": {
+      "status": "ready",
+      "bodyId": 42,
+      "texturePath": "/assets/ao/imperium/npc_bodies/body_42.png",
+      "textureKey": "imperium_npc_body_42",
+      "frameWidth": 53,
+      "frameHeight": 35,
+      "sheetCols": 4,
+      "walkFrames": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "directionRows": {
+        "down": 0,
+        "up": 1,
+        "left": 2,
+        "right": 3
+      },
+      "headOffsetX": 0,
+      "headOffsetY": 0,
+      "walkGrhs": [
+        4642,
+        4644,
+        4641,
+        4643
+      ],
+      "mirrorRightFromLeft": true
+    },
+    "43": {
+      "status": "ready",
+      "bodyId": 43,
+      "texturePath": "/assets/ao/imperium/npc_bodies/body_43.png",
+      "textureKey": "imperium_npc_body_43",
+      "frameWidth": 60,
+      "frameHeight": 50,
+      "sheetCols": 8,
+      "walkFrames": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7
+      ],
+      "directionRows": {
+        "down": 0,
+        "up": 1,
+        "left": 2,
+        "right": 3
+      },
+      "headOffsetX": 0,
+      "headOffsetY": 0,
+      "walkGrhs": [
+        4646,
+        4648,
+        4645,
+        4647
+      ],
+      "mirrorRightFromLeft": true
+    },
+    "47": {
+      "status": "ready",
+      "bodyId": 47,
+      "texturePath": "/assets/ao/imperium/npc_bodies/body_47.png",
+      "textureKey": "imperium_npc_body_47",
+      "frameWidth": 26,
+      "frameHeight": 46,
+      "sheetCols": 6,
+      "walkFrames": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "directionRows": {
+        "down": 0,
+        "up": 1,
+        "left": 2,
+        "right": 3
+      },
+      "headOffsetX": 0,
+      "headOffsetY": -38,
+      "walkGrhs": [
+        4662,
+        4669,
+        4661,
+        4663
+      ],
+      "mirrorRightFromLeft": true
+    },
+    "48": {
+      "status": "ready",
+      "bodyId": 48,
+      "texturePath": "/assets/ao/imperium/npc_bodies/body_48.png",
+      "textureKey": "imperium_npc_body_48",
+      "frameWidth": 26,
+      "frameHeight": 46,
+      "sheetCols": 6,
+      "walkFrames": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "directionRows": {
+        "down": 0,
+        "up": 1,
+        "left": 2,
+        "right": 3
+      },
+      "headOffsetX": 0,
+      "headOffsetY": -38,
+      "walkGrhs": [
+        4671,
+        4673,
+        4670,
+        4672
+      ],
+      "mirrorRightFromLeft": true
+    },
+    "49": {
+      "status": "ready",
+      "bodyId": 49,
+      "texturePath": "/assets/ao/imperium/npc_bodies/body_49.png",
+      "textureKey": "imperium_npc_body_49",
+      "frameWidth": 26,
+      "frameHeight": 46,
+      "sheetCols": 6,
+      "walkFrames": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "directionRows": {
+        "down": 0,
+        "up": 1,
+        "left": 2,
+        "right": 3
+      },
+      "headOffsetX": 0,
+      "headOffsetY": -38,
+      "walkGrhs": [
+        4675,
+        4677,
+        4674,
+        4676
+      ],
+      "mirrorRightFromLeft": true
+    },
+    "50": {
+      "status": "ready",
+      "bodyId": 50,
+      "texturePath": "/assets/ao/imperium/npc_bodies/body_50.png",
+      "textureKey": "imperium_npc_body_50",
+      "frameWidth": 26,
+      "frameHeight": 46,
+      "sheetCols": 6,
+      "walkFrames": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "directionRows": {
+        "down": 0,
+        "up": 1,
+        "left": 2,
+        "right": 3
+      },
+      "headOffsetX": 0,
+      "headOffsetY": -38,
+      "walkGrhs": [
+        4679,
+        4681,
+        4678,
+        4680
+      ],
+      "mirrorRightFromLeft": true
+    },
+    "51": {
+      "status": "ready",
+      "bodyId": 51,
+      "texturePath": "/assets/ao/imperium/npc_bodies/body_51.png",
+      "textureKey": "imperium_npc_body_51",
+      "frameWidth": 30,
+      "frameHeight": 20,
+      "sheetCols": 4,
+      "walkFrames": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "directionRows": {
+        "down": 0,
+        "up": 1,
+        "left": 2,
+        "right": 3
+      },
+      "headOffsetX": 0,
+      "headOffsetY": -38,
+      "walkGrhs": [
+        4683,
+        4685,
+        4682,
+        4684
+      ],
+      "mirrorRightFromLeft": true
+    },
+    "54": {
+      "status": "ready",
+      "bodyId": 54,
+      "texturePath": "/assets/ao/imperium/npc_bodies/body_54.png",
+      "textureKey": "imperium_npc_body_54",
+      "frameWidth": 26,
+      "frameHeight": 46,
+      "sheetCols": 6,
+      "walkFrames": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "directionRows": {
+        "down": 0,
+        "up": 1,
+        "left": 2,
+        "right": 3
+      },
+      "headOffsetX": 0,
+      "headOffsetY": -28,
+      "walkGrhs": [
+        4699,
+        4701,
+        4698,
+        4700
+      ],
+      "mirrorRightFromLeft": true
+    },
+    "56": {
+      "status": "ready",
+      "bodyId": 56,
+      "texturePath": "/assets/ao/imperium/npc_bodies/body_56.png",
+      "textureKey": "imperium_npc_body_56",
+      "frameWidth": 26,
+      "frameHeight": 46,
+      "sheetCols": 6,
+      "walkFrames": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "directionRows": {
+        "down": 0,
+        "up": 1,
+        "left": 2,
+        "right": 3
+      },
+      "headOffsetX": 0,
+      "headOffsetY": -38,
+      "walkGrhs": [
+        4707,
+        4709,
+        4706,
+        4708
+      ],
+      "mirrorRightFromLeft": true
+    },
+    "57": {
+      "status": "ready",
+      "bodyId": 57,
+      "texturePath": "/assets/ao/imperium/npc_bodies/body_57.png",
+      "textureKey": "imperium_npc_body_57",
+      "frameWidth": 26,
+      "frameHeight": 46,
+      "sheetCols": 6,
+      "walkFrames": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "directionRows": {
+        "down": 0,
+        "up": 1,
+        "left": 2,
+        "right": 3
+      },
+      "headOffsetX": 0,
+      "headOffsetY": -38,
+      "walkGrhs": [
+        4711,
+        4713,
+        4710,
+        4712
+      ],
+      "mirrorRightFromLeft": true
+    },
+    "58": {
+      "status": "ready",
+      "bodyId": 58,
+      "texturePath": "/assets/ao/imperium/npc_bodies/body_58.png",
+      "textureKey": "imperium_npc_body_58",
+      "frameWidth": 26,
+      "frameHeight": 46,
+      "sheetCols": 6,
+      "walkFrames": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "directionRows": {
+        "down": 0,
+        "up": 1,
+        "left": 2,
+        "right": 3
+      },
+      "headOffsetX": 0,
+      "headOffsetY": -38,
+      "walkGrhs": [
+        4715,
+        4717,
+        4714,
+        4716
+      ],
+      "mirrorRightFromLeft": true
+    },
+    "59": {
+      "status": "ready",
+      "bodyId": 59,
+      "texturePath": "/assets/ao/imperium/npc_bodies/body_59.png",
+      "textureKey": "imperium_npc_body_59",
+      "frameWidth": 32,
+      "frameHeight": 25,
+      "sheetCols": 2,
+      "walkFrames": [
+        0,
+        1
+      ],
+      "directionRows": {
+        "down": 0,
+        "up": 1,
+        "left": 2,
+        "right": 3
+      },
+      "headOffsetX": 0,
+      "headOffsetY": 0,
+      "walkGrhs": [
+        4731,
+        4733,
+        4730,
+        4732
+      ],
+      "mirrorRightFromLeft": true
+    },
+    "62": {
+      "status": "ready",
+      "bodyId": 62,
+      "texturePath": "/assets/ao/imperium/npc_bodies/body_62.png",
+      "textureKey": "imperium_npc_body_62",
+      "frameWidth": 26,
+      "frameHeight": 46,
+      "sheetCols": 6,
+      "walkFrames": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "directionRows": {
+        "down": 0,
+        "up": 1,
+        "left": 2,
+        "right": 3
+      },
+      "headOffsetX": 0,
+      "headOffsetY": -40,
+      "walkGrhs": [
+        4771,
+        4773,
+        4770,
+        4772
+      ],
+      "mirrorRightFromLeft": true
+    },
+    "63": {
+      "status": "ready",
+      "bodyId": 63,
+      "texturePath": "/assets/ao/imperium/npc_bodies/body_63.png",
+      "textureKey": "imperium_npc_body_63",
+      "frameWidth": 26,
+      "frameHeight": 46,
+      "sheetCols": 6,
+      "walkFrames": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "directionRows": {
+        "down": 0,
+        "up": 1,
+        "left": 2,
+        "right": 3
+      },
+      "headOffsetX": 0,
+      "headOffsetY": -38,
+      "walkGrhs": [
+        4775,
+        4777,
+        4774,
+        4776
+      ],
+      "mirrorRightFromLeft": true
+    },
+    "68": {
+      "status": "ready",
+      "bodyId": 68,
+      "texturePath": "/assets/ao/imperium/npc_bodies/body_68.png",
+      "textureKey": "imperium_npc_body_68",
+      "frameWidth": 32,
+      "frameHeight": 25,
+      "sheetCols": 2,
+      "walkFrames": [
+        0,
+        1
+      ],
+      "directionRows": {
+        "down": 0,
+        "up": 1,
+        "left": 2,
+        "right": 3
+      },
+      "headOffsetX": 0,
+      "headOffsetY": 0,
+      "walkGrhs": [
+        4735,
+        4737,
+        4734,
+        4736
+      ],
+      "mirrorRightFromLeft": true
+    },
+    "69": {
+      "status": "ready",
+      "bodyId": 69,
+      "texturePath": "/assets/ao/imperium/npc_bodies/body_69.png",
+      "textureKey": "imperium_npc_body_69",
+      "frameWidth": 24,
+      "frameHeight": 48,
+      "sheetCols": 8,
+      "walkFrames": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7
+      ],
+      "directionRows": {
+        "down": 0,
+        "up": 1,
+        "left": 2,
+        "right": 3
+      },
+      "headOffsetX": 0,
+      "headOffsetY": 0,
+      "walkGrhs": [
+        4739,
+        4741,
+        4738,
+        4740
+      ],
+      "mirrorRightFromLeft": true
+    },
+    "70": {
+      "status": "ready",
+      "bodyId": 70,
+      "texturePath": "/assets/ao/imperium/npc_bodies/body_70.png",
+      "textureKey": "imperium_npc_body_70",
+      "frameWidth": 32,
+      "frameHeight": 25,
+      "sheetCols": 3,
+      "walkFrames": [
+        0,
+        1,
+        2
+      ],
+      "directionRows": {
+        "down": 0,
+        "up": 1,
+        "left": 2,
+        "right": 3
+      },
+      "headOffsetX": 0,
+      "headOffsetY": 0,
+      "walkGrhs": [
+        4743,
+        4745,
+        4742,
+        4744
+      ],
+      "mirrorRightFromLeft": true
+    },
+    "71": {
+      "status": "ready",
+      "bodyId": 71,
+      "texturePath": "/assets/ao/imperium/npc_bodies/body_71.png",
+      "textureKey": "imperium_npc_body_71",
+      "frameWidth": 32,
+      "frameHeight": 25,
+      "sheetCols": 3,
+      "walkFrames": [
+        0,
+        1,
+        2
+      ],
+      "directionRows": {
+        "down": 0,
+        "up": 1,
+        "left": 2,
+        "right": 3
+      },
+      "headOffsetX": 0,
+      "headOffsetY": 0,
+      "walkGrhs": [
+        4747,
+        4749,
+        4746,
+        4748
+      ],
+      "mirrorRightFromLeft": true
+    },
+    "72": {
+      "status": "ready",
+      "bodyId": 72,
+      "texturePath": "/assets/ao/imperium/npc_bodies/body_72.png",
+      "textureKey": "imperium_npc_body_72",
+      "frameWidth": 64,
+      "frameHeight": 64,
+      "sheetCols": 3,
+      "walkFrames": [
+        0,
+        1,
+        2
+      ],
+      "directionRows": {
+        "down": 0,
+        "up": 1,
+        "left": 2,
+        "right": 3
+      },
+      "headOffsetX": 0,
+      "headOffsetY": 0,
+      "walkGrhs": [
+        4751,
+        4753,
+        4750,
+        4752
+      ],
+      "mirrorRightFromLeft": true
+    },
+    "73": {
+      "status": "ready",
+      "bodyId": 73,
+      "texturePath": "/assets/ao/imperium/npc_bodies/body_73.png",
+      "textureKey": "imperium_npc_body_73",
+      "frameWidth": 64,
+      "frameHeight": 64,
+      "sheetCols": 8,
+      "walkFrames": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7
+      ],
+      "directionRows": {
+        "down": 0,
+        "up": 1,
+        "left": 2,
+        "right": 3
+      },
+      "headOffsetX": 0,
+      "headOffsetY": 0,
+      "walkGrhs": [
+        4755,
+        4757,
+        4754,
+        4756
+      ],
+      "mirrorRightFromLeft": true
+    },
+    "74": {
+      "status": "ready",
+      "bodyId": 74,
+      "texturePath": "/assets/ao/imperium/npc_bodies/body_74.png",
+      "textureKey": "imperium_npc_body_74",
+      "frameWidth": 64,
+      "frameHeight": 64,
+      "sheetCols": 6,
+      "walkFrames": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "directionRows": {
+        "down": 0,
+        "up": 1,
+        "left": 2,
+        "right": 3
+      },
+      "headOffsetX": 0,
+      "headOffsetY": 0,
+      "walkGrhs": [
+        4759,
+        4761,
+        4758,
+        4760
+      ],
+      "mirrorRightFromLeft": true
+    },
+    "75": {
+      "status": "ready",
+      "bodyId": 75,
+      "texturePath": "/assets/ao/imperium/npc_bodies/body_75.png",
+      "textureKey": "imperium_npc_body_75",
+      "frameWidth": 25,
+      "frameHeight": 32,
+      "sheetCols": 8,
+      "walkFrames": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7
+      ],
+      "directionRows": {
+        "down": 0,
+        "up": 1,
+        "left": 2,
+        "right": 3
+      },
+      "headOffsetX": 0,
+      "headOffsetY": 0,
+      "walkGrhs": [
+        10033,
+        10035,
+        10032,
+        10034
+      ],
+      "mirrorRightFromLeft": true
+    },
+    "76": {
+      "status": "ready",
+      "bodyId": 76,
+      "texturePath": "/assets/ao/imperium/npc_bodies/body_76.png",
+      "textureKey": "imperium_npc_body_76",
+      "frameWidth": 57,
+      "frameHeight": 98,
+      "sheetCols": 6,
+      "walkFrames": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "directionRows": {
+        "down": 0,
+        "up": 1,
+        "left": 2,
+        "right": 3
+      },
+      "headOffsetX": 0,
+      "headOffsetY": 0,
+      "walkGrhs": [
+        10061,
+        10063,
+        10060,
+        10062
+      ],
+      "mirrorRightFromLeft": true
+    },
+    "79": {
+      "status": "ready",
+      "bodyId": 79,
+      "texturePath": "/assets/ao/imperium/npc_bodies/body_79.png",
+      "textureKey": "imperium_npc_body_79",
+      "frameWidth": 26,
+      "frameHeight": 46,
+      "sheetCols": 6,
+      "walkFrames": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "directionRows": {
+        "down": 0,
+        "up": 1,
+        "left": 2,
+        "right": 3
+      },
+      "headOffsetX": 0,
+      "headOffsetY": -38,
+      "walkGrhs": [
+        10139,
+        10141,
+        10138,
+        10140
+      ],
+      "mirrorRightFromLeft": true
+    },
+    "86": {
+      "status": "ready",
+      "bodyId": 86,
+      "texturePath": "/assets/ao/imperium/npc_bodies/body_86.png",
+      "textureKey": "imperium_npc_body_86",
+      "frameWidth": 96,
+      "frameHeight": 94,
+      "sheetCols": 4,
+      "walkFrames": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "directionRows": {
+        "down": 0,
+        "up": 1,
+        "left": 2,
+        "right": 3
+      },
+      "headOffsetX": 0,
+      "headOffsetY": 0,
+      "walkGrhs": [
+        10423,
+        10421,
+        10422,
+        10420
+      ],
+      "mirrorRightFromLeft": true
+    },
+    "88": {
+      "status": "ready",
+      "bodyId": 88,
+      "texturePath": "/assets/ao/imperium/npc_bodies/body_88.png",
+      "textureKey": "imperium_npc_body_88",
+      "frameWidth": 24,
+      "frameHeight": 31,
+      "sheetCols": 8,
+      "walkFrames": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7
+      ],
+      "directionRows": {
+        "down": 0,
+        "up": 1,
+        "left": 2,
+        "right": 3
+      },
+      "headOffsetX": 0,
+      "headOffsetY": 0,
+      "walkGrhs": [
+        10503,
+        10505,
+        10502,
+        10504
+      ],
+      "mirrorRightFromLeft": true
+    },
+    "93": {
+      "status": "ready",
+      "bodyId": 93,
+      "texturePath": "/assets/ao/imperium/npc_bodies/body_93.png",
+      "textureKey": "imperium_npc_body_93",
+      "frameWidth": 26,
+      "frameHeight": 46,
+      "sheetCols": 6,
+      "walkFrames": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "directionRows": {
+        "down": 0,
+        "up": 1,
+        "left": 2,
+        "right": 3
+      },
+      "headOffsetX": 0,
+      "headOffsetY": -38,
+      "walkGrhs": [
+        10633,
+        10635,
+        10632,
+        10634
+      ],
+      "mirrorRightFromLeft": true
+    },
+    "94": {
+      "status": "ready",
+      "bodyId": 94,
+      "texturePath": "/assets/ao/imperium/npc_bodies/body_94.png",
+      "textureKey": "imperium_npc_body_94",
+      "frameWidth": 26,
+      "frameHeight": 46,
+      "sheetCols": 6,
+      "walkFrames": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "directionRows": {
+        "down": 0,
+        "up": 1,
+        "left": 2,
+        "right": 3
+      },
+      "headOffsetX": 0,
+      "headOffsetY": -38,
+      "walkGrhs": [
+        10659,
+        10661,
+        10658,
+        10660
+      ],
+      "mirrorRightFromLeft": true
+    },
+    "97": {
+      "status": "ready",
+      "bodyId": 97,
+      "texturePath": "/assets/ao/imperium/npc_bodies/body_97.png",
+      "textureKey": "imperium_npc_body_97",
+      "frameWidth": 26,
+      "frameHeight": 46,
+      "sheetCols": 6,
+      "walkFrames": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "directionRows": {
+        "down": 0,
+        "up": 1,
+        "left": 2,
+        "right": 3
+      },
+      "headOffsetX": 0,
+      "headOffsetY": -38,
+      "walkGrhs": [
+        10737,
+        10739,
+        10736,
+        10738
+      ],
+      "mirrorRightFromLeft": true
+    },
+    "99": {
+      "status": "ready",
+      "bodyId": 99,
+      "texturePath": "/assets/ao/imperium/npc_bodies/body_99.png",
+      "textureKey": "imperium_npc_body_99",
+      "frameWidth": 328,
+      "frameHeight": 200,
+      "sheetCols": 5,
+      "walkFrames": [
+        0,
+        1,
+        2,
+        3,
+        4
+      ],
+      "directionRows": {
+        "down": 0,
+        "up": 1,
+        "left": 2,
+        "right": 3
+      },
+      "headOffsetX": 0,
+      "headOffsetY": 0,
+      "walkGrhs": [
+        10787,
+        10789,
+        10786,
+        10788
+      ],
+      "mirrorRightFromLeft": true
+    },
+    "100": {
+      "status": "ready",
+      "bodyId": 100,
+      "texturePath": "/assets/ao/imperium/npc_bodies/body_100.png",
+      "textureKey": "imperium_npc_body_100",
+      "frameWidth": 26,
+      "frameHeight": 46,
+      "sheetCols": 6,
+      "walkFrames": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "directionRows": {
+        "down": 0,
+        "up": 1,
+        "left": 2,
+        "right": 3
+      },
+      "headOffsetX": 0,
+      "headOffsetY": -38,
+      "walkGrhs": [
+        10813,
+        10815,
+        10812,
+        10814
+      ],
+      "mirrorRightFromLeft": true
+    },
+    "101": {
+      "status": "ready",
+      "bodyId": 101,
+      "texturePath": "/assets/ao/imperium/npc_bodies/body_101.png",
+      "textureKey": "imperium_npc_body_101",
+      "frameWidth": 26,
+      "frameHeight": 46,
+      "sheetCols": 6,
+      "walkFrames": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "directionRows": {
+        "down": 0,
+        "up": 1,
+        "left": 2,
+        "right": 3
+      },
+      "headOffsetX": 0,
+      "headOffsetY": -38,
+      "walkGrhs": [
+        10839,
+        10841,
+        10838,
+        10840
+      ],
+      "mirrorRightFromLeft": true
+    },
+    "106": {
+      "status": "ready",
+      "bodyId": 106,
+      "texturePath": "/assets/ao/imperium/npc_bodies/body_106.png",
+      "textureKey": "imperium_npc_body_106",
+      "frameWidth": 26,
+      "frameHeight": 46,
+      "sheetCols": 6,
+      "walkFrames": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "directionRows": {
+        "down": 0,
+        "up": 1,
+        "left": 2,
+        "right": 3
+      },
+      "headOffsetX": 0,
+      "headOffsetY": -38,
+      "walkGrhs": [
+        10994,
+        10996,
+        10993,
+        10995
+      ],
+      "mirrorRightFromLeft": true
+    },
+    "110": {
+      "status": "ready",
+      "bodyId": 110,
+      "texturePath": "/assets/ao/imperium/npc_bodies/body_110.png",
+      "textureKey": "imperium_npc_body_110",
+      "frameWidth": 26,
+      "frameHeight": 46,
+      "sheetCols": 6,
+      "walkFrames": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "directionRows": {
+        "down": 0,
+        "up": 1,
+        "left": 2,
+        "right": 3
+      },
+      "headOffsetX": 0,
+      "headOffsetY": -28,
+      "walkGrhs": [
+        11098,
+        11100,
+        11097,
+        11099
+      ],
+      "mirrorRightFromLeft": true
+    },
+    "111": {
+      "status": "ready",
+      "bodyId": 111,
+      "texturePath": "/assets/ao/imperium/npc_bodies/body_111.png",
+      "textureKey": "imperium_npc_body_111",
+      "frameWidth": 26,
+      "frameHeight": 46,
+      "sheetCols": 6,
+      "walkFrames": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "directionRows": {
+        "down": 0,
+        "up": 1,
+        "left": 2,
+        "right": 3
+      },
+      "headOffsetX": 0,
+      "headOffsetY": -38,
+      "walkGrhs": [
+        11124,
+        11126,
+        11123,
+        11125
+      ],
+      "mirrorRightFromLeft": true
+    },
+    "123": {
+      "status": "ready",
+      "bodyId": 123,
+      "texturePath": "/assets/ao/imperium/npc_bodies/body_123.png",
+      "textureKey": "imperium_npc_body_123",
+      "frameWidth": 26,
+      "frameHeight": 46,
+      "sheetCols": 6,
+      "walkFrames": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "directionRows": {
+        "down": 0,
+        "up": 1,
+        "left": 2,
+        "right": 3
+      },
+      "headOffsetX": 0,
+      "headOffsetY": -28,
+      "walkGrhs": [
+        11436,
+        11438,
+        11435,
+        11437
+      ],
+      "mirrorRightFromLeft": true
+    },
+    "125": {
+      "status": "ready",
+      "bodyId": 125,
+      "texturePath": "/assets/ao/imperium/npc_bodies/body_125.png",
+      "textureKey": "imperium_npc_body_125",
+      "frameWidth": 26,
+      "frameHeight": 46,
+      "sheetCols": 6,
+      "walkFrames": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "directionRows": {
+        "down": 0,
+        "up": 1,
+        "left": 2,
+        "right": 3
+      },
+      "headOffsetX": 0,
+      "headOffsetY": -38,
+      "walkGrhs": [
+        11488,
+        11490,
+        11487,
+        11489
+      ],
+      "mirrorRightFromLeft": true
+    },
+    "128": {
+      "status": "ready",
+      "bodyId": 128,
+      "texturePath": "/assets/ao/imperium/npc_bodies/body_128.png",
+      "textureKey": "imperium_npc_body_128",
+      "frameWidth": 26,
+      "frameHeight": 46,
+      "sheetCols": 6,
+      "walkFrames": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "directionRows": {
+        "down": 0,
+        "up": 1,
+        "left": 2,
+        "right": 3
+      },
+      "headOffsetX": 0,
+      "headOffsetY": -38,
+      "walkGrhs": [
+        11566,
+        11568,
+        11565,
+        11567
+      ],
+      "mirrorRightFromLeft": true
+    },
+    "130": {
+      "status": "ready",
+      "bodyId": 130,
+      "texturePath": "/assets/ao/imperium/npc_bodies/body_130.png",
+      "textureKey": "imperium_npc_body_130",
+      "frameWidth": 26,
+      "frameHeight": 46,
+      "sheetCols": 6,
+      "walkFrames": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "directionRows": {
+        "down": 0,
+        "up": 1,
+        "left": 2,
+        "right": 3
+      },
+      "headOffsetX": 0,
+      "headOffsetY": -38,
+      "walkGrhs": [
+        11618,
+        11620,
+        11617,
+        11619
+      ],
+      "mirrorRightFromLeft": true
+    },
+    "133": {
+      "status": "ready",
+      "bodyId": 133,
+      "texturePath": "/assets/ao/imperium/npc_bodies/body_133.png",
+      "textureKey": "imperium_npc_body_133",
+      "frameWidth": 26,
+      "frameHeight": 46,
+      "sheetCols": 6,
+      "walkFrames": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "directionRows": {
+        "down": 0,
+        "up": 1,
+        "left": 2,
+        "right": 3
+      },
+      "headOffsetX": 0,
+      "headOffsetY": -28,
+      "walkGrhs": [
+        11696,
+        11698,
+        11695,
+        11697
+      ],
+      "mirrorRightFromLeft": true
+    },
+    "135": {
+      "status": "ready",
+      "bodyId": 135,
+      "texturePath": "/assets/ao/imperium/npc_bodies/body_135.png",
+      "textureKey": "imperium_npc_body_135",
+      "frameWidth": 26,
+      "frameHeight": 46,
+      "sheetCols": 6,
+      "walkFrames": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "directionRows": {
+        "down": 0,
+        "up": 1,
+        "left": 2,
+        "right": 3
+      },
+      "headOffsetX": 0,
+      "headOffsetY": -28,
+      "walkGrhs": [
+        11748,
+        11750,
+        11747,
+        11749
+      ],
+      "mirrorRightFromLeft": true
+    },
+    "136": {
+      "status": "ready",
+      "bodyId": 136,
+      "texturePath": "/assets/ao/imperium/npc_bodies/body_136.png",
+      "textureKey": "imperium_npc_body_136",
+      "frameWidth": 26,
+      "frameHeight": 46,
+      "sheetCols": 6,
+      "walkFrames": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "directionRows": {
+        "down": 0,
+        "up": 1,
+        "left": 2,
+        "right": 3
+      },
+      "headOffsetX": 0,
+      "headOffsetY": -28,
+      "walkGrhs": [
+        11774,
+        11776,
+        11773,
+        11775
+      ],
+      "mirrorRightFromLeft": true
+    },
+    "140": {
+      "status": "ready",
+      "bodyId": 140,
+      "texturePath": "/assets/ao/imperium/npc_bodies/body_140.png",
+      "textureKey": "imperium_npc_body_140",
+      "frameWidth": 26,
+      "frameHeight": 46,
+      "sheetCols": 6,
+      "walkFrames": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "directionRows": {
+        "down": 0,
+        "up": 1,
+        "left": 2,
+        "right": 3
+      },
+      "headOffsetX": 0,
+      "headOffsetY": -38,
+      "walkGrhs": [
+        11878,
+        11880,
+        11877,
+        11879
+      ],
+      "mirrorRightFromLeft": true
+    },
+    "142": {
+      "status": "ready",
+      "bodyId": 142,
+      "texturePath": "/assets/ao/imperium/npc_bodies/body_142.png",
+      "textureKey": "imperium_npc_body_142",
+      "frameWidth": 26,
+      "frameHeight": 46,
+      "sheetCols": 6,
+      "walkFrames": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "directionRows": {
+        "down": 0,
+        "up": 1,
+        "left": 2,
+        "right": 3
+      },
+      "headOffsetX": 0,
+      "headOffsetY": -38,
+      "walkGrhs": [
+        11940,
+        11942,
+        11939,
+        11941
+      ],
+      "mirrorRightFromLeft": true
+    },
+    "143": {
+      "status": "ready",
+      "bodyId": 143,
+      "texturePath": "/assets/ao/imperium/npc_bodies/body_143.png",
+      "textureKey": "imperium_npc_body_143",
+      "frameWidth": 18,
+      "frameHeight": 26,
+      "sheetCols": 2,
+      "walkFrames": [
+        0,
+        1
+      ],
+      "directionRows": {
+        "down": 0,
+        "up": 1,
+        "left": 2,
+        "right": 3
+      },
+      "headOffsetX": 0,
+      "headOffsetY": 0,
+      "walkGrhs": [
+        860,
+        862,
+        859,
+        861
+      ],
+      "mirrorRightFromLeft": true
+    },
+    "144": {
+      "status": "ready",
+      "bodyId": 144,
+      "texturePath": "/assets/ao/imperium/npc_bodies/body_144.png",
+      "textureKey": "imperium_npc_body_144",
+      "frameWidth": 15,
+      "frameHeight": 15,
+      "sheetCols": 8,
+      "walkFrames": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7
+      ],
+      "directionRows": {
+        "down": 0,
+        "up": 1,
+        "left": 2,
+        "right": 3
+      },
+      "headOffsetX": 0,
+      "headOffsetY": 0,
+      "walkGrhs": [
+        275,
+        275,
+        275,
+        275
+      ],
+      "mirrorRightFromLeft": true
+    },
+    "146": {
+      "status": "ready",
+      "bodyId": 146,
+      "texturePath": "/assets/ao/imperium/npc_bodies/body_146.png",
+      "textureKey": "imperium_npc_body_146",
+      "frameWidth": 32,
+      "frameHeight": 25,
+      "sheetCols": 2,
+      "walkFrames": [
+        0,
+        1
+      ],
+      "directionRows": {
+        "down": 0,
+        "up": 1,
+        "left": 2,
+        "right": 3
+      },
+      "headOffsetX": 0,
+      "headOffsetY": 0,
+      "walkGrhs": [
+        12029,
+        12031,
+        12028,
+        12030
+      ],
+      "mirrorRightFromLeft": true
+    },
+    "147": {
+      "status": "ready",
+      "bodyId": 147,
+      "texturePath": "/assets/ao/imperium/npc_bodies/body_147.png",
+      "textureKey": "imperium_npc_body_147",
+      "frameWidth": 75,
+      "frameHeight": 50,
+      "sheetCols": 4,
+      "walkFrames": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "directionRows": {
+        "down": 0,
+        "up": 1,
+        "left": 2,
+        "right": 3
+      },
+      "headOffsetX": 0,
+      "headOffsetY": 0,
+      "walkGrhs": [
+        12049,
+        12051,
+        12048,
+        12050
+      ],
+      "mirrorRightFromLeft": true
+    },
+    "148": {
+      "status": "ready",
+      "bodyId": 148,
+      "texturePath": "/assets/ao/imperium/npc_bodies/body_148.png",
+      "textureKey": "imperium_npc_body_148",
+      "frameWidth": 75,
+      "frameHeight": 50,
+      "sheetCols": 4,
+      "walkFrames": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "directionRows": {
+        "down": 0,
+        "up": 1,
+        "left": 2,
+        "right": 3
+      },
+      "headOffsetX": 0,
+      "headOffsetY": 0,
+      "walkGrhs": [
+        12069,
+        12071,
+        12068,
+        12070
+      ],
+      "mirrorRightFromLeft": true
+    },
+    "149": {
+      "status": "ready",
+      "bodyId": 149,
+      "texturePath": "/assets/ao/imperium/npc_bodies/body_149.png",
+      "textureKey": "imperium_npc_body_149",
+      "frameWidth": 28,
+      "frameHeight": 51,
+      "sheetCols": 8,
+      "walkFrames": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7
+      ],
+      "directionRows": {
+        "down": 0,
+        "up": 1,
+        "left": 2,
+        "right": 3
+      },
+      "headOffsetX": 0,
+      "headOffsetY": 0,
+      "walkGrhs": [
+        12105,
+        12107,
+        12104,
+        12106
+      ],
+      "mirrorRightFromLeft": true
+    },
+    "150": {
+      "status": "ready",
+      "bodyId": 150,
+      "texturePath": "/assets/ao/imperium/npc_bodies/body_150.png",
+      "textureKey": "imperium_npc_body_150",
+      "frameWidth": 51,
+      "frameHeight": 35,
+      "sheetCols": 8,
+      "walkFrames": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7
+      ],
+      "directionRows": {
+        "down": 0,
+        "up": 1,
+        "left": 2,
+        "right": 3
+      },
+      "headOffsetX": 0,
+      "headOffsetY": 0,
+      "walkGrhs": [
+        12141,
+        12143,
+        12140,
+        12142
+      ],
+      "mirrorRightFromLeft": true
+    },
+    "152": {
+      "status": "ready",
+      "bodyId": 152,
+      "texturePath": "/assets/ao/imperium/npc_bodies/body_152.png",
+      "textureKey": "imperium_npc_body_152",
+      "frameWidth": 48,
+      "frameHeight": 64,
+      "sheetCols": 8,
+      "walkFrames": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7
+      ],
+      "directionRows": {
+        "down": 0,
+        "up": 1,
+        "left": 2,
+        "right": 3
+      },
+      "headOffsetX": 0,
+      "headOffsetY": 0,
+      "walkGrhs": [
+        12217,
+        12219,
+        12216,
+        12218
+      ],
+      "mirrorRightFromLeft": true
+    },
+    "153": {
+      "status": "ready",
+      "bodyId": 153,
+      "texturePath": "/assets/ao/imperium/npc_bodies/body_153.png",
+      "textureKey": "imperium_npc_body_153",
+      "frameWidth": 48,
+      "frameHeight": 64,
+      "sheetCols": 8,
+      "walkFrames": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7
+      ],
+      "directionRows": {
+        "down": 0,
+        "up": 1,
+        "left": 2,
+        "right": 3
+      },
+      "headOffsetX": 0,
+      "headOffsetY": 0,
+      "walkGrhs": [
+        12253,
+        12255,
+        12252,
+        12254
+      ],
+      "mirrorRightFromLeft": true
+    },
+    "154": {
+      "status": "ready",
+      "bodyId": 154,
+      "texturePath": "/assets/ao/imperium/npc_bodies/body_154.png",
+      "textureKey": "imperium_npc_body_154",
+      "frameWidth": 48,
+      "frameHeight": 64,
+      "sheetCols": 8,
+      "walkFrames": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7
+      ],
+      "directionRows": {
+        "down": 0,
+        "up": 1,
+        "left": 2,
+        "right": 3
+      },
+      "headOffsetX": 0,
+      "headOffsetY": 0,
+      "walkGrhs": [
+        12289,
+        12291,
+        12288,
+        12290
+      ],
+      "mirrorRightFromLeft": true
+    },
+    "161": {
+      "status": "ready",
+      "bodyId": 161,
+      "texturePath": "/assets/ao/imperium/npc_bodies/body_161.png",
+      "textureKey": "imperium_npc_body_161",
+      "frameWidth": 26,
+      "frameHeight": 46,
+      "sheetCols": 6,
+      "walkFrames": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "directionRows": {
+        "down": 0,
+        "up": 1,
+        "left": 2,
+        "right": 3
+      },
+      "headOffsetX": 0,
+      "headOffsetY": -38,
+      "walkGrhs": [
+        14555,
+        14557,
+        14554,
+        14556
+      ],
+      "mirrorRightFromLeft": true
+    },
+    "166": {
+      "status": "ready",
+      "bodyId": 166,
+      "texturePath": "/assets/ao/imperium/npc_bodies/body_166.png",
+      "textureKey": "imperium_npc_body_166",
+      "frameWidth": 57,
+      "frameHeight": 99,
+      "sheetCols": 6,
+      "walkFrames": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "directionRows": {
+        "down": 0,
+        "up": 1,
+        "left": 2,
+        "right": 3
+      },
+      "headOffsetX": 0,
+      "headOffsetY": 0,
+      "walkGrhs": [
+        14685,
+        14687,
+        14684,
+        14686
+      ],
+      "mirrorRightFromLeft": true
+    },
+    "167": {
+      "status": "ready",
+      "bodyId": 167,
+      "texturePath": "/assets/ao/imperium/npc_bodies/body_167.png",
+      "textureKey": "imperium_npc_body_167",
+      "frameWidth": 90,
+      "frameHeight": 60,
+      "sheetCols": 8,
+      "walkFrames": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7
+      ],
+      "directionRows": {
+        "down": 0,
+        "up": 1,
+        "left": 2,
+        "right": 3
+      },
+      "headOffsetX": 0,
+      "headOffsetY": 0,
+      "walkGrhs": [
+        14721,
+        14723,
+        14720,
+        14722
+      ],
+      "mirrorRightFromLeft": true
+    },
+    "171": {
+      "status": "ready",
+      "bodyId": 171,
+      "texturePath": "/assets/ao/imperium/npc_bodies/body_171.png",
+      "textureKey": "imperium_npc_body_171",
+      "frameWidth": 52,
+      "frameHeight": 45,
+      "sheetCols": 8,
+      "walkFrames": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7
+      ],
+      "directionRows": {
+        "down": 0,
+        "up": 1,
+        "left": 2,
+        "right": 3
+      },
+      "headOffsetX": 0,
+      "headOffsetY": 0,
+      "walkGrhs": [
+        14871,
+        14873,
+        14870,
+        14872
+      ],
+      "mirrorRightFromLeft": true
+    },
+    "172": {
+      "status": "ready",
+      "bodyId": 172,
+      "texturePath": "/assets/ao/imperium/npc_bodies/body_172.png",
+      "textureKey": "imperium_npc_body_172",
+      "frameWidth": 48,
+      "frameHeight": 64,
+      "sheetCols": 8,
+      "walkFrames": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7
+      ],
+      "directionRows": {
+        "down": 0,
+        "up": 1,
+        "left": 2,
+        "right": 3
+      },
+      "headOffsetX": 0,
+      "headOffsetY": 0,
+      "walkGrhs": [
+        14907,
+        14909,
+        14906,
+        14908
+      ],
+      "mirrorRightFromLeft": true
+    },
+    "173": {
+      "status": "ready",
+      "bodyId": 173,
+      "texturePath": "/assets/ao/imperium/npc_bodies/body_173.png",
+      "textureKey": "imperium_npc_body_173",
+      "frameWidth": 66,
+      "frameHeight": 91,
+      "sheetCols": 4,
+      "walkFrames": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "directionRows": {
+        "down": 0,
+        "up": 1,
+        "left": 2,
+        "right": 3
+      },
+      "headOffsetX": 0,
+      "headOffsetY": 0,
+      "walkGrhs": [
+        13768,
+        13770,
+        13767,
+        13769
+      ],
+      "mirrorRightFromLeft": true
+    },
+    "214": {
+      "status": "ready",
+      "bodyId": 214,
+      "texturePath": "/assets/ao/imperium/npc_bodies/body_214.png",
+      "textureKey": "imperium_npc_body_214",
+      "frameWidth": 26,
+      "frameHeight": 46,
+      "sheetCols": 6,
+      "walkFrames": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "directionRows": {
+        "down": 0,
+        "up": 1,
+        "left": 2,
+        "right": 3
+      },
+      "headOffsetX": 0,
+      "headOffsetY": -38,
+      "walkGrhs": [
+        12755,
+        12757,
+        12754,
+        12756
+      ],
+      "mirrorRightFromLeft": true
+    },
+    "219": {
+      "status": "ready",
+      "bodyId": 219,
+      "texturePath": "/assets/ao/imperium/npc_bodies/body_219.png",
+      "textureKey": "imperium_npc_body_219",
+      "frameWidth": 64,
+      "frameHeight": 64,
+      "sheetCols": 6,
+      "walkFrames": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "directionRows": {
+        "down": 0,
+        "up": 1,
+        "left": 2,
+        "right": 3
+      },
+      "headOffsetX": 0,
+      "headOffsetY": 0,
+      "walkGrhs": [
+        12942,
+        12944,
+        12941,
+        12943
+      ],
+      "mirrorRightFromLeft": true
+    },
+    "221": {
+      "status": "ready",
+      "bodyId": 221,
+      "texturePath": "/assets/ao/imperium/npc_bodies/body_221.png",
+      "textureKey": "imperium_npc_body_221",
+      "frameWidth": 25,
+      "frameHeight": 45,
+      "sheetCols": 6,
+      "walkFrames": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "directionRows": {
+        "down": 0,
+        "up": 1,
+        "left": 2,
+        "right": 3
+      },
+      "headOffsetX": 0,
+      "headOffsetY": -28,
+      "walkGrhs": [
+        18429,
+        18431,
+        18428,
+        18430
+      ],
+      "mirrorRightFromLeft": true
+    },
+    "237": {
+      "status": "ready",
+      "bodyId": 237,
+      "texturePath": "/assets/ao/imperium/npc_bodies/body_237.png",
+      "textureKey": "imperium_npc_body_237",
+      "frameWidth": 57,
+      "frameHeight": 99,
+      "sheetCols": 6,
+      "walkFrames": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "directionRows": {
+        "down": 0,
+        "up": 1,
+        "left": 2,
+        "right": 3
+      },
+      "headOffsetX": 0,
+      "headOffsetY": 0,
+      "walkGrhs": [
+        3828,
+        3830,
+        3827,
+        3829
+      ],
+      "mirrorRightFromLeft": true
+    },
+    "238": {
+      "status": "ready",
+      "bodyId": 238,
+      "texturePath": "/assets/ao/imperium/npc_bodies/body_238.png",
+      "textureKey": "imperium_npc_body_238",
+      "frameWidth": 128,
+      "frameHeight": 128,
+      "sheetCols": 1,
+      "walkFrames": [
+        0
+      ],
+      "directionRows": {
+        "down": 0,
+        "up": 1,
+        "left": 2,
+        "right": 3
+      },
+      "headOffsetX": 0,
+      "headOffsetY": 0,
+      "walkGrhs": [
+        976,
+        976,
+        976,
+        976
+      ],
+      "mirrorRightFromLeft": true
+    },
+    "245": {
+      "status": "ready",
+      "bodyId": 245,
+      "texturePath": "/assets/ao/imperium/npc_bodies/body_245.png",
+      "textureKey": "imperium_npc_body_245",
+      "frameWidth": 140,
+      "frameHeight": 85,
+      "sheetCols": 5,
+      "walkFrames": [
+        0,
+        1,
+        2,
+        3,
+        4
+      ],
+      "directionRows": {
+        "down": 0,
+        "up": 1,
+        "left": 2,
+        "right": 3
+      },
+      "headOffsetX": 0,
+      "headOffsetY": 0,
+      "walkGrhs": [
+        13792,
+        13794,
+        13791,
+        13793
+      ],
+      "mirrorRightFromLeft": true
+    },
+    "253": {
+      "status": "ready",
+      "bodyId": 253,
+      "texturePath": "/assets/ao/imperium/npc_bodies/body_253.png",
+      "textureKey": "imperium_npc_body_253",
+      "frameWidth": 26,
+      "frameHeight": 46,
+      "sheetCols": 6,
+      "walkFrames": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "directionRows": {
+        "down": 0,
+        "up": 1,
+        "left": 2,
+        "right": 3
+      },
+      "headOffsetX": 0,
+      "headOffsetY": -28,
+      "walkGrhs": [
+        15279,
+        15281,
+        15278,
+        15280
+      ],
+      "mirrorRightFromLeft": true
+    },
+    "254": {
+      "status": "ready",
+      "bodyId": 254,
+      "texturePath": "/assets/ao/imperium/npc_bodies/body_254.png",
+      "textureKey": "imperium_npc_body_254",
+      "frameWidth": 26,
+      "frameHeight": 46,
+      "sheetCols": 6,
+      "walkFrames": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "directionRows": {
+        "down": 0,
+        "up": 1,
+        "left": 2,
+        "right": 3
+      },
+      "headOffsetX": 0,
+      "headOffsetY": -28,
+      "walkGrhs": [
+        15305,
+        15307,
+        15304,
+        15306
+      ],
+      "mirrorRightFromLeft": true
+    },
+    "256": {
+      "status": "ready",
+      "bodyId": 256,
+      "texturePath": "/assets/ao/imperium/npc_bodies/body_256.png",
+      "textureKey": "imperium_npc_body_256",
+      "frameWidth": 26,
+      "frameHeight": 46,
+      "sheetCols": 6,
+      "walkFrames": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "directionRows": {
+        "down": 0,
+        "up": 1,
+        "left": 2,
+        "right": 3
+      },
+      "headOffsetX": 0,
+      "headOffsetY": -38,
+      "walkGrhs": [
+        15409,
+        15411,
+        15408,
+        15410
+      ],
+      "mirrorRightFromLeft": true
+    },
+    "260": {
+      "status": "ready",
+      "bodyId": 260,
+      "texturePath": "/assets/ao/imperium/npc_bodies/body_260.png",
+      "textureKey": "imperium_npc_body_260",
+      "frameWidth": 26,
+      "frameHeight": 46,
+      "sheetCols": 6,
+      "walkFrames": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "directionRows": {
+        "down": 0,
+        "up": 1,
+        "left": 2,
+        "right": 3
+      },
+      "headOffsetX": 0,
+      "headOffsetY": -38,
+      "walkGrhs": [
+        15754,
+        15756,
+        15753,
+        15755
+      ],
+      "mirrorRightFromLeft": true
+    },
+    "265": {
+      "status": "ready",
+      "bodyId": 265,
+      "texturePath": "/assets/ao/imperium/npc_bodies/body_265.png",
+      "textureKey": "imperium_npc_body_265",
+      "frameWidth": 26,
+      "frameHeight": 46,
+      "sheetCols": 6,
+      "walkFrames": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "directionRows": {
+        "down": 0,
+        "up": 1,
+        "left": 2,
+        "right": 3
+      },
+      "headOffsetX": 0,
+      "headOffsetY": -38,
+      "walkGrhs": [
+        16024,
+        16026,
+        16023,
+        16025
+      ],
+      "mirrorRightFromLeft": true
+    },
+    "268": {
+      "status": "ready",
+      "bodyId": 268,
+      "texturePath": "/assets/ao/imperium/npc_bodies/body_268.png",
+      "textureKey": "imperium_npc_body_268",
+      "frameWidth": 26,
+      "frameHeight": 46,
+      "sheetCols": 6,
+      "walkFrames": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "directionRows": {
+        "down": 0,
+        "up": 1,
+        "left": 2,
+        "right": 3
+      },
+      "headOffsetX": 0,
+      "headOffsetY": -38,
+      "walkGrhs": [
+        16124,
+        16126,
+        16123,
+        16125
+      ],
+      "mirrorRightFromLeft": true
+    },
+    "270": {
+      "status": "ready",
+      "bodyId": 270,
+      "texturePath": "/assets/ao/imperium/npc_bodies/body_270.png",
+      "textureKey": "imperium_npc_body_270",
+      "frameWidth": 26,
+      "frameHeight": 46,
+      "sheetCols": 6,
+      "walkFrames": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "directionRows": {
+        "down": 0,
+        "up": 1,
+        "left": 2,
+        "right": 3
+      },
+      "headOffsetX": 0,
+      "headOffsetY": -38,
+      "walkGrhs": [
+        16354,
+        16356,
+        16353,
+        16355
+      ],
+      "mirrorRightFromLeft": true
+    },
+    "273": {
+      "status": "ready",
+      "bodyId": 273,
+      "texturePath": "/assets/ao/imperium/npc_bodies/body_273.png",
+      "textureKey": "imperium_npc_body_273",
+      "frameWidth": 66,
+      "frameHeight": 92,
+      "sheetCols": 4,
+      "walkFrames": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "directionRows": {
+        "down": 0,
+        "up": 1,
+        "left": 2,
+        "right": 3
+      },
+      "headOffsetX": 0,
+      "headOffsetY": 0,
+      "walkGrhs": [
+        16747,
+        16748,
+        16746,
+        16749
+      ],
+      "mirrorRightFromLeft": true
+    },
+    "277": {
+      "status": "ready",
+      "bodyId": 277,
+      "texturePath": "/assets/ao/imperium/npc_bodies/body_277.png",
+      "textureKey": "imperium_npc_body_277",
+      "frameWidth": 132,
+      "frameHeight": 110,
+      "sheetCols": 5,
+      "walkFrames": [
+        0,
+        1,
+        2,
+        3,
+        4
+      ],
+      "directionRows": {
+        "down": 0,
+        "up": 1,
+        "left": 2,
+        "right": 3
+      },
+      "headOffsetX": 0,
+      "headOffsetY": 0,
+      "walkGrhs": [
+        17787,
+        17789,
+        17786,
+        17788
+      ],
+      "mirrorRightFromLeft": true
+    },
+    "278": {
+      "status": "ready",
+      "bodyId": 278,
+      "texturePath": "/assets/ao/imperium/npc_bodies/body_278.png",
+      "textureKey": "imperium_npc_body_278",
+      "frameWidth": 24,
+      "frameHeight": 31,
+      "sheetCols": 8,
+      "walkFrames": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7
+      ],
+      "directionRows": {
+        "down": 0,
+        "up": 1,
+        "left": 2,
+        "right": 3
+      },
+      "headOffsetX": 0,
+      "headOffsetY": 0,
+      "walkGrhs": [
+        17873,
+        17875,
+        17872,
+        17874
+      ],
+      "mirrorRightFromLeft": true
+    },
+    "281": {
+      "status": "ready",
+      "bodyId": 281,
+      "texturePath": "/assets/ao/imperium/npc_bodies/body_281.png",
+      "textureKey": "imperium_npc_body_281",
+      "frameWidth": 26,
+      "frameHeight": 46,
+      "sheetCols": 6,
+      "walkFrames": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "directionRows": {
+        "down": 0,
+        "up": 1,
+        "left": 2,
+        "right": 3
+      },
+      "headOffsetX": 0,
+      "headOffsetY": -38,
+      "walkGrhs": [
+        17984,
+        17986,
+        17983,
+        17985
+      ],
+      "mirrorRightFromLeft": true
+    },
+    "284": {
+      "status": "ready",
+      "bodyId": 284,
+      "texturePath": "/assets/ao/imperium/npc_bodies/body_284.png",
+      "textureKey": "imperium_npc_body_284",
+      "frameWidth": 74,
+      "frameHeight": 49,
+      "sheetCols": 4,
+      "walkFrames": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "directionRows": {
+        "down": 0,
+        "up": 1,
+        "left": 2,
+        "right": 3
+      },
+      "headOffsetX": 0,
+      "headOffsetY": -28,
+      "walkGrhs": [
+        3857,
+        3859,
+        3856,
+        3858
+      ],
+      "mirrorRightFromLeft": true
+    },
+    "307": {
+      "status": "ready",
+      "bodyId": 307,
+      "texturePath": "/assets/ao/imperium/npc_bodies/body_307.png",
+      "textureKey": "imperium_npc_body_307",
+      "frameWidth": 26,
+      "frameHeight": 46,
+      "sheetCols": 6,
+      "walkFrames": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "directionRows": {
+        "down": 0,
+        "up": 1,
+        "left": 2,
+        "right": 3
+      },
+      "headOffsetX": 0,
+      "headOffsetY": -38,
+      "walkGrhs": [
+        19523,
+        19525,
+        19522,
+        19524
+      ],
+      "mirrorRightFromLeft": true
+    },
+    "331": {
+      "status": "ready",
+      "bodyId": 331,
+      "texturePath": "/assets/ao/imperium/npc_bodies/body_331.png",
+      "textureKey": "imperium_npc_body_331",
+      "frameWidth": 26,
+      "frameHeight": 46,
+      "sheetCols": 6,
+      "walkFrames": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "directionRows": {
+        "down": 0,
+        "up": 1,
+        "left": 2,
+        "right": 3
+      },
+      "headOffsetX": 0,
+      "headOffsetY": -28,
+      "walkGrhs": [
+        1468,
+        1470,
+        1467,
+        1469
+      ],
+      "mirrorRightFromLeft": true
+    },
+    "338": {
+      "status": "ready",
+      "bodyId": 338,
+      "texturePath": "/assets/ao/imperium/npc_bodies/body_338.png",
+      "textureKey": "imperium_npc_body_338",
+      "frameWidth": 26,
+      "frameHeight": 46,
+      "sheetCols": 6,
+      "walkFrames": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "directionRows": {
+        "down": 0,
+        "up": 1,
+        "left": 2,
+        "right": 3
+      },
+      "headOffsetX": 0,
+      "headOffsetY": -38,
+      "walkGrhs": [
+        6865,
+        6867,
+        6864,
+        6866
+      ],
+      "mirrorRightFromLeft": true
+    },
+    "354": {
+      "status": "ready",
+      "bodyId": 354,
+      "texturePath": "/assets/ao/imperium/npc_bodies/body_354.png",
+      "textureKey": "imperium_npc_body_354",
+      "frameWidth": 27,
+      "frameHeight": 46,
+      "sheetCols": 6,
+      "walkFrames": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "directionRows": {
+        "down": 0,
+        "up": 1,
+        "left": 2,
+        "right": 3
+      },
+      "headOffsetX": 0,
+      "headOffsetY": -38,
+      "walkGrhs": [
+        22223,
+        22225,
+        22222,
+        22224
+      ],
+      "mirrorRightFromLeft": true
+    },
+    "355": {
+      "status": "ready",
+      "bodyId": 355,
+      "texturePath": "/assets/ao/imperium/npc_bodies/body_355.png",
+      "textureKey": "imperium_npc_body_355",
+      "frameWidth": 27,
+      "frameHeight": 46,
+      "sheetCols": 6,
+      "walkFrames": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "directionRows": {
+        "down": 0,
+        "up": 1,
+        "left": 2,
+        "right": 3
+      },
+      "headOffsetX": 0,
+      "headOffsetY": -38,
+      "walkGrhs": [
+        22250,
+        22252,
+        22249,
+        22251
+      ],
+      "mirrorRightFromLeft": true
+    },
+    "356": {
+      "status": "ready",
+      "bodyId": 356,
+      "texturePath": "/assets/ao/imperium/npc_bodies/body_356.png",
+      "textureKey": "imperium_npc_body_356",
+      "frameWidth": 26,
+      "frameHeight": 38,
+      "sheetCols": 6,
+      "walkFrames": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "directionRows": {
+        "down": 0,
+        "up": 1,
+        "left": 2,
+        "right": 3
+      },
+      "headOffsetX": 2,
+      "headOffsetY": -28,
+      "walkGrhs": [
+        22277,
+        22279,
+        22276,
+        22278
+      ],
+      "mirrorRightFromLeft": true
+    },
+    "357": {
+      "status": "ready",
+      "bodyId": 357,
+      "texturePath": "/assets/ao/imperium/npc_bodies/body_357.png",
+      "textureKey": "imperium_npc_body_357",
+      "frameWidth": 373,
+      "frameHeight": 295,
+      "sheetCols": 8,
+      "walkFrames": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7
+      ],
+      "directionRows": {
+        "down": 0,
+        "up": 1,
+        "left": 2,
+        "right": 3
+      },
+      "headOffsetX": 0,
+      "headOffsetY": -34,
+      "walkGrhs": [
+        22591,
+        22593,
+        22590,
+        22592
+      ],
+      "mirrorRightFromLeft": true
+    },
+    "358": {
+      "status": "ready",
+      "bodyId": 358,
+      "texturePath": "/assets/ao/imperium/npc_bodies/body_358.png",
+      "textureKey": "imperium_npc_body_358",
+      "frameWidth": 373,
+      "frameHeight": 295,
+      "sheetCols": 8,
+      "walkFrames": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7
+      ],
+      "directionRows": {
+        "down": 0,
+        "up": 1,
+        "left": 2,
+        "right": 3
+      },
+      "headOffsetX": 0,
+      "headOffsetY": -34,
+      "walkGrhs": [
+        22382,
+        22384,
+        22381,
+        22383
+      ],
+      "mirrorRightFromLeft": true
+    },
+    "359": {
+      "status": "ready",
+      "bodyId": 359,
+      "texturePath": "/assets/ao/imperium/npc_bodies/body_359.png",
+      "textureKey": "imperium_npc_body_359",
+      "frameWidth": 373,
+      "frameHeight": 295,
+      "sheetCols": 8,
+      "walkFrames": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7
+      ],
+      "directionRows": {
+        "down": 0,
+        "up": 1,
+        "left": 2,
+        "right": 3
+      },
+      "headOffsetX": 0,
+      "headOffsetY": -34,
+      "walkGrhs": [
+        22434,
+        22437,
+        22433,
+        22435
+      ],
+      "mirrorRightFromLeft": true
+    },
+    "360": {
+      "status": "ready",
+      "bodyId": 360,
+      "texturePath": "/assets/ao/imperium/npc_bodies/body_360.png",
+      "textureKey": "imperium_npc_body_360",
+      "frameWidth": 373,
+      "frameHeight": 295,
+      "sheetCols": 8,
+      "walkFrames": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7
+      ],
+      "directionRows": {
+        "down": 0,
+        "up": 1,
+        "left": 2,
+        "right": 3
+      },
+      "headOffsetX": 0,
+      "headOffsetY": -35,
+      "walkGrhs": [
+        22487,
+        22489,
+        22486,
+        22488
+      ],
+      "mirrorRightFromLeft": true
+    },
+    "361": {
+      "status": "ready",
+      "bodyId": 361,
+      "texturePath": "/assets/ao/imperium/npc_bodies/body_361.png",
+      "textureKey": "imperium_npc_body_361",
+      "frameWidth": 373,
+      "frameHeight": 295,
+      "sheetCols": 8,
+      "walkFrames": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7
+      ],
+      "directionRows": {
+        "down": 0,
+        "up": 1,
+        "left": 2,
+        "right": 3
+      },
+      "headOffsetX": 0,
+      "headOffsetY": -34,
+      "walkGrhs": [
+        22539,
+        22541,
+        22538,
+        22540
+      ],
+      "mirrorRightFromLeft": true
+    },
+    "362": {
+      "status": "ready",
+      "bodyId": 362,
+      "texturePath": "/assets/ao/imperium/npc_bodies/body_362.png",
+      "textureKey": "imperium_npc_body_362",
+      "frameWidth": 373,
+      "frameHeight": 295,
+      "sheetCols": 8,
+      "walkFrames": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7
+      ],
+      "directionRows": {
+        "down": 0,
+        "up": 1,
+        "left": 2,
+        "right": 3
+      },
+      "headOffsetX": 0,
+      "headOffsetY": -34,
+      "walkGrhs": [
+        22591,
+        22593,
+        22590,
+        22592
+      ],
+      "mirrorRightFromLeft": true
+    },
+    "363": {
+      "status": "ready",
+      "bodyId": 363,
+      "texturePath": "/assets/ao/imperium/npc_bodies/body_363.png",
+      "textureKey": "imperium_npc_body_363",
+      "frameWidth": 140,
+      "frameHeight": 170,
+      "sheetCols": 8,
+      "walkFrames": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7
+      ],
+      "directionRows": {
+        "down": 0,
+        "up": 1,
+        "left": 2,
+        "right": 3
+      },
+      "headOffsetX": 0,
+      "headOffsetY": -34,
+      "walkGrhs": [
+        22627,
+        22628,
+        22626,
+        22629
+      ],
+      "mirrorRightFromLeft": true
+    },
+    "364": {
+      "status": "ready",
+      "bodyId": 364,
+      "texturePath": "/assets/ao/imperium/npc_bodies/body_364.png",
+      "textureKey": "imperium_npc_body_364",
+      "frameWidth": 110,
+      "frameHeight": 130,
+      "sheetCols": 5,
+      "walkFrames": [
+        0,
+        1,
+        2,
+        3,
+        4
+      ],
+      "directionRows": {
+        "down": 0,
+        "up": 1,
+        "left": 2,
+        "right": 3
+      },
+      "headOffsetX": 0,
+      "headOffsetY": -34,
+      "walkGrhs": [
+        22651,
+        22653,
+        22650,
+        22652
+      ],
+      "mirrorRightFromLeft": true
+    },
+    "365": {
+      "status": "ready",
+      "bodyId": 365,
+      "texturePath": "/assets/ao/imperium/npc_bodies/body_365.png",
+      "textureKey": "imperium_npc_body_365",
+      "frameWidth": 60,
+      "frameHeight": 75,
+      "sheetCols": 8,
+      "walkFrames": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7
+      ],
+      "directionRows": {
+        "down": 0,
+        "up": 1,
+        "left": 2,
+        "right": 3
+      },
+      "headOffsetX": 0,
+      "headOffsetY": -34,
+      "walkGrhs": [
+        22691,
+        22693,
+        22690,
+        22692
+      ],
+      "mirrorRightFromLeft": true
+    },
+    "366": {
+      "status": "ready",
+      "bodyId": 366,
+      "texturePath": "/assets/ao/imperium/npc_bodies/body_366.png",
+      "textureKey": "imperium_npc_body_366",
+      "frameWidth": 80,
+      "frameHeight": 64,
+      "sheetCols": 8,
+      "walkFrames": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7
+      ],
+      "directionRows": {
+        "down": 0,
+        "up": 1,
+        "left": 2,
+        "right": 3
+      },
+      "headOffsetX": 0,
+      "headOffsetY": -34,
+      "walkGrhs": [
+        22727,
+        22729,
+        22726,
+        22728
+      ],
+      "mirrorRightFromLeft": true
+    },
+    "367": {
+      "status": "ready",
+      "bodyId": 367,
+      "texturePath": "/assets/ao/imperium/npc_bodies/body_367.png",
+      "textureKey": "imperium_npc_body_367",
+      "frameWidth": 60,
+      "frameHeight": 75,
+      "sheetCols": 8,
+      "walkFrames": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7
+      ],
+      "directionRows": {
+        "down": 0,
+        "up": 1,
+        "left": 2,
+        "right": 3
+      },
+      "headOffsetX": 0,
+      "headOffsetY": -34,
+      "walkGrhs": [
+        22767,
+        22769,
+        22766,
+        22768
+      ],
+      "mirrorRightFromLeft": true
+    },
+    "368": {
+      "status": "ready",
+      "bodyId": 368,
+      "texturePath": "/assets/ao/imperium/npc_bodies/body_368.png",
+      "textureKey": "imperium_npc_body_368",
+      "frameWidth": 60,
+      "frameHeight": 75,
+      "sheetCols": 8,
+      "walkFrames": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7
+      ],
+      "directionRows": {
+        "down": 0,
+        "up": 1,
+        "left": 2,
+        "right": 3
+      },
+      "headOffsetX": 0,
+      "headOffsetY": -34,
+      "walkGrhs": [
+        22807,
+        22809,
+        22806,
+        22808
+      ],
+      "mirrorRightFromLeft": true
+    },
+    "369": {
+      "status": "ready",
+      "bodyId": 369,
+      "texturePath": "/assets/ao/imperium/npc_bodies/body_369.png",
+      "textureKey": "imperium_npc_body_369",
+      "frameWidth": 140,
+      "frameHeight": 170,
+      "sheetCols": 8,
+      "walkFrames": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7
+      ],
+      "directionRows": {
+        "down": 0,
+        "up": 1,
+        "left": 2,
+        "right": 3
+      },
+      "headOffsetX": 0,
+      "headOffsetY": -34,
+      "walkGrhs": [
+        22843,
+        22844,
+        22842,
+        22845
+      ],
+      "mirrorRightFromLeft": true
+    },
+    "370": {
+      "status": "ready",
+      "bodyId": 370,
+      "texturePath": "/assets/ao/imperium/npc_bodies/body_370.png",
+      "textureKey": "imperium_npc_body_370",
+      "frameWidth": 150,
+      "frameHeight": 180,
+      "sheetCols": 8,
+      "walkFrames": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7
+      ],
+      "directionRows": {
+        "down": 0,
+        "up": 1,
+        "left": 2,
+        "right": 3
+      },
+      "headOffsetX": 0,
+      "headOffsetY": -34,
+      "walkGrhs": [
+        22879,
+        22880,
+        22878,
+        22881
+      ],
+      "mirrorRightFromLeft": true
+    },
+    "371": {
+      "status": "ready",
+      "bodyId": 371,
+      "texturePath": "/assets/ao/imperium/npc_bodies/body_371.png",
+      "textureKey": "imperium_npc_body_371",
+      "frameWidth": 140,
+      "frameHeight": 170,
+      "sheetCols": 8,
+      "walkFrames": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7
+      ],
+      "directionRows": {
+        "down": 0,
+        "up": 1,
+        "left": 2,
+        "right": 3
+      },
+      "headOffsetX": 0,
+      "headOffsetY": -34,
+      "walkGrhs": [
+        22915,
+        22916,
+        22914,
+        22917
+      ],
+      "mirrorRightFromLeft": true
+    },
+    "373": {
+      "status": "ready",
+      "bodyId": 373,
+      "texturePath": "/assets/ao/imperium/npc_bodies/body_373.png",
+      "textureKey": "imperium_npc_body_373",
+      "frameWidth": 140,
+      "frameHeight": 170,
+      "sheetCols": 8,
+      "walkFrames": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7
+      ],
+      "directionRows": {
+        "down": 0,
+        "up": 1,
+        "left": 2,
+        "right": 3
+      },
+      "headOffsetX": 0,
+      "headOffsetY": -34,
+      "walkGrhs": [
+        22987,
+        22988,
+        22986,
+        22989
+      ],
+      "mirrorRightFromLeft": true
+    },
+    "374": {
+      "status": "ready",
+      "bodyId": 374,
+      "texturePath": "/assets/ao/imperium/npc_bodies/body_374.png",
+      "textureKey": "imperium_npc_body_374",
+      "frameWidth": 150,
+      "frameHeight": 180,
+      "sheetCols": 8,
+      "walkFrames": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7
+      ],
+      "directionRows": {
+        "down": 0,
+        "up": 1,
+        "left": 2,
+        "right": 3
+      },
+      "headOffsetX": 0,
+      "headOffsetY": -34,
+      "walkGrhs": [
+        23024,
+        23025,
+        23023,
+        23026
+      ],
+      "mirrorRightFromLeft": true
+    },
+    "375": {
+      "status": "ready",
+      "bodyId": 375,
+      "texturePath": "/assets/ao/imperium/npc_bodies/body_375.png",
+      "textureKey": "imperium_npc_body_375",
+      "frameWidth": 140,
+      "frameHeight": 170,
+      "sheetCols": 8,
+      "walkFrames": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7
+      ],
+      "directionRows": {
+        "down": 0,
+        "up": 1,
+        "left": 2,
+        "right": 3
+      },
+      "headOffsetX": 0,
+      "headOffsetY": -34,
+      "walkGrhs": [
+        23060,
+        23061,
+        23059,
+        23062
+      ],
+      "mirrorRightFromLeft": true
+    },
+    "377": {
+      "status": "ready",
+      "bodyId": 377,
+      "texturePath": "/assets/ao/imperium/npc_bodies/body_377.png",
+      "textureKey": "imperium_npc_body_377",
+      "frameWidth": 110,
+      "frameHeight": 130,
+      "sheetCols": 5,
+      "walkFrames": [
+        0,
+        1,
+        2,
+        3,
+        4
+      ],
+      "directionRows": {
+        "down": 0,
+        "up": 1,
+        "left": 2,
+        "right": 3
+      },
+      "headOffsetX": 0,
+      "headOffsetY": -34,
+      "walkGrhs": [
+        23130,
+        23132,
+        23129,
+        23131
+      ],
+      "mirrorRightFromLeft": true
+    },
+    "388": {
+      "status": "ready",
+      "bodyId": 388,
+      "texturePath": "/assets/ao/imperium/npc_bodies/body_388.png",
+      "textureKey": "imperium_npc_body_388",
+      "frameWidth": 26,
+      "frameHeight": 46,
+      "sheetCols": 6,
+      "walkFrames": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "directionRows": {
+        "down": 0,
+        "up": 1,
+        "left": 2,
+        "right": 3
+      },
+      "headOffsetX": 0,
+      "headOffsetY": -38,
+      "walkGrhs": [
+        25478,
+        25480,
+        25477,
+        25479
+      ],
+      "mirrorRightFromLeft": true
+    },
+    "395": {
+      "status": "ready",
+      "bodyId": 395,
+      "texturePath": "/assets/ao/imperium/npc_bodies/body_395.png",
+      "textureKey": "imperium_npc_body_395",
+      "frameWidth": 26,
+      "frameHeight": 46,
+      "sheetCols": 6,
+      "walkFrames": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "directionRows": {
+        "down": 0,
+        "up": 1,
+        "left": 2,
+        "right": 3
+      },
+      "headOffsetX": 0,
+      "headOffsetY": -38,
+      "walkGrhs": [
+        25669,
+        25671,
+        25668,
+        25670
+      ],
+      "mirrorRightFromLeft": true
+    },
+    "400": {
+      "status": "ready",
+      "bodyId": 400,
+      "texturePath": "/assets/ao/imperium/npc_bodies/body_400.png",
+      "textureKey": "imperium_npc_body_400",
+      "frameWidth": 26,
+      "frameHeight": 46,
+      "sheetCols": 6,
+      "walkFrames": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "directionRows": {
+        "down": 0,
+        "up": 1,
+        "left": 2,
+        "right": 3
+      },
+      "headOffsetX": 0,
+      "headOffsetY": -38,
+      "walkGrhs": [
+        26136,
+        26138,
+        26135,
+        26137
+      ],
+      "mirrorRightFromLeft": true
+    },
+    "401": {
+      "status": "ready",
+      "bodyId": 401,
+      "texturePath": "/assets/ao/imperium/npc_bodies/body_401.png",
+      "textureKey": "imperium_npc_body_401",
+      "frameWidth": 26,
+      "frameHeight": 46,
+      "sheetCols": 6,
+      "walkFrames": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "directionRows": {
+        "down": 0,
+        "up": 1,
+        "left": 2,
+        "right": 3
+      },
+      "headOffsetX": 0,
+      "headOffsetY": -38,
+      "walkGrhs": [
+        26163,
+        26165,
+        26162,
+        26164
+      ],
+      "mirrorRightFromLeft": true
+    },
+    "402": {
+      "status": "ready",
+      "bodyId": 402,
+      "texturePath": "/assets/ao/imperium/npc_bodies/body_402.png",
+      "textureKey": "imperium_npc_body_402",
+      "frameWidth": 91,
+      "frameHeight": 93,
+      "sheetCols": 6,
+      "walkFrames": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "directionRows": {
+        "down": 0,
+        "up": 1,
+        "left": 2,
+        "right": 3
+      },
+      "headOffsetX": 0,
+      "headOffsetY": -38,
+      "walkGrhs": [
+        26232,
+        26234,
+        26231,
+        26233
+      ],
+      "mirrorRightFromLeft": true
+    },
+    "409": {
+      "status": "ready",
+      "bodyId": 409,
+      "texturePath": "/assets/ao/imperium/npc_bodies/body_409.png",
+      "textureKey": "imperium_npc_body_409",
+      "frameWidth": 26,
+      "frameHeight": 35,
+      "sheetCols": 6,
+      "walkFrames": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "directionRows": {
+        "down": 0,
+        "up": 1,
+        "left": 2,
+        "right": 3
+      },
+      "headOffsetX": 0,
+      "headOffsetY": -28,
+      "walkGrhs": [
+        29256,
+        29258,
+        29255,
+        29257
+      ],
+      "mirrorRightFromLeft": true
+    },
+    "414": {
+      "status": "ready",
+      "bodyId": 414,
+      "texturePath": "/assets/ao/imperium/npc_bodies/body_414.png",
+      "textureKey": "imperium_npc_body_414",
+      "frameWidth": 78,
+      "frameHeight": 72,
+      "sheetCols": 6,
+      "walkFrames": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "directionRows": {
+        "down": 0,
+        "up": 1,
+        "left": 2,
+        "right": 3
+      },
+      "headOffsetX": 0,
+      "headOffsetY": -48,
+      "walkGrhs": [
+        29966,
+        29964,
+        29965,
+        29963
+      ],
+      "mirrorRightFromLeft": true
+    },
+    "417": {
+      "status": "ready",
+      "bodyId": 417,
+      "texturePath": "/assets/ao/imperium/npc_bodies/body_417.png",
+      "textureKey": "imperium_npc_body_417",
+      "frameWidth": 75,
+      "frameHeight": 100,
+      "sheetCols": 6,
+      "walkFrames": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "directionRows": {
+        "down": 0,
+        "up": 1,
+        "left": 2,
+        "right": 3
+      },
+      "headOffsetX": 0,
+      "headOffsetY": 0,
+      "walkGrhs": [
+        30034,
+        30036,
+        30033,
+        30035
+      ],
+      "mirrorRightFromLeft": true
+    },
+    "418": {
+      "status": "ready",
+      "bodyId": 418,
+      "texturePath": "/assets/ao/imperium/npc_bodies/body_418.png",
+      "textureKey": "imperium_npc_body_418",
+      "frameWidth": 40,
+      "frameHeight": 64,
+      "sheetCols": 6,
+      "walkFrames": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "directionRows": {
+        "down": 0,
+        "up": 1,
+        "left": 2,
+        "right": 3
+      },
+      "headOffsetX": 0,
+      "headOffsetY": 0,
+      "walkGrhs": [
+        30062,
+        30064,
+        30061,
+        30063
+      ],
+      "mirrorRightFromLeft": true
+    },
+    "442": {
+      "status": "missing_body_index",
+      "bodyId": 442
+    },
+    "443": {
+      "status": "missing_body_index",
+      "bodyId": 443
+    },
+    "444": {
+      "status": "missing_body_index",
+      "bodyId": 444
+    },
+    "445": {
+      "status": "missing_body_index",
+      "bodyId": 445
+    },
+    "450": {
+      "status": "missing_body_index",
+      "bodyId": 450
+    },
+    "474": {
+      "status": "missing_body_index",
+      "bodyId": 474
+    },
+    "480": {
+      "status": "missing_body_index",
+      "bodyId": 480
+    }
+  }
+}

@@ -6,6 +6,7 @@ import {
   SHIELDS,
   WEAPONS,
 } from "./catalog";
+import { normalizeItemId } from "./definitions";
 
 const KNOWN_ITEM_IDS = new Set<string>([
   ...WEAPONS.map((entry) => entry.itemId),
@@ -29,10 +30,12 @@ export function getKnownItemIds(): ReadonlySet<string> {
 
 export function isKnownItemId(itemId: string | null | undefined): boolean {
   if (!itemId) return false;
-  return KNOWN_ITEM_IDS.has(itemId);
+  return normalizeItemId(itemId) != null;
 }
 
 export function isKnownEquipmentItemId(itemId: string | null | undefined): boolean {
   if (!itemId) return false;
-  return EQUIPMENT_ITEM_IDS.has(itemId);
+  const resolved = normalizeItemId(itemId);
+  if (!resolved) return false;
+  return EQUIPMENT_ITEM_IDS.has(resolved);
 }

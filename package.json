@@ -5,12 +5,17 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "dev:server": "npm run start --prefix server",
+    "dev:server": "npm run dev --prefix server",
     "server:stop": "powershell -NoProfile -ExecutionPolicy Bypass -Command \"$p=(Get-NetTCPConnection -LocalPort 3001 -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty OwningProcess); if ($p) { Stop-Process -Id $p -Force; Write-Host ('Stopped server PID ' + $p) } else { Write-Host 'No server process on port 3001' }\"",
     "server:restart": "npm run server:stop && npm run dev:server",
     "dev:all": "concurrently -n web,server -c cyan,magenta \"npm run dev\" \"npm run dev:server\"",
     "build": "tsc && vite build",
     "preview": "vite preview",
+    "fonts:ao": "node scripts/generate-ao-font-xml.mjs",
+    "fonts:ao:strip": "node scripts/ao-font-remove-black-bg.mjs",
+    "skin:viewport-alpha": "node scripts/ui-skin-punch-viewport.mjs",
+    "skin:viewport-alpha:white": "node scripts/ui-skin-punch-viewport.mjs \"\" white",
+    "skin:viewport-alpha:red": "node scripts/ui-skin-punch-viewport.mjs \"\" red",
     "audit:sprites": "node tools/audit-sprites.mjs",
     "audit:mobs": "node tools/audit-mob-sprites.mjs",
     "normalize:sprites": "node tools/normalize-sprites.mjs",
@@ -20,18 +25,24 @@
     "import:items": "npm run pipeline-std1",
     "extract:citizen-icon": "node tools/ao-export/extract-catalog-icon.mjs --in \"C:/Users/imaga/Desktop/input Script/1005.png\" --block 0 --icon-x 0 --icon-y 0 --out citizenClothesBajos_icon.png",
     "ref:frames": "node tools/extract-ao-reference-frames.mjs",
+    "wav:spells": "node tools/copy-spell-wavs.mjs",
+    "import:npc-catalog": "node tools/ao-export/generate-npc-catalog.mjs",
+    "import:npc-visuals": "node tools/ao-export/build-npc-body-visuals.mjs",
+    "import:npc-heads": "node tools/ao-export/assign-npc-catalog-heads.mjs",
+    "import:npc-all": "npm run import:npc-catalog && npm run import:npc-visuals && npm run import:npc-heads",
     "test": "vitest run",
-    "test:smoke": "vitest run tests/shared/joinSession.test.ts tests/shared/characterDeathState.test.ts tests/game/progressPersistGuard.test.ts tests/game/characterProgressIsolation.test.ts tests/game/characterProgressApply.test.ts tests/scenes/multiplayerJoinPayload.test.ts",
+    "test:smoke": "vitest run tests/shared/joinSession.test.ts tests/shared/characterDeathState.test.ts tests/game/progressPersistGuard.test.ts tests/game/characterProgressIsolation.test.ts tests/game/characterProgressApply.test.ts tests/game/imperiumNpcCatalog.test.ts tests/game/imperiumNpcVisuals.test.ts tests/scenes/multiplayerJoinPayload.test.ts",
     "test:watch": "vitest"
   },
   "devDependencies": {
     "concurrently": "^9.1.2",
-    "vitest": "^3.2.4",
     "pngjs": "^7.0.0",
     "typescript": "^5.8.3",
-    "vite": "^6.3.5"
+    "vite": "^6.3.5",
+    "vitest": "^3.2.4"
   },
   "dependencies": {
+    "jimp": "^1.6.1",
     "phaser": "^3.88.2"
   }
 }

@@ -28,10 +28,10 @@ export const WORLD_MAP_ART_PATH = "/assets/ao/world/world_map.png";
  * Coincide con edgeTransitions actuales (N/S/E/O).
  */
 export const WORLD_MAP_CELLS: WorldMapCellConfig[] = [
-  { mapId: "bosque", gridX: 0, gridY: -1, label: "Bosque", biome: "forest" },
-  { mapId: "pueblo", gridX: 0, gridY: 0, label: "Caja de arena", biome: "grass" },
-  { mapId: "montana", gridX: 0, gridY: 1, label: "Montaña", biome: "grass" },
-  { mapId: "desierto", gridX: -1, gridY: 0, label: "Desierto", biome: "sand" },
+  { mapId: "mapa2", gridX: 0, gridY: -1, label: "Bosque", biome: "forest" },
+  { mapId: "mapa1", gridX: 0, gridY: 0, label: "Caja de arena", biome: "grass" },
+  { mapId: "mapa3", gridX: 0, gridY: 1, label: "Montaña", biome: "grass" },
+  { mapId: "mapa4", gridX: -1, gridY: 0, label: "Desierto", biome: "sand" },
 ];
 
 const BIOME_COLORS: Record<WorldMapBiome, number> = {

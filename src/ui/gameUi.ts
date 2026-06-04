@@ -12,8 +12,11 @@ import { isPhaserObjectLive } from "./phaserObjectUtils";
 import { getGameViewport, UI_LAYOUT } from "./layout";
 import { createInventoryPanel, type InventoryPanel } from "./inventoryPanel";
 import {
-  AOWEB_SKIN_TEXTURE_KEY,
+  type AowebUiSkinVariant,
   FONDO_BOTONES_FALLBACK_SIZE,
+  getAowebSkinTextureKey,
+  getAowebSkinVariant,
+  setAowebSkinVariant,
   FONDO_BOTONES_TEXTURE_KEY,
   getLvlNameExpNativeSize,
   getTextureNativeSize,
@@ -24,13 +27,19 @@ import {
   VENTANA_CHAT_TEXTURE_KEY,
 } from "./playerHudFrame";
 import {
+  getAowebSkinLayout,
+  getAowebSkinMacroSlotMetrics,
   getAowebSkinRegions,
   getSkinDerivedLayout,
+  getSkinMinimapContentRect,
   scaleSkinRect,
+  scaleSkinX,
   scaleSkinY,
+  usesMinimapFrameOverlay,
+  usesViewportFrameOverlay,
 } from "./aowebSkinLayout";
 import { ATTRIBUTE_POTION_BUFF_MAX, STAT_MAX } from "../../game-data/constants";
-import { INVENTORY_SLOT_COUNT } from "../game/characterProgressStorage";
+import { INVENTORY_COLS, INVENTORY_ROWS, INVENTORY_SLOT_COUNT } from "../game/characterProgressStorage";
 
 /** Posición X nativa del centro de cada ranura de la barra de macros. */
 
@@ -54,8 +63,6 @@ export type PlayerKillStats = {
 
 const UI_DEPTH = 1000;
 const MACRO_COUNT = 10;
-const INVENTORY_ROWS = 4;
-const INVENTORY_COLS = 5;
 const INVENTORY_SLOT_SCALE = 1.12;
 /** Fracción del casillero que ocupa el ícono (ancho/alto). */
 const INVENTORY_ICON_FILL = 0.9;
@@ -101,19 +108,28 @@ const COLORS = {
 };
 
 const UI_MAPNAME_OFFSET_KEY = "ui_mapname_offset";
+const UI_MINIMAP_OFFSET_KEY = "ui_minimap_offset";
+const UI_MINIMAP_SCALE_KEY = "ui_minimap_scale";
+const DEFAULT_MINIMAP_SLOT_SCALE = 1.1;
 const CHAT_TAB_ORDER = ["chat", "combat", "global"] as const;
 type ChatTabId = (typeof CHAT_TAB_ORDER)[number];
 type ChatEntry = { text: string; channel: ChatTabId };
 const MACRO_PLACEHOLDER_TEXTURE_KEY = "macroPlaceholder";
 const MACRO_ACTIONS = ["cast_spell", "use_item", "equip_item"] as const;
 export type MacroActionType = (typeof MACRO_ACTIONS)[number];
-export type MacroEditorItemOption = { itemId: string; label: string };
+export type MacroEditorItemOption = {
+  itemId: string;
+  label: string;
+  /** Casillero de inventario al que corresponde esta opción. */
+  slotIndex: number;
+};
 export type MacroEditorSpellOption = { spellId: number; label: string };
 export type MacroEditorConfig = {
   slotIndex: number;
   keyCode: string | null;
   action: MacroActionType;
   selectedItemId: string | null;
+  selectedInventorySlotIndex: number | null;
   itemOptions: MacroEditorItemOption[];
   selectedSpellId: number | null;
   spellOptions: MacroEditorSpellOption[];
@@ -188,6 +204,11 @@ export class GameUi {
   private mapNameText!: Phaser.GameObjects.Text;
   private mapCoordsText!: Phaser.GameObjects.Text;
   private mapNameOffset = { x: 0, y: 0 };
+  private minimapOffset = { x: 0, y: 0 };
+  private minimapSlotScale = DEFAULT_MINIMAP_SLOT_SCALE;
+  private minimapLayoutTuneActive = false;
+  private minimapLayoutTuneTarget: "minimap" | "mapname" = "minimap";
+  private minimapTuneHintText!: Phaser.GameObjects.Text;
   private minimapMaskGfx!: Phaser.GameObjects.Graphics;
   private minimapMask?: Phaser.Display.Masks.GeometryMask;
   private chatText!: Phaser.GameObjects.Text;
@@ -241,6 +262,16 @@ export class GameUi {
   private activeSidebarTab: "inventory" | "spells" = "inventory";
   private statsTabBtn!: Phaser.GameObjects.Graphics;
   private statsTabLabel!: Phaser.GameObjects.Text;
+  private inventoryOptionsMenuVisible = false;
+  private inventoryOptionsMenu!: Phaser.GameObjects.Container;
+  private inventoryOptionsMenuDim!: Phaser.GameObjects.Graphics;
+  private readonly inventoryOptionsMenuEntries: {
+    id: "options" | "stats";
+    bg: Phaser.GameObjects.Image;
+    label: Phaser.GameObjects.Text;
+    hit: Phaser.GameObjects.Zone;
+  }[] = [];
+  private inventoryPanelGeom = { x: 0, y: 0, w: 0, h: 0 };
   private statsOverlayVisible = false;
   private statsOverlay!: Phaser.GameObjects.Container;
   private statsOverlayDim!: Phaser.GameObjects.Graphics;
@@ -274,11 +305,15 @@ export class GameUi {
     keyCode: null,
     action: "cast_spell",
     selectedItemId: null,
+    selectedInventorySlotIndex: null,
     itemOptions: [],
     selectedSpellId: null,
     spellOptions: [],
   };
   private macroEditorSaveHandler: ((config: MacroEditorConfig) => void) | null = null;
+  private macroEditorItemOptionsForAction:
+    | ((action: MacroActionType) => MacroEditorItemOption[])
+    | null = null;
   private macroEditorOverlay!: Phaser.GameObjects.Container;
   private macroEditorDim!: Phaser.GameObjects.Graphics;
   private macroEditorPanel!: Phaser.GameObjects.Graphics;
@@ -340,6 +375,7 @@ export class GameUi {
   private spellScrollOffset = 0;
   private spellVisibleRows = 0;
   private spellListScrollGeom = { x: 0, y: 0, w: 0, h: 0 };
+  private spellPanelContentGeom = { x: 0, y: 0, w: 0, h: 0 };
   private selectedSpellIndex = 0;
   private spellInfoRequestHandler?: (spell: SpellInfoRequest) => void;
   private spellCastRequestHandler?: (spell: SpellInfoRequest) => void;
@@ -396,7 +432,7 @@ export class GameUi {
   private expLabelFontPx = 8;
   private hpBarGeom: BarGeom = { x: 0, y: 0, w: 0, h: 10 };
   private mpBarGeom: BarGeom = { x: 0, y: 0, w: 0, h: 10 };
-  private minimapGeom = { x: 0, y: 0, size: 0 };
+  private minimapGeom = { x: 0, y: 0, w: 0, h: 0 };
   private minimapRedrawHandler: (() => void) | null = null;
   private fullscreenBtnBg!: Phaser.GameObjects.Image;
   private fullscreenBtnHit!: Phaser.GameObjects.Graphics;
@@ -408,6 +444,24 @@ export class GameUi {
 
   isUsingAowebSkin(): boolean {
     return this.useAowebSkin;
+  }
+
+  getActiveAowebSkinVariant(): AowebUiSkinVariant {
+    return getAowebSkinVariant();
+  }
+
+  /** Cambia el marco AOWEB en caliente (persiste en localStorage). */
+  switchAowebSkinVariant(variant: AowebUiSkinVariant): boolean {
+    const textureKey = getAowebSkinTextureKey(variant);
+    if (!this.scene.textures.exists(textureKey)) {
+      return false;
+    }
+    setAowebSkinVariant(variant);
+    this.useAowebSkin = true;
+    this.uiSkinFrame.setTexture(textureKey).setVisible(true);
+    this.relayout();
+    this.scene.events.emit("ui-viewport-changed");
+    return true;
   }
 
   /** Objetos fuera del container (evita que la cámara del mundo los oculte mal). */
@@ -437,6 +491,31 @@ export class GameUi {
       }
     } catch {
       this.mapNameOffset = { x: 0, y: 0 };
+    }
+
+    try {
+      const raw = localStorage.getItem(UI_MINIMAP_OFFSET_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw) as { x?: number; y?: number };
+        this.minimapOffset = {
+          x: typeof parsed.x === "number" && Number.isFinite(parsed.x) ? parsed.x : 0,
+          y: typeof parsed.y === "number" && Number.isFinite(parsed.y) ? parsed.y : 0,
+        };
+      }
+    } catch {
+      this.minimapOffset = { x: 0, y: 0 };
+    }
+
+    try {
+      const rawScale = localStorage.getItem(UI_MINIMAP_SCALE_KEY);
+      if (rawScale !== null) {
+        const parsedScale = parseFloat(rawScale);
+        if (Number.isFinite(parsedScale) && parsedScale > 0) {
+          this.minimapSlotScale = parsedScale;
+        }
+      }
+    } catch {
+      this.minimapSlotScale = DEFAULT_MINIMAP_SLOT_SCALE;
     }
 
     this.build();
@@ -493,12 +572,228 @@ export class GameUi {
     this.relayout();
   }
 
+  nudgeMapNameOffset(dxPx: number, dyPx: number) {
+    this.setMapNameOffset(this.mapNameOffset.x + dxPx, this.mapNameOffset.y + dyPx);
+  }
+
   resetMapNameOffset() {
     this.setMapNameOffset(0, 0);
   }
 
   getMapNameOffset() {
     return { ...this.mapNameOffset };
+  }
+
+  setMinimapOffset(dxPx: number, dyPx: number) {
+    this.minimapOffset = { x: dxPx, y: dyPx };
+    try {
+      localStorage.setItem(UI_MINIMAP_OFFSET_KEY, JSON.stringify(this.minimapOffset));
+    } catch {
+      // ignore
+    }
+    this.relayout();
+  }
+
+  nudgeMinimapOffset(dxPx: number, dyPx: number) {
+    this.setMinimapOffset(this.minimapOffset.x + dxPx, this.minimapOffset.y + dyPx);
+  }
+
+  resetMinimapOffset() {
+    this.setMinimapOffset(0, 0);
+  }
+
+  setMinimapSlotScale(scale: number) {
+    const next = Phaser.Math.Clamp(scale, 0.5, 1.5);
+    if (next === this.minimapSlotScale) {
+      return;
+    }
+    this.minimapSlotScale = next;
+    try {
+      localStorage.setItem(UI_MINIMAP_SCALE_KEY, String(next));
+    } catch {
+      // ignore
+    }
+    this.relayout();
+  }
+
+  nudgeMinimapSlotScale(delta: number) {
+    this.setMinimapSlotScale(this.minimapSlotScale + delta);
+  }
+
+  getMinimapSlotScale() {
+    return this.minimapSlotScale;
+  }
+
+  resetMinimapLayout() {
+    this.minimapSlotScale = 1;
+    try {
+      localStorage.removeItem(UI_MINIMAP_SCALE_KEY);
+    } catch {
+      // ignore
+    }
+    this.setMinimapOffset(0, 0);
+  }
+
+  getMinimapOffset() {
+    return { ...this.minimapOffset };
+  }
+
+  setMinimapLayoutTuneActive(active: boolean) {
+    this.minimapLayoutTuneActive = active;
+    this.refreshMinimapTuneHint();
+    this.relayout();
+  }
+
+  isMinimapLayoutTuneActive() {
+    return this.minimapLayoutTuneActive;
+  }
+
+  getMinimapLayoutTuneSummary() {
+    const mm = this.getMinimapOffset();
+    const mn = this.getMapNameOffset();
+    const scale = this.getMinimapSlotScale();
+    return (
+      `minimap x=${mm.x} y=${mm.y} scale=${scale.toFixed(2)} | mapname x=${mn.x} y=${mn.y} ` +
+      `(localStorage: ${UI_MINIMAP_OFFSET_KEY}, ${UI_MINIMAP_SCALE_KEY}, ${UI_MAPNAME_OFFSET_KEY})`
+    );
+  }
+
+  private applyMinimapLayout(rect: { x: number; y: number; w: number; h: number }) {
+    const scale = this.minimapSlotScale;
+    const cx = rect.x + rect.w / 2;
+    const cy = rect.y + rect.h / 2;
+    const nw = Math.max(8, Math.round(rect.w * scale));
+    const nh = Math.max(8, Math.round(rect.h * scale));
+    return {
+      x: Math.round(cx - nw / 2 + this.minimapOffset.x),
+      y: Math.round(cy - nh / 2 + this.minimapOffset.y),
+      w: nw,
+      h: nh,
+    };
+  }
+
+  private getMinimapDrawRect() {
+    const { x, y, w, h } = this.minimapGeom;
+    if (w <= 0 || h <= 0) {
+      return { x, y, w, h };
+    }
+    // Evita artefactos en los bordes del PNG (rayas laterales).
+    if (this.useAowebSkin && usesMinimapFrameOverlay()) {
+      const insetX = Math.min(2, Math.floor(w / 8));
+      const insetY = Math.min(1, Math.floor(h / 10));
+      return {
+        x: x + insetX,
+        y: y + insetY,
+        w: Math.max(4, w - insetX * 2),
+        h: Math.max(4, h - insetY * 2),
+      };
+    }
+    return { x, y, w, h };
+  }
+
+  private refreshMinimapTuneHint() {
+    if (!this.minimapTuneHintText) {
+      return;
+    }
+    if (!this.minimapLayoutTuneActive) {
+      this.minimapTuneHintText.setVisible(false);
+      return;
+    }
+    const mm = this.getMinimapOffset();
+    const mn = this.getMapNameOffset();
+    const targetLabel =
+      this.minimapLayoutTuneTarget === "minimap" ? "MINIMAPA" : "NOMBRE MAPA";
+    this.minimapTuneHintText.setText(
+      `[AJUSTE UI · ${targetLabel}] minimap x=${mm.x} y=${mm.y} scale=${this.minimapSlotScale.toFixed(2)} | nombre x=${mn.x} y=${mn.y}\n` +
+        "Flechas mover · +/- tamaño · Tab cambiar · R reset · I info · Esc salir"
+    );
+    this.minimapTuneHintText.setVisible(true);
+    this.root.bringToTop(this.minimapTuneHintText);
+  }
+
+  private handleMinimapLayoutTuneKey(event: KeyboardEvent): boolean {
+    if (!this.minimapLayoutTuneActive || this.chatFocused) {
+      return false;
+    }
+
+    if (event.key === "Escape") {
+      event.preventDefault();
+      this.setMinimapLayoutTuneActive(false);
+      return true;
+    }
+
+    if (event.key === "Tab") {
+      event.preventDefault();
+      this.minimapLayoutTuneTarget =
+        this.minimapLayoutTuneTarget === "minimap" ? "mapname" : "minimap";
+      this.refreshMinimapTuneHint();
+      return true;
+    }
+
+    if (event.key === "1") {
+      event.preventDefault();
+      this.minimapLayoutTuneTarget = "minimap";
+      this.refreshMinimapTuneHint();
+      return true;
+    }
+
+    if (event.key === "2") {
+      event.preventDefault();
+      this.minimapLayoutTuneTarget = "mapname";
+      this.refreshMinimapTuneHint();
+      return true;
+    }
+
+    if (event.key === "r" || event.key === "R") {
+      event.preventDefault();
+      if (this.minimapLayoutTuneTarget === "minimap") {
+        this.resetMinimapLayout();
+      } else {
+        this.resetMapNameOffset();
+      }
+      this.refreshMinimapTuneHint();
+      return true;
+    }
+
+    if (this.minimapLayoutTuneTarget === "minimap") {
+      const scaleStep = event.shiftKey ? 0.05 : 0.02;
+      if (event.key === "-" || event.key === "Subtract") {
+        event.preventDefault();
+        this.nudgeMinimapSlotScale(-scaleStep);
+        this.refreshMinimapTuneHint();
+        return true;
+      }
+      if (event.key === "+" || event.key === "=" || event.key === "Add") {
+        event.preventDefault();
+        this.nudgeMinimapSlotScale(scaleStep);
+        this.refreshMinimapTuneHint();
+        return true;
+      }
+    }
+
+    if (event.key === "i" || event.key === "I") {
+      event.preventDefault();
+      this.scene.events.emit("ui-minimap-layout-info", this.getMinimapLayoutTuneSummary());
+      return true;
+    }
+
+    const step = event.shiftKey ? 5 : 1;
+    let dx = 0;
+    let dy = 0;
+    if (event.key === "ArrowLeft") dx = -step;
+    else if (event.key === "ArrowRight") dx = step;
+    else if (event.key === "ArrowUp") dy = -step;
+    else if (event.key === "ArrowDown") dy = step;
+    else return false;
+
+    event.preventDefault();
+    if (this.minimapLayoutTuneTarget === "minimap") {
+      this.nudgeMinimapOffset(dx, dy);
+    } else {
+      this.nudgeMapNameOffset(dx, dy);
+    }
+    this.refreshMinimapTuneHint();
+    return true;
   }
 
   setSpells(spells: SpellDefinition[]) {
@@ -558,17 +853,53 @@ export class GameUi {
     }
     this.statsOverlayVisible = true;
     this.statsOverlay.setVisible(true);
-    this.statsTabBtn.setAlpha(1);
-    this.statsTabLabel.setColor("#ffffff");
     this.relayout();
   }
 
   closeStatsOverlay() {
     this.statsOverlayVisible = false;
     this.statsOverlay.setVisible(false);
-    this.statsTabBtn.setAlpha(0.55);
-    this.statsTabLabel.setColor("#9aa3b2");
     this.relayout();
+    if (this.inventoryOptionsMenuVisible) {
+      this.layoutInventoryOptionsMenu();
+      this.root.bringToTop(this.inventoryOptionsMenu);
+    }
+  }
+
+  private toggleInventoryOptionsMenu() {
+    if (this.inventoryOptionsMenuVisible) {
+      this.closeInventoryOptionsMenu();
+      return;
+    }
+    this.activeSidebarTab = "inventory";
+    this.inventoryOptionsMenuVisible = true;
+    this.inventoryOptionsMenu.setVisible(true);
+    this.statsTabLabel.setColor("#ffffff");
+    this.relayout();
+    this.layoutInventoryOptionsMenu();
+    this.root.bringToTop(this.inventoryOptionsMenu);
+  }
+
+  private closeInventoryOptionsMenu() {
+    if (!this.inventoryOptionsMenuVisible) {
+      return;
+    }
+    this.inventoryOptionsMenuVisible = false;
+    this.inventoryOptionsMenu.setVisible(false);
+    if (!this.useAowebSkin) {
+      this.statsTabLabel.setColor("#c8d0dc");
+    }
+    this.relayout();
+  }
+
+  private handleInventoryOptionsMenuPick(id: "options" | "stats") {
+    if (id === "stats") {
+      if (!this.statsOverlayVisible) {
+        this.toggleStatsOverlay();
+      }
+      return;
+    }
+    this.addChatLine("Opciones del juego: próximamente.");
   }
 
   setInventorySlotInvalid(slotIndex: number, invalid: boolean) {
@@ -666,8 +997,8 @@ export class GameUi {
     bounds?: { minTileX: number; minTileY: number; maxTileX: number; maxTileY: number }
   ) {
     const g = this.minimapGfx;
-    const { x, y, size } = this.minimapGeom;
-    if (size <= 0) {
+    const { x, y, w, h } = this.getMinimapDrawRect();
+    if (w <= 0 || h <= 0) {
       return;
     }
 
@@ -677,11 +1008,11 @@ export class GameUi {
     const minimapBgAlpha = this.useAowebSkin ? 0.55 : 0.92;
     g.fillStyle(0x121a24, minimapBgAlpha);
     if (this.useAowebSkin) {
-      g.fillRect(x, y, size, size);
+      g.fillRect(x, y, w, h);
     } else {
-      g.fillRoundedRect(x - 2, y - 2, size + 4, size + 4, 6);
+      g.fillRoundedRect(x - 2, y - 2, w + 4, h + 4, 6);
       g.lineStyle(1, 0x5a6d88, 1);
-      g.strokeRoundedRect(x - 1.5, y - 1.5, size + 3, size + 3, 6);
+      g.strokeRoundedRect(x - 1.5, y - 1.5, w + 3, h + 3, 6);
     }
 
     const minTileX = bounds?.minTileX ?? 0;
@@ -691,11 +1022,11 @@ export class GameUi {
     const renderW = Math.max(1, maxTileX - minTileX + 1);
     const renderH = Math.max(1, maxTileY - minTileY + 1);
 
-    const cell = computeMinimapCellSize(size, renderW, renderH);
+    const cell = computeMinimapCellSize(w, h, renderW, renderH);
     const mapPixelW = renderW * cell;
     const mapPixelH = renderH * cell;
-    const offsetX = x + Math.floor((size - mapPixelW) / 2);
-    const offsetY = y + Math.floor((size - mapPixelH) / 2);
+    const offsetX = x + Math.floor((w - mapPixelW) / 2);
+    const offsetY = y + Math.floor((h - mapPixelH) / 2);
 
     for (let ty = minTileY; ty <= maxTileY; ty++) {
       for (let tx = minTileX; tx <= maxTileX; tx++) {
@@ -748,24 +1079,32 @@ export class GameUi {
     screenH: number,
     gapAboveMinimap = 0
   ) {
-    const centerX = minimapRect.x + minimapRect.w / 2 + this.mapNameOffset.x;
+    const minLabelX = minimapRect.x + 8;
+    const maxLabelX = minimapRect.x + Math.max(8, minimapRect.w - 8);
+    const centerX = Phaser.Math.Clamp(
+      minimapRect.x + minimapRect.w / 2 + this.mapNameOffset.x,
+      minLabelX,
+      maxLabelX
+    );
 
     if (this.useAowebSkin) {
-      // En skin AOWEB: nombre y coordenadas dentro del minimapa (parte inferior).
-      const offsetX = Math.max(-minimapRect.w / 2, Math.min(minimapRect.w / 2, this.mapNameOffset.x));
-      const offsetY = Math.max(-minimapRect.h + scaleSkinY(28, screenH), Math.min(scaleSkinY(12, screenH), this.mapNameOffset.y));
-      const mmCenterX = minimapRect.x + minimapRect.w / 2 + offsetX;
-      const innerBottom = minimapRect.y + minimapRect.h - scaleSkinY(-30, screenH);
-      const coordsY = innerBottom + offsetY;
-      const nameY = coordsY - 13;
+      const layout = getAowebSkinLayout();
+      const labelPadBottom = scaleSkinY(layout.minimapLabelPadBottom ?? 8, screenH);
+      const lineGap = scaleSkinY(13, screenH);
+      const mmCenterX = centerX;
+      const coordsY = Phaser.Math.Clamp(
+        minimapRect.y + minimapRect.h - labelPadBottom + scaleSkinY(8, screenH) + this.mapNameOffset.y,
+        minimapRect.y + lineGap + 4,
+        minimapRect.y + minimapRect.h - 2
+      );
+      const nameY = coordsY - lineGap;
       const labelStroke = { color: "#000000", thickness: 2 };
 
       this.mapNameText.setOrigin(0.5, 1);
       this.mapNameText.setPosition(mmCenterX, nameY);
-      this.mapNameText.setFontSize("10px");
+      this.mapNameText.setFontSize("11px");
       this.mapNameText.setColor("#f5ecd8");
       this.mapNameText.setStroke(labelStroke.color, labelStroke.thickness);
-      this.mapNameText.setWordWrapWidth(minimapRect.w - 8);
       this.mapNameText.setAlign("center");
       this.mapNameText.setVisible(true);
       this.mapNameText.setDepth(UI_DEPTH + 5);
@@ -780,31 +1119,33 @@ export class GameUi {
       return;
     }
 
-    const nameY = minimapRect.y - gapAboveMinimap + this.mapNameOffset.y;
+    const nameY = minimapRect.y - gapAboveMinimap + 8 + this.mapNameOffset.y;
     this.mapNameText.setOrigin(0.5, 1);
     this.mapNameText.setPosition(centerX, nameY);
     this.mapNameText.setFontSize("11px");
     this.mapNameText.setColor("#ffe566");
     this.mapNameText.setWordWrapWidth(minimapRect.w);
     this.mapNameText.setAlign("center");
+    this.mapNameText.setVisible(true);
+    this.mapNameText.setDepth(UI_DEPTH + 5);
 
     this.mapCoordsText.setOrigin(0.5, 1);
     this.mapCoordsText.setPosition(centerX, nameY - 13);
     this.mapCoordsText.setFontSize("10px");
     this.mapCoordsText.setColor("#b8c4d9");
     this.mapCoordsText.setVisible(true);
+    this.mapCoordsText.setDepth(UI_DEPTH + 5);
   }
 
   private syncMinimapMask() {
-    // Aplicar máscara rectangular al minimapa para recortarlo dentro del hueco de la skin.
-    const { x, y, size } = this.minimapGeom;
-    if (size <= 0) {
+    const { x, y, w, h } = this.getMinimapDrawRect();
+    if (w <= 0 || h <= 0) {
       this.minimapGfx.clearMask();
       return;
     }
     this.minimapMaskGfx.clear();
     this.minimapMaskGfx.fillStyle(0xffffff, 1);
-    this.minimapMaskGfx.fillRect(x, y, size, size);
+    this.minimapMaskGfx.fillRect(x, y, w, h);
     if (!this.minimapMask) {
       this.minimapMask = this.minimapMaskGfx.createGeometryMask();
     }
@@ -813,13 +1154,14 @@ export class GameUi {
 
   private build() {
     this.chatPanel = this.scene.add.graphics().setScrollFactor(0);
+    const skinTextureKey = getAowebSkinTextureKey();
     this.uiSkinFrame = this.scene.add
-      .image(0, 0, AOWEB_SKIN_TEXTURE_KEY)
+      .image(0, 0, skinTextureKey)
       .setOrigin(0, 0)
       .setScrollFactor(0)
       .setDepth(-1);
     this.skinViewportMaskGfx = this.scene.add.graphics().setScrollFactor(0).setVisible(false);
-    this.useAowebSkin = this.scene.textures.exists(AOWEB_SKIN_TEXTURE_KEY);
+    this.useAowebSkin = this.scene.textures.exists(skinTextureKey);
     this.chatBgFrame = this.scene.add
       .image(0, 0, VENTANA_CHAT_TEXTURE_KEY)
       .setOrigin(0, 0)
@@ -832,6 +1174,11 @@ this.chatMaskGfx.setVisible(false);
 
 this.mapNameText = this.makeText("", 11, "#ffe566", true);
     this.mapCoordsText = this.makeText("", 10, "#9eb0c8", false);
+    this.minimapTuneHintText = this.makeText("", 10, "#ffe08a", true)
+      .setOrigin(0, 0)
+      .setStroke("#000000", 3)
+      .setDepth(UI_DEPTH + 30)
+      .setVisible(false);
 this.chatText = this.makeText("", CHAT_HISTORY_FONT_SIZE, "#b8c4d9");
 this.chatInputText = this.makeText("", 12, "#ffffff");
 
@@ -924,7 +1271,7 @@ this.chatText.setMask(this.chatMaskGfx.createGeometryMask());
     this.statsTabBtn = this.scene.add.graphics().setScrollFactor(0);
     this.invTabLabel = this.makeText("Inventario", 9, "#c8d0dc", true).setOrigin(0.5, 0.5);
     this.spellsTabLabel = this.makeText("Hechizos", 9, "#c8d0dc", true).setOrigin(0.5, 0.5);
-    this.statsTabLabel = this.makeText("Estadísticas", 9, "#c8d0dc", true).setOrigin(0.5, 0.5);
+    this.statsTabLabel = this.makeText("Opciones", 9, "#c8d0dc", true).setOrigin(0.5, 0.5);
     for (let i = 0; i < 6; i += 1) {
       this.statsKillTexts.push(this.makeText("", 9, "#c8d0dc"));
     }
@@ -1033,15 +1380,17 @@ this.chatText.setMask(this.chatMaskGfx.createGeometryMask());
     this.spellsTabBtn.setInteractive(new Phaser.Geom.Rectangle(0, 0, 1, 1), Phaser.Geom.Rectangle.Contains);
     this.statsTabBtn.setInteractive(new Phaser.Geom.Rectangle(0, 0, 1, 1), Phaser.Geom.Rectangle.Contains);
     this.invTabBtn.on("pointerdown", () => {
+      this.closeInventoryOptionsMenu();
       this.activeSidebarTab = "inventory";
       this.relayout();
     });
     this.spellsTabBtn.on("pointerdown", () => {
+      this.closeInventoryOptionsMenu();
       this.activeSidebarTab = "spells";
       this.relayout();
     });
     this.statsTabBtn.on("pointerdown", () => {
-      this.toggleStatsOverlay();
+      this.toggleInventoryOptionsMenu();
     });
     this.spellUpZone.on(
       "pointerdown",
@@ -1144,6 +1493,7 @@ this.chatText.setMask(this.chatMaskGfx.createGeometryMask());
 
       this.mapNameText,
       this.mapCoordsText,
+      this.minimapTuneHintText,
       this.minimapMaskGfx,
       this.chatText,
     
@@ -1208,6 +1558,7 @@ this.chatText.setMask(this.chatMaskGfx.createGeometryMask());
     this.setupChatInput();
     this.buildConfirmDialog();
     this.buildMacroEditorDialog();
+    this.buildInventoryOptionsMenu();
     this.buildStatsOverlay();
 
     this.addChatLine("Bienvenido a AOWEB.");
@@ -1254,7 +1605,12 @@ this.chatText.setMask(this.chatMaskGfx.createGeometryMask());
     return this.macroEditorVisible;
   }
 
-  showMacroEditor(config: MacroEditorConfig, onSave: (config: MacroEditorConfig) => void) {
+  showMacroEditor(
+    config: MacroEditorConfig,
+    onSave: (config: MacroEditorConfig) => void,
+    itemOptionsForAction?: (action: MacroActionType) => MacroEditorItemOption[]
+  ) {
+    this.macroEditorItemOptionsForAction = itemOptionsForAction ?? null;
     this.macroEditorConfig = {
       ...config,
       itemOptions: [...config.itemOptions],
@@ -1317,32 +1673,33 @@ this.chatText.setMask(this.chatMaskGfx.createGeometryMask());
     const frame = icon.frame;
     const srcW = Math.max(1, frame.width);
     const srcH = Math.max(1, frame.height);
-    const maxDim = Math.max(8, metrics.size - 6);
+    const maxDim = Math.max(8, metrics.size - 4);
     const scale = maxDim / Math.max(srcW, srcH);
+    if (typeof icon.setSizeToFrame === "function") {
+      icon.setSizeToFrame();
+    }
     icon.setScale(scale);
   }
 
   /** Posiciona iconos/teclas de macro sobre los slots del marco (sin recuadros propios). */
   private layoutMacroSlots(w: number, h: number) {
-    const macroR = scaleSkinRect(getAowebSkinRegions().macroBar, w, h);
-    const slotCount = this.macroSlots.length;
-    const slotPitch = macroR.w / slotCount;
-    const macroSlotSize = Math.min(40, Math.floor(slotPitch * 0.82));
-    const yMacro = macroR.y + Math.floor((macroR.h - macroSlotSize) / 2);
+    const metricsList = getAowebSkinMacroSlotMetrics(w, h, this.macroSlots.length);
 
     this.macroSlots.forEach((slot, index) => {
+      const metrics = metricsList[index];
+      if (!metrics) return;
+
       slot.hit.setVisible(true);
       slot.itemIcon.setVisible(Boolean(slot.itemIcon.getData("hasItem")));
       slot.keyLabel.setVisible(true);
 
-      const slotCenterX = macroR.x + Math.floor(slotPitch * index + slotPitch / 2);
-      const slotCenterY = yMacro + Math.floor(macroSlotSize / 2);
-      const mx = slotCenterX - Math.floor(macroSlotSize / 2);
-      const my = yMacro;
-      this.macroSlotMetrics[index] = { cx: slotCenterX, cy: slotCenterY, size: macroSlotSize };
-      slot.hit.setPosition(mx, my).setSize(macroSlotSize, macroSlotSize);
+      const { cx, cy, size } = metrics;
+      const mx = cx - Math.floor(size / 2);
+      const my = cy - Math.floor(size / 2);
+      this.macroSlotMetrics[index] = { cx, cy, size };
+      slot.hit.setPosition(mx, my).setSize(size, size);
       this.applyMacroIconLayout(index);
-      slot.keyLabel.setPosition(slotCenterX + macroSlotSize / 2 - 4, my + macroSlotSize - 4);
+      slot.keyLabel.setPosition(mx + size - 4, my + size - 4);
       slot.keyLabel.setOrigin(1, 1);
     });
   }
@@ -1462,11 +1819,22 @@ this.chatText.setMask(this.chatMaskGfx.createGeometryMask());
         }
       }
 
+      if (this.inventoryOptionsMenuVisible) {
+        if (event.key === "Escape") {
+          this.closeInventoryOptionsMenu();
+          return;
+        }
+      }
+
       if (this.statsOverlayVisible) {
         if (event.key === "Escape") {
           this.closeStatsOverlay();
           return;
         }
+      }
+
+      if (this.handleMinimapLayoutTuneKey(event)) {
+        return;
       }
 
       if (this.confirmVisible) {
@@ -1685,6 +2053,105 @@ this.chatText.setMask(this.chatMaskGfx.createGeometryMask());
     this.root.add(this.statsOverlay);
   }
 
+  /** Rectángulo en pantalla que cubre toda la grilla de inventario (5×4). */
+  private getInventoryGridScreenRect(): { x: number; y: number; w: number; h: number } {
+    const lastIndex = INVENTORY_COLS * INVENTORY_ROWS - 1;
+    const first = this.inventoryPanel.slots[0];
+    const last = this.inventoryPanel.slots[lastIndex];
+    const container = this.inventoryPanel.container;
+    if (!first || !last) {
+      return { ...this.inventoryPanelGeom };
+    }
+    return {
+      x: container.x + first.x,
+      y: container.y + first.y,
+      w: last.x + last.displayWidth - first.x,
+      h: last.y + last.displayHeight - first.y,
+    };
+  }
+
+  private buildInventoryOptionsMenu() {
+    const menuItems: { id: "options" | "stats"; label: string }[] = [
+      { id: "options", label: "Opciones" },
+      { id: "stats", label: "Estadísticas" },
+    ];
+
+    this.inventoryOptionsMenu = this.scene.add
+      .container(0, 0)
+      .setScrollFactor(0)
+      .setVisible(false);
+    this.inventoryOptionsMenuDim = this.scene.add.graphics().setScrollFactor(0);
+    this.inventoryOptionsMenuDim.setInteractive(
+      new Phaser.Geom.Rectangle(0, 0, 1, 1),
+      Phaser.Geom.Rectangle.Contains
+    );
+    this.inventoryOptionsMenuDim.on("pointerdown", () => this.closeInventoryOptionsMenu());
+
+    for (const item of menuItems) {
+      const bg = this.scene.add
+        .image(0, 0, FONDO_BOTONES_TEXTURE_KEY)
+        .setOrigin(0, 0)
+        .setScrollFactor(0);
+      const label = this.makeText(item.label, 9, "#e6edf3", true).setOrigin(0.5, 0.5);
+      const hit = this.scene.add
+        .zone(0, 0, 1, 1)
+        .setOrigin(0, 0)
+        .setInteractive({ useHandCursor: true });
+      hit.on(
+        "pointerdown",
+        (
+          _pointer: Phaser.Input.Pointer,
+          _localX: number,
+          _localY: number,
+          event: Phaser.Types.Input.EventData
+        ) => {
+          event.stopPropagation();
+          this.handleInventoryOptionsMenuPick(item.id);
+        }
+      );
+      this.inventoryOptionsMenuEntries.push({ id: item.id, bg, label, hit });
+    }
+
+    this.inventoryOptionsMenu.add([
+      this.inventoryOptionsMenuDim,
+      ...this.inventoryOptionsMenuEntries.flatMap((entry) => [entry.bg, entry.label, entry.hit]),
+    ]);
+    this.root.add(this.inventoryOptionsMenu);
+  }
+
+  private layoutInventoryOptionsMenu() {
+    if (!this.inventoryOptionsMenuVisible) {
+      return;
+    }
+
+    const { x, y, w, h } = this.getInventoryGridScreenRect();
+    if (w <= 0 || h <= 0) {
+      return;
+    }
+
+    this.inventoryOptionsMenuDim.clear();
+    this.inventoryOptionsMenuDim.input?.hitArea.setTo(x, y, w, h);
+
+    const rowCount = this.inventoryOptionsMenuEntries.length;
+    const pad = 10;
+    const rowGap = 6;
+    const rowH = Math.min(24, Math.max(18, Math.floor((h - pad * 2 - rowGap * (rowCount - 1)) / rowCount)));
+    const btnW = Math.min(w - pad * 2, Math.max(72, Math.floor(w * 0.72)));
+    const stackH = rowCount * rowH + (rowCount - 1) * rowGap;
+    const btnX = x + Math.floor((w - btnW) / 2);
+    const firstBtnY = y + Math.floor((h - stackH) / 2);
+    const fontPx = Math.max(8, Math.min(10, Math.floor(rowH * 0.42)));
+
+    this.inventoryOptionsMenuEntries.forEach((entry, index) => {
+      const btnY = firstBtnY + index * (rowH + rowGap);
+      entry.bg.setPosition(btnX, btnY).setDisplaySize(btnW, rowH);
+      entry.label
+        .setFontSize(`${fontPx}px`)
+        .setPosition(btnX + btnW / 2, btnY + rowH / 2);
+      entry.hit.setPosition(btnX, btnY).setSize(btnW, rowH);
+    });
+  }
+
   private layoutStatsOverlay() {
     if (!this.statsOverlayVisible) {
       return;
@@ -1806,8 +2273,14 @@ this.chatText.setMask(this.chatMaskGfx.createGeometryMask());
     this.confirmMinusZone.setInteractive({ useHandCursor: true });
     this.confirmPlusZone.setInteractive({ useHandCursor: true });
     this.confirmInputZone.setInteractive({ useHandCursor: true });
-    this.confirmYesZone.on("pointerdown", () => this.acceptConfirm());
-    this.confirmNoZone.on("pointerdown", () => this.cancelConfirm());
+    this.confirmYesZone.on("pointerup", (_pointer: Phaser.Input.Pointer, _x: number, _y: number, event: Phaser.Types.Input.EventData) => {
+      event.stopPropagation();
+      this.acceptConfirm();
+    });
+    this.confirmNoZone.on("pointerup", (_pointer: Phaser.Input.Pointer, _x: number, _y: number, event: Phaser.Types.Input.EventData) => {
+      event.stopPropagation();
+      this.cancelConfirm();
+    });
     this.confirmMinusZone.on("pointerdown", () => this.adjustConfirmAmount(-1));
     this.confirmPlusZone.on("pointerdown", () => this.adjustConfirmAmount(1));
     this.confirmInputZone.on("pointerdown", () => {
@@ -1933,9 +2406,8 @@ this.chatText.setMask(this.chatMaskGfx.createGeometryMask());
       ) {
         this.macroEditorConfig.selectedSpellId = this.macroEditorConfig.spellOptions[0].spellId;
       }
-    } else if (prevAction === "cast_spell" || this.macroEditorConfig.selectedItemId === null) {
-      this.macroEditorConfig.selectedItemId =
-        this.macroEditorConfig.itemOptions[0]?.itemId ?? null;
+    } else {
+      this.refreshMacroEditorItemOptions(this.macroEditorConfig.selectedInventorySlotIndex);
     }
     this.layoutMacroEditorDialog();
   }
@@ -1966,11 +2438,13 @@ this.chatText.setMask(this.chatMaskGfx.createGeometryMask());
     }
 
     const currentIndex = options.findIndex(
-      (option) => option.itemId === this.macroEditorConfig.selectedItemId
+      (option) => option.slotIndex === this.macroEditorConfig.selectedInventorySlotIndex
     );
     const baseIndex = currentIndex >= 0 ? currentIndex : 0;
     const nextIndex = (baseIndex + delta + options.length) % options.length;
-    this.macroEditorConfig.selectedItemId = options[nextIndex].itemId;
+    const picked = options[nextIndex];
+    this.macroEditorConfig.selectedItemId = picked.itemId;
+    this.macroEditorConfig.selectedInventorySlotIndex = picked.slotIndex;
     this.layoutMacroEditorDialog();
   }
 
@@ -1984,6 +2458,46 @@ this.chatText.setMask(this.chatMaskGfx.createGeometryMask());
     this.macroEditorCapturingKey = false;
     this.macroEditorOverlay.setVisible(false);
     this.macroEditorSaveHandler = null;
+    this.macroEditorItemOptionsForAction = null;
+  }
+
+  /** Mantiene itemId + casillero alineados con las opciones filtradas por acción. */
+  private syncMacroEditorItemSelection(preferredSlotIndex: number | null) {
+    const options = this.macroEditorConfig.itemOptions;
+    if (options.length === 0) {
+      this.macroEditorConfig.selectedItemId = null;
+      this.macroEditorConfig.selectedInventorySlotIndex = null;
+      return;
+    }
+
+    let pick =
+      preferredSlotIndex != null
+        ? options.find((option) => option.slotIndex === preferredSlotIndex)
+        : undefined;
+    if (!pick && this.macroEditorConfig.selectedInventorySlotIndex != null) {
+      pick = options.find(
+        (option) => option.slotIndex === this.macroEditorConfig.selectedInventorySlotIndex
+      );
+    }
+    if (!pick && this.macroEditorConfig.selectedItemId) {
+      pick = options.find((option) => option.itemId === this.macroEditorConfig.selectedItemId);
+    }
+    if (!pick) {
+      pick = options[0];
+    }
+
+    this.macroEditorConfig.selectedItemId = pick.itemId;
+    this.macroEditorConfig.selectedInventorySlotIndex = pick.slotIndex;
+  }
+
+  private refreshMacroEditorItemOptions(preferredSlotIndex: number | null) {
+    if (!this.macroEditorItemOptionsForAction) {
+      return;
+    }
+    this.macroEditorConfig.itemOptions = this.macroEditorItemOptionsForAction(
+      this.macroEditorConfig.action
+    );
+    this.syncMacroEditorItemSelection(preferredSlotIndex);
   }
 
   private selectSpellAtVisibleRow(rowIndex: number) {
@@ -2615,6 +3129,10 @@ this.chatText.setMask(this.chatMaskGfx.createGeometryMask());
   }
 
   private applySpellPanelMask() {
+    const clip = this.spellPanelContentGeom;
+    this.inventoryClipMaskGfx.clear();
+    this.inventoryClipMaskGfx.fillStyle(0xffffff, 1);
+    this.inventoryClipMaskGfx.fillRect(clip.x, clip.y, clip.w, clip.h);
     for (const target of this.getSpellPanelMaskTargets()) {
       target.setMask(this.inventoryClipMask);
     }
@@ -2626,17 +3144,38 @@ this.chatText.setMask(this.chatMaskGfx.createGeometryMask());
     }
   }
 
+  /** Área negra interior del panel (debajo de «INVENTARIO» en la skin). */
+  private getSkinSpellPanelContentRect(
+    panel: { x: number; y: number; w: number; h: number },
+    screenW: number,
+    screenH: number
+  ) {
+    const gridPad = getAowebSkinLayout().inventoryGridPad ?? { top: 0, left: 0 };
+    const padTop = scaleSkinY(gridPad.top, screenH);
+    const padX = scaleSkinX(8, screenW);
+    const padBottom = scaleSkinY(10, screenH);
+    return {
+      x: panel.x + padX,
+      y: panel.y + padTop,
+      w: Math.max(48, panel.w - padX * 2),
+      h: Math.max(48, panel.h - padTop - padBottom),
+    };
+  }
+
   private layoutSpellPanelForSkin(panel: { x: number; y: number; w: number; h: number }) {
-    const panelX = panel.x;
-    const panelY = panel.y;
-    const panelW = panel.w;
-    const panelH = panel.h;
-    const listPad = 8;
-    const footerH = SPELL_PANEL_FOOTER_SKIN;
-    const listX = panelX + listPad;
-    const listY = panelY + listPad;
-    const listW = panelW - listPad * 2;
-    const listH = panelH - footerH - listPad;
+    const screenW = this.scene.scale.width;
+    const screenH = this.scene.scale.height;
+    const content = this.getSkinSpellPanelContentRect(panel, screenW, screenH);
+    this.spellPanelContentGeom = content;
+
+    const listPad = scaleSkinX(4, screenW);
+    const footerH = scaleSkinY(SPELL_PANEL_FOOTER_SKIN, screenH);
+    const listX = content.x + listPad;
+    const listY = content.y + listPad;
+    const listW = content.w - listPad * 2;
+    const castH = Math.max(scaleSkinY(20, screenH), footerH - scaleSkinY(6, screenH));
+    const castY = content.y + content.h - castH - scaleSkinY(2, screenH);
+    const listH = Math.max(SPELL_ROW_HEIGHT, castY - listY - scaleSkinY(14, screenH));
     const rowStride = SPELL_ROW_HEIGHT + SPELL_ROW_GAP;
 
     this.spellVisibleRows = Math.min(
@@ -2686,11 +3225,9 @@ this.chatText.setMask(this.chatMaskGfx.createGeometryMask());
       }
     }
 
-    const castY = panelY + panelH - footerH;
-    const castH = footerH - 4;
-    this.drawConfirmButton(this.spellCastBtn, panelX + listPad, castY, listW, castH);
-    this.spellCastZone.setPosition(panelX + listPad, castY).setSize(listW, castH);
-    this.spellCastLabel.setPosition(panelX + panelW / 2, castY + castH / 2);
+    this.drawConfirmButton(this.spellCastBtn, listX, castY, listW, castH);
+    this.spellCastZone.setPosition(listX, castY).setSize(listW, castH);
+    this.spellCastLabel.setPosition(listX + listW / 2, castY + castH / 2);
 
     [
       this.spellUpBtn,
@@ -2718,7 +3255,7 @@ this.chatText.setMask(this.chatMaskGfx.createGeometryMask());
       );
       this.spellScrollHintText
         .setText(`${firstVisible}-${lastVisible}/${this.spells.length}`)
-        .setPosition(listX, castY - 12)
+        .setPosition(listX, castY - scaleSkinY(12, screenH))
         .setFontSize("8px")
         .setVisible(true);
     } else {
@@ -2748,23 +3285,24 @@ this.chatText.setMask(this.chatMaskGfx.createGeometryMask());
     const gameVp = scaleSkinRect(R.viewport, w, h);
 
     this.uiSkinFrame.setPosition(0, 0).setDisplaySize(w, h).setVisible(true);
-    // Recorta el marco para dejar "agujero" donde se renderiza el mundo.
-    this.skinViewportMaskGfx.clear();
-    this.skinViewportMaskGfx.fillStyle(0xffffff, 1);
-    // Franja superior
-    this.skinViewportMaskGfx.fillRect(0, 0, w, gameVp.y);
-    // Franja inferior
-    this.skinViewportMaskGfx.fillRect(0, gameVp.y + gameVp.h, w, Math.max(0, h - (gameVp.y + gameVp.h)));
-    // Lateral izquierdo del viewport
-    this.skinViewportMaskGfx.fillRect(0, gameVp.y, gameVp.x, gameVp.h);
-    // Lateral derecho del viewport
-    this.skinViewportMaskGfx.fillRect(
-      gameVp.x + gameVp.w,
-      gameVp.y,
-      Math.max(0, w - (gameVp.x + gameVp.w)),
-      gameVp.h
-    );
-    this.uiSkinFrame.setMask(this.skinViewportMaskGfx.createGeometryMask());
+    if (usesViewportFrameOverlay()) {
+      // PNG con centro transparente: el marco (dragones, bordes) queda encima del mundo.
+      this.uiSkinFrame.clearMask();
+    } else {
+      // Recorta el marco para dejar "agujero" donde se renderiza el mundo.
+      this.skinViewportMaskGfx.clear();
+      this.skinViewportMaskGfx.fillStyle(0xffffff, 1);
+      this.skinViewportMaskGfx.fillRect(0, 0, w, gameVp.y);
+      this.skinViewportMaskGfx.fillRect(0, gameVp.y + gameVp.h, w, Math.max(0, h - (gameVp.y + gameVp.h)));
+      this.skinViewportMaskGfx.fillRect(0, gameVp.y, gameVp.x, gameVp.h);
+      this.skinViewportMaskGfx.fillRect(
+        gameVp.x + gameVp.w,
+        gameVp.y,
+        Math.max(0, w - (gameVp.x + gameVp.w)),
+        gameVp.h
+      );
+      this.uiSkinFrame.setMask(this.skinViewportMaskGfx.createGeometryMask());
+    }
     this.chatPanel.clear();
     this.chatBgFrame.setVisible(false);
     this.sidebarPanel.clear();
@@ -2922,10 +3460,11 @@ this.chatText.setMask(this.chatMaskGfx.createGeometryMask());
     this.inventoryPanel.layoutSkinGridInPanel(R.inventoryPanel, w, h);
     const sidebarPanelHeight = invPanelR.h;
     const invR = invPanelR;
+    this.inventoryPanelGeom = { x: invR.x, y: invR.y, w: invR.w, h: invR.h };
     this.inventoryClipMaskGfx.clear();
     this.inventoryClipMaskGfx.fillStyle(0xffffff, 1);
     this.inventoryClipMaskGfx.fillRect(invR.x, invR.y, invR.w, invR.h);
-    if (this.activeSidebarTab === "inventory") {
+    if (this.activeSidebarTab === "inventory" && !this.inventoryOptionsMenuVisible) {
       this.inventoryPanel.container.setMask(this.inventoryClipMask);
     } else {
       this.inventoryPanel.container.clearMask();
@@ -2938,11 +3477,12 @@ this.chatText.setMask(this.chatMaskGfx.createGeometryMask());
 
     const isInventoryTab = this.activeSidebarTab === "inventory";
     const isSpellsTab = this.activeSidebarTab === "spells";
+    const showInventoryContent = isInventoryTab && !this.inventoryOptionsMenuVisible;
     // En skin nueva queremos que la lista de spells no quede tapada por los slots.
     // El inventario solo se ve cuando estamos en "inventory".
-    this.inventoryPanel.container.setVisible(isInventoryTab);
-    this.inventoryHintBg.setVisible(isInventoryTab);
-    this.inventoryHintText.setVisible(isInventoryTab);
+    this.inventoryPanel.container.setVisible(showInventoryContent);
+    this.inventoryHintBg.setVisible(showInventoryContent);
+    this.inventoryHintText.setVisible(showInventoryContent);
     this.spellPanelBg.setVisible(isSpellsTab);
     this.spellSelectionGfx.setVisible(isSpellsTab);
     [
@@ -3043,13 +3583,21 @@ this.chatText.setMask(this.chatMaskGfx.createGeometryMask());
     this.applyVitalBarLabelStyle(this.mpLabel);
 
     const minimapR = scaleSkinRect(R.minimap, w, h);
-    const minimapSize = Math.min(minimapR.w, minimapR.h);
-    this.minimapGeom = {
-      x: minimapR.x + Math.floor((minimapR.w - minimapSize) / 1),
-      y: minimapR.y + Math.floor((minimapR.h - minimapSize) + 5),
-      size: minimapSize,
-    };
-    this.layoutMinimapLabels(minimapR, h);
+    const minimapContent = usesMinimapFrameOverlay()
+      ? getSkinMinimapContentRect(R.minimap, w, h)
+      : {
+          x: minimapR.x + Math.floor((minimapR.w - Math.min(minimapR.w, minimapR.h)) / 2),
+          y: minimapR.y + Math.floor((minimapR.h - Math.min(minimapR.w, minimapR.h)) / 2),
+          w: Math.min(minimapR.w, minimapR.h),
+          h: Math.min(minimapR.w, minimapR.h),
+        };
+    this.minimapGeom = this.applyMinimapLayout({
+      x: minimapContent.x,
+      y: minimapContent.y,
+      w: minimapContent.w,
+      h: minimapContent.h,
+    });
+    this.layoutMinimapLabels(this.minimapGeom, h);
 
     const fullscreenBtnW = 24;
     const fullscreenBtnH = 18;
@@ -3078,12 +3626,27 @@ this.chatText.setMask(this.chatMaskGfx.createGeometryMask());
     this.layoutConfirmDialog();
     this.layoutMacroEditorDialog();
     this.layoutStatsOverlay();
+    this.layoutInventoryOptionsMenu();
     this.refreshStats();
-    this.bringSidebarHudToFront();
+    this.syncMinimapLayerDepth();
     this.bringSkinHudToFront();
+    this.bringSidebarHudToFront();
     this.bringChatTabsToFront();
     this.minimapRedrawHandler?.();
+    this.layoutMinimapTuneHint();
     this.scene.events.emit("ui-viewport-changed");
+  }
+
+  private layoutMinimapTuneHint() {
+    if (!this.minimapLayoutTuneActive || !this.minimapTuneHintText) {
+      this.minimapTuneHintText?.setVisible(false);
+      return;
+    }
+    const { x, y, w, h } = this.minimapGeom;
+    this.minimapTuneHintText.setPosition(Math.max(6, x), y + h + 6);
+    this.minimapTuneHintText.setWordWrapWidth(Math.max(140, w + 20));
+    this.refreshMinimapTuneHint();
+    this.root.bringToTop(this.minimapTuneHintText);
   }
 
   /** Chat toggle y lista de canales siempre clickeables sobre el marco. */
@@ -3099,7 +3662,20 @@ this.chatText.setMask(this.chatMaskGfx.createGeometryMask());
     }
   }
 
-  /** HP/MP/oro/nivel/minimapa por encima del marco de la skin. */
+  /** Minimapa detrás del marco PNG sin subir el marco sobre chat/inventario. */
+  private syncMinimapLayerDepth() {
+    if (this.useAowebSkin && usesMinimapFrameOverlay()) {
+      this.minimapGfx.setDepth(-2);
+      this.uiSkinFrame.setDepth(-1);
+      return;
+    }
+    this.minimapGfx.setDepth(0);
+    if (this.useAowebSkin) {
+      this.uiSkinFrame.setDepth(-1);
+    }
+  }
+
+  /** HP/MP/oro/nivel por encima del marco de la skin. */
   private bringSkinHudToFront() {
     const hudFront: Phaser.GameObjects.GameObject[] = [
       this.expFill,
@@ -3113,7 +3689,6 @@ this.chatText.setMask(this.chatMaskGfx.createGeometryMask());
       this.agilityValueText,
       this.levelText,
       this.nameText,
-      this.minimapGfx,
       this.mapCoordsText,
       this.mapNameText,
       this.fullscreenBtnBg,
@@ -3123,6 +3698,9 @@ this.chatText.setMask(this.chatMaskGfx.createGeometryMask());
       this.mpLabel,
       ...this.macroSlots.flatMap((s) => [s.hit, s.itemIcon, s.keyLabel]),
     ];
+    if (!this.useAowebSkin || !usesMinimapFrameOverlay()) {
+      hudFront.push(this.minimapGfx);
+    }
     for (const obj of hudFront) {
       this.root.bringToTop(obj);
     }
@@ -3250,6 +3828,7 @@ this.chatText.setMask(this.chatMaskGfx.createGeometryMask());
     this.redrawInventorySelection();
     this.layoutConfirmDialog();
     this.layoutMacroEditorDialog();
+    this.layoutInventoryOptionsMenu();
 
     this.drawPanel(
       this.sidebarPanel,
@@ -3295,6 +3874,12 @@ this.chatText.setMask(this.chatMaskGfx.createGeometryMask());
 
     const inventoryPanelY = y + 8;
     const sidebarPanelHeight = this.getSidebarPanelHeight();
+    this.inventoryPanelGeom = {
+      x: sidebarX + pad,
+      y: inventoryPanelY,
+      w: innerW,
+      h: sidebarPanelHeight,
+    };
     this.inventoryPanel.container.setPosition(sidebarX + pad, inventoryPanelY);
     const hintY = inventoryPanelY + sidebarPanelHeight + 4;
     this.inventoryHintBoxGeom = { x: sidebarX + pad, y: hintY, w: innerW, h: 22 };
@@ -3303,9 +3888,10 @@ this.chatText.setMask(this.chatMaskGfx.createGeometryMask());
     this.redrawInventoryHintBox();
     const isInventoryTab = this.activeSidebarTab === "inventory";
     const isSpellsTab = this.activeSidebarTab === "spells";
-    this.inventoryPanel.container.setVisible(isInventoryTab);
-    this.inventoryHintBg.setVisible(isInventoryTab);
-    this.inventoryHintText.setVisible(isInventoryTab);
+    const showInventoryContent = isInventoryTab && !this.inventoryOptionsMenuVisible;
+    this.inventoryPanel.container.setVisible(showInventoryContent);
+    this.inventoryHintBg.setVisible(showInventoryContent);
+    this.inventoryHintText.setVisible(showInventoryContent);
     this.spellPanelBg.setVisible(isSpellsTab);
     this.spellSelectionGfx.setVisible(isSpellsTab);
     this.spellUpBtn.setVisible(isSpellsTab);
@@ -3484,18 +4070,15 @@ this.chatText.setMask(this.chatMaskGfx.createGeometryMask());
     const minimapSize = Math.min(MINIMAP_SIZE, innerW);
     const minimapX = sidebarX + pad + Math.floor((innerW - minimapSize) / 2);
     const minimapY = bodyBottom - pad - minimapSize;
-    this.minimapGeom = {
+    this.minimapGeom = this.applyMinimapLayout({
       x: minimapX,
       y: minimapY,
-      size: minimapSize,
-    };
+      w: minimapSize,
+      h: minimapSize,
+    });
 
     const mapNameGap = 6;
-    this.layoutMinimapLabels(
-      { x: minimapX, y: minimapY, w: minimapSize, h: minimapSize },
-      h,
-      mapNameGap
-    );
+    this.layoutMinimapLabels(this.minimapGeom, h, mapNameGap);
 
     const fullscreenBtnW = 30;
     const fullscreenBtnH = 22;
@@ -3521,9 +4104,11 @@ this.chatText.setMask(this.chatMaskGfx.createGeometryMask());
     this.layoutMacroSlots(w, h);
 
     this.layoutStatsOverlay();
+    this.layoutInventoryOptionsMenu();
     this.refreshStats();
     this.bringSidebarHudToFront();
     this.minimapRedrawHandler?.();
+    this.layoutMinimapTuneHint();
   };
 
   private ensureMacroPlaceholderTexture() {
@@ -3723,6 +4308,36 @@ this.chatText.setMask(this.chatMaskGfx.createGeometryMask());
 
   private bringSidebarHudToFront() {
     const front: Phaser.GameObjects.GameObject[] = [
+      this.chatText,
+      this.chatInputBg,
+      this.chatInputText,
+      this.inventoryPanel.container,
+      this.inventoryHintBg,
+      this.inventoryHintText,
+      this.spellPanelBg,
+      this.spellSelectionGfx,
+      ...this.spellRows,
+      ...this.spellRowZones,
+      this.spellUpBtn,
+      this.spellDownBtn,
+      this.spellScrollUpBtn,
+      this.spellScrollDownBtn,
+      this.spellInfoBtn,
+      this.spellCastBtn,
+      this.spellUpZone,
+      this.spellDownZone,
+      this.spellScrollUpZone,
+      this.spellScrollDownZone,
+      this.spellInfoZone,
+      this.spellCastZone,
+      this.spellUpLabel,
+      this.spellDownLabel,
+      this.spellScrollUpLabel,
+      this.spellScrollDownLabel,
+      this.spellScrollHintText,
+      this.spellInfoLabel,
+      this.spellCastLabel,
+      this.inventoryOptionsMenu,
       ...this.invTabBgFrames,
       this.invTabLabel,
       this.spellsTabLabel,
@@ -3730,6 +4345,9 @@ this.chatText.setMask(this.chatMaskGfx.createGeometryMask());
       this.invTabBtn,
       this.spellsTabBtn,
       this.statsTabBtn,
+      this.mapNameText,
+      this.mapCoordsText,
+      this.minimapTuneHintText,
     ];
     for (const obj of front) {
       this.root.bringToTop(obj);

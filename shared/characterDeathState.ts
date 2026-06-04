@@ -24,3 +24,8 @@ export function freshDeathStateForCharacterSwitch(): CharacterDeathState {
 export function isDeadOrGhost(state: CharacterDeathState): boolean {
   return state.deathPhase !== "alive";
 }
+
+/** Jugador muerto/fantasma en sesión de servidor o estado de red (hp + flag). */
+export function isPlayerGhostFromVitals(hp: number, isDead = false): boolean {
+  return hp <= 0 || isDead;
+}
