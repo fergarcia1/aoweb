@@ -18,7 +18,8 @@ import { resolveNpcFaceAppearance } from "../game-data/imperium/npcCatalogFaceSe
 
 import type { ImperiumNpcCatalogEntry } from "../game-data/imperium/npcCatalogTypes";
 
-import { resolveMapTile, type MapTileOverrides } from "./mapTileOverrides";
+import { resolveMapTile, getMapTileOverride, type MapTileOverrides } from "./mapTileOverrides";
+import { isLegacyShoreWaterTile, isWaterTile } from "./navigation";
 
 
 
@@ -189,6 +190,15 @@ const BLOCKED_TILE_IDS = new Set<number>([
   TILE.WALL,
 
 ]);
+
+function isOpenDoorTileOverride(
+  tileOverrides: MapTileOverrides | undefined,
+  tileX: number,
+  tileY: number
+): boolean {
+  const tile = getMapTileOverride(tileOverrides, tileX, tileY);
+  return tile !== undefined && isTileWalkable(tile) && !BLOCKED_TILE_IDS.has(tile);
+}
 
 
 
@@ -423,7 +433,8 @@ export function isMapTileWalkable(
   mapId: string,
   tileX: number,
   tileY: number,
-  tileOverrides?: MapTileOverrides
+  tileOverrides?: MapTileOverrides,
+  isAquatic?: boolean
 ): boolean {
 
   const map = getMap(mapId);
@@ -434,7 +445,18 @@ export function isMapTileWalkable(
 
   }
 
+  const isWater = isWaterTile(map, tileX, tileY, tileOverrides);
 
+  if (isAquatic) {
+    // Aquatic mobs can ONLY move on water tiles.
+    return isWater;
+  }
+
+  // Non-aquatic mobs/players:
+  if (isWater && !isLegacyShoreWaterTile(map, tileX, tileY)) {
+    // Cannot walk on deep water.
+    return false;
+  }
 
   if (isMapCollisionDenyTile(mapId, tileX, tileY)) {
 
@@ -454,7 +476,10 @@ export function isMapTileWalkable(
 
   if (map.legacyCsmData) {
 
-    if (isLegacyWallLayerTile(map, tileX, tileY)) {
+    if (
+      isLegacyWallLayerTile(map, tileX, tileY) &&
+      !isOpenDoorTileOverride(tileOverrides, tileX, tileY)
+    ) {
 
       return false;
 

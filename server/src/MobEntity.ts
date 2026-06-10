@@ -22,6 +22,7 @@ export class MobEntity {
   readonly respawnMs: number;
   readonly goldReward: number;
   readonly expReward: number;
+  readonly aquatic: boolean;
   tileX: number;
   tileY: number;
   facing: Facing = "down";
@@ -58,6 +59,7 @@ export class MobEntity {
     respawnMs?: number;
     goldReward?: number;
     expReward?: number;
+    aquatic?: boolean;
   }) {
     this.id = config.id;
     this.mobId = config.mobId;
@@ -86,8 +88,10 @@ export class MobEntity {
     this.respawnMs = Math.max(500, config.respawnMs ?? 10_000);
     this.goldReward = Math.max(0, Math.floor(config.goldReward ?? 0));
     this.expReward = Math.max(0, Math.floor(config.expReward ?? 0));
+    this.aquatic = !!config.aquatic;
     this.nextWanderAt = Date.now() + randomWanderDelay();
   }
+
 
   isImmobilized(now = Date.now()) {
     return now < this.immobilizedUntil;

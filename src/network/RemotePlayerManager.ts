@@ -17,6 +17,7 @@ import {
 } from "../ui/fonts";
 import {
   applyPlayerOrigin,
+  BOAT_BODY_TEXTURE_KEY,
   Facing,
   Outfit,
   getDefaultArmorVisualForOutfit,
@@ -33,7 +34,7 @@ import {
   getItemDefinition,
   type EquipmentSlot,
   type ItemId,
-} from "../items/itemDefinitions";
+} from "../../game-data/items/definitions";
 import {
   createEquippedOverlaySprite,
   getPlayerHeadWalkSway,
@@ -104,6 +105,7 @@ export type RemoteEntry = {
   shieldSprite: Phaser.GameObjects.Sprite;
   helmetSprite: Phaser.GameObjects.Sprite;
   meditationSprite: Phaser.GameObjects.Sprite;
+  partyHpBar: Phaser.GameObjects.Graphics;
   meditationConfig?: MeditationVisualConfig;
   label: Phaser.GameObjects.Text;
   playerName: string;
@@ -126,15 +128,18 @@ export type RemoteEntry = {
   isGhost: boolean;
   invisibleUntilMs: number;
   isMeditating: boolean;
+  isNavigating: boolean;
 };
 
 export class RemotePlayerManager {
   private readonly entries = new Map<string, RemoteEntry>();
+  private partyMemberIds = new Set<string>();
 
   constructor(
     private readonly scene: Phaser.Scene,
     private readonly depthFromFeetY: (feetY: number) => number,
-    private readonly uiCamera?: Phaser.Cameras.Scene2D.Camera
+    private readonly uiCamera?: Phaser.Cameras.Scene2D.Camera,
+    private readonly resolveInteractiveCursor: () => string = () => "pointer"
   ) {}
 
   syncFromSnapshot(players: NetPlayerState[], localPlayerId: string | null, mapId: string) {
@@ -188,6 +193,25 @@ export class RemotePlayerManager {
 
   getPlayerSprite(id: string): Phaser.GameObjects.Sprite | undefined {
     return this.entries.get(id)?.body;
+  }
+
+  getVisibleRemoteTilesByIds(ids: ReadonlySet<string>): Array<{ id: string; tileX: number; tileY: number }> {
+    const tiles: Array<{ id: string; tileX: number; tileY: number }> = [];
+    for (const id of ids) {
+      const entry = this.entries.get(id);
+      if (!entry || entry.isGhost || entry.hp <= 0) {
+        continue;
+      }
+      tiles.push({ id, tileX: entry.tileX, tileY: entry.tileY });
+    }
+    return tiles;
+  }
+
+  setPartyMemberIds(ids: ReadonlySet<string>): void {
+    this.partyMemberIds = new Set(ids);
+    for (const entry of this.entries.values()) {
+      this.syncPartyHpBar(entry, this.depthFromFeetY(entry.body.y));
+    }
   }
 
   updateInvisibilityVisuals(nowMs: number): void {
@@ -351,7 +375,8 @@ export class RemotePlayerManager {
       entry.genderId !== state.genderId ||
       entry.faceIndex !== state.faceIndex ||
       entry.equippedOutfit !== nextOutfit ||
-      entry.equipment.armor !== nextEquipment.armor
+      entry.equipment.armor !== nextEquipment.armor ||
+      entry.isNavigating !== (state.isNavigating === true)
     );
   }
 
@@ -362,12 +387,14 @@ export class RemotePlayerManager {
     const equipment = netEquipmentToLocal(state.equipment);
     const armorVisual = remoteArmorVisual(equipment, equippedOutfit, raceId);
     const feet = tileToFeetWorld(state.tileX, state.tileY, TILE_SIZE);
-    const bodyKey = textureKeyForPlayer(
-      equippedOutfit,
-      raceBodyTextureKey(raceId, genderId),
-      armorVisual,
-      raceId
-    );
+    const bodyKey = state.isNavigating === true
+      ? BOAT_BODY_TEXTURE_KEY
+      : textureKeyForPlayer(
+          equippedOutfit,
+          raceBodyTextureKey(raceId, genderId),
+          armorVisual,
+          raceId
+        );
     const body = this.scene.add.sprite(feet.x, feet.y, bodyKey, 0);
     applyPlayerOrigin(body);
 
@@ -379,7 +406,7 @@ export class RemotePlayerManager {
       offsetY: PLAYER_HITBOX_OFFSET_Y,
     };
     body.setInteractive(buildHitboxFrameRect(body, config), Phaser.Geom.Rectangle.Contains);
-    body.input!.cursor = "pointer";
+    body.input!.cursor = this.resolveInteractiveCursor();
 
     const faceLayout = getRaceFaceLayout(raceId, genderId);
     const face = this.scene.add.sprite(
@@ -394,6 +421,7 @@ export class RemotePlayerManager {
     const weaponSprite = createEquippedOverlaySprite(this.scene, feet.x, feet.y);
     const shieldSprite = createEquippedOverlaySprite(this.scene, feet.x, feet.y);
     const helmetSprite = createEquippedOverlaySprite(this.scene, feet.x, feet.y);
+    const partyHpBar = this.scene.add.graphics().setVisible(false);
     const meditationConfig = getMeditationVisualConfig(state.factionId, state.level);
     const meditationSprite = this.scene.add
       .sprite(feet.x, feet.y + MEDITATION_FX_OFFSET_Y, meditationConfig.key, 0)
@@ -418,7 +446,16 @@ export class RemotePlayerManager {
       .setOrigin(0.5, 0);
 
     if (this.uiCamera) {
-      this.uiCamera.ignore([body, face, weaponSprite, shieldSprite, helmetSprite, meditationSprite, label]);
+      this.uiCamera.ignore([
+        body,
+        face,
+        weaponSprite,
+        shieldSprite,
+        helmetSprite,
+        partyHpBar,
+        meditationSprite,
+        label,
+      ]);
     }
 
     const entry: RemoteEntry = {
@@ -428,6 +465,7 @@ export class RemotePlayerManager {
       weaponSprite,
       shieldSprite,
       helmetSprite,
+      partyHpBar,
       meditationSprite,
       meditationConfig,
       label,
@@ -451,6 +489,7 @@ export class RemotePlayerManager {
       isGhost: false,
       invisibleUntilMs: state.invisibleUntilMs ?? 0,
       isMeditating: state.isMeditating === true,
+      isNavigating: state.isNavigating === true,
     };
 
     this.applyBodyFacing(entry);
@@ -474,6 +513,7 @@ export class RemotePlayerManager {
     entry.level = state.level;
     entry.role = state.role;
     entry.faceIndex = state.faceIndex;
+    entry.isNavigating = state.isNavigating === true;
     if (entry.label.text !== state.name) {
       entry.label.setText(state.name);
       const colors = getPlayerNameColors(
@@ -492,7 +532,7 @@ export class RemotePlayerManager {
 
     entry.equipment = netEquipmentToLocal(state.equipment);
 
-    if (state.hp > 0) {
+    if (state.hp > 0 && !entry.isNavigating) {
       if (entry.isGhost) {
         this.clearRemoteGhostAppearance(entry, state);
       }
@@ -588,6 +628,9 @@ export class RemotePlayerManager {
   }
 
   private getRemoteBodyTextureKey(entry: RemoteEntry): string {
+    if (entry.isNavigating && !entry.isGhost) {
+      return BOAT_BODY_TEXTURE_KEY;
+    }
     const visualRaceId = entry.isGhost ? GHOST_RACE_ID : entry.raceId;
     const visualGenderId = entry.isGhost ? "male" : entry.genderId;
     return textureKeyForPlayer(
@@ -618,6 +661,14 @@ export class RemotePlayerManager {
     );
 
     if (!entry.isGhost) {
+      if (entry.isNavigating) {
+        entry.face.setVisible(false);
+        entry.weaponSprite.setVisible(false);
+        entry.shieldSprite.setVisible(false);
+        entry.helmetSprite.setVisible(false);
+      } else {
+        entry.face.setVisible(true);
+      }
       entry.face.setFrame(
         getFaceFrame(entry.raceId, entry.genderId, entry.faceIndex, entry.facing)
       );
@@ -632,7 +683,33 @@ export class RemotePlayerManager {
     entry.meditationSprite.setDepth(depth + 0.06);
     entry.label.setPosition(entry.body.x, entry.body.y + 2);
     entry.label.setDepth(depth + 2);
+    this.syncPartyHpBar(entry, depth);
     this.syncRemoteGear(entry, walkSwayX, walkSwayY);
+  }
+
+  private syncPartyHpBar(entry: RemoteEntry, depth: number): void {
+    const bar = entry.partyHpBar;
+    bar.clear();
+    const shouldShow =
+      this.partyMemberIds.has(entry.id) && !entry.isGhost && entry.hp > 0 && entry.hpMax > 0;
+    bar.setVisible(shouldShow);
+    if (!shouldShow) {
+      return;
+    }
+
+    const width = 38;
+    const height = 5;
+    const x = Math.round(entry.body.x - width / 2);
+    const y = Math.round(entry.body.y - Math.max(42, entry.body.displayHeight + 8));
+    const ratio = Phaser.Math.Clamp(entry.hp / entry.hpMax, 0, 1);
+
+    bar.setDepth(depth + 3);
+    bar.fillStyle(0x111111, 0.78);
+    bar.fillRect(x - 1, y - 1, width + 2, height + 2);
+    bar.fillStyle(0x15401f, 0.95);
+    bar.fillRect(x, y, width, height);
+    bar.fillStyle(ratio > 0.35 ? 0x28d15f : 0xd95745, 1);
+    bar.fillRect(x, y, Math.max(1, Math.floor(width * ratio)), height);
   }
 
   private buildGearSyncContext(entry: RemoteEntry): EquippedGearSyncContext {
@@ -653,6 +730,12 @@ export class RemotePlayerManager {
     walkSwayX = 0,
     walkSwayY = 0
   ) {
+    if (entry.isNavigating && !entry.isGhost) {
+      entry.weaponSprite.setVisible(false);
+      entry.shieldSprite.setVisible(false);
+      entry.helmetSprite.setVisible(false);
+      return;
+    }
     syncEquippedHeldItemVisuals({
       ...this.buildGearSyncContext(entry),
       walkSwayX,
@@ -710,12 +793,14 @@ export class RemotePlayerManager {
     const nextOutfit = remoteOutfitFromState(state);
     entry.equippedOutfit = nextOutfit;
     entry.armorVisual = remoteArmorVisual(entry.equipment, nextOutfit, entry.raceId);
-    const bodyKey = textureKeyForPlayer(
-      nextOutfit,
-      raceBodyTextureKey(entry.raceId, entry.genderId),
-      entry.armorVisual,
-      entry.raceId
-    );
+    const bodyKey = entry.isNavigating
+      ? BOAT_BODY_TEXTURE_KEY
+      : textureKeyForPlayer(
+          nextOutfit,
+          raceBodyTextureKey(entry.raceId, entry.genderId),
+          entry.armorVisual,
+          entry.raceId
+        );
     entry.body.setTexture(bodyKey);
     entry.face.setTexture(faceTextureKey(entry.raceId, entry.genderId));
     entry.face.setFrame(
@@ -734,15 +819,17 @@ export class RemotePlayerManager {
     const visualRaceId = entry.isGhost ? GHOST_RACE_ID : entry.raceId;
     const visualGenderId = entry.isGhost ? "male" : entry.genderId;
     const bodyKey = raceBodyTextureKey(visualRaceId, visualGenderId);
-    const visualOutfit = entry.isGhost ? "base" : entry.equippedOutfit;
-    const key = playerAnimationKey(
-      state,
-      bodyFacing,
-      visualOutfit,
-      bodyKey,
-      entry.isGhost ? undefined : entry.armorVisual,
-      visualRaceId
-    );
+    const visualOutfit = entry.isGhost || entry.isNavigating ? "base" : entry.equippedOutfit;
+    const key = entry.isNavigating && !entry.isGhost
+      ? `${state}_${bodyFacing}_${BOAT_BODY_TEXTURE_KEY}`
+      : playerAnimationKey(
+          state,
+          bodyFacing,
+          visualOutfit,
+          bodyKey,
+          entry.isGhost ? undefined : entry.armorVisual,
+          visualRaceId
+        );
 
     const bodyTextureKey = this.getRemoteBodyTextureKey(entry);
     if (entry.body.texture.key !== bodyTextureKey) {
@@ -783,6 +870,7 @@ export class RemotePlayerManager {
     entry.shieldSprite.destroy();
     entry.helmetSprite.destroy();
     entry.meditationSprite.destroy();
+    entry.partyHpBar.destroy();
     entry.label.destroy();
     this.entries.delete(id);
   }

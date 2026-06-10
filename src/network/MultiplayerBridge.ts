@@ -14,7 +14,8 @@ import type {
   WorldSnapshot,
 } from "../../shared/types";
 import { NetworkClient } from "./NetworkClient";
-import { getMultiplayerWsUrl, isMultiplayerEnabled } from "./multiplayerConfig";
+import { isMultiplayerEnabled } from "./multiplayerConfig";
+import { buildAuthenticatedWsUrl, clearAuthSession } from "./authApi";
 import {
   disconnectActiveMultiplayer,
   registerMultiplayerClient,
@@ -52,7 +53,10 @@ export type MultiplayerBridgeCallbacks = {
   onWorldItemSpawned: (mapId: string, item: NetWorldItemState) => void;
   onWorldItemUpdated: (mapId: string, item: NetWorldItemState) => void;
   onWorldItemRemoved: (mapId: string, worldItemId: string) => void;
+  onPartyUpdate?: (message: import("../../shared/protocol").ServerPartyUpdateMessage) => void;
+  onPartyInviteRequest?: (message: import("../../shared/protocol").ServerPartyInviteRequestMessage) => void;
   getJoinPayload: () => MultiplayerJoinPayload;
+  getWorldInteractiveCursor?: () => string;
   onCharacterAlreadyOnline?: (message: string) => void;
   onLogoutComplete?: () => void;
 };
@@ -85,10 +89,11 @@ export class MultiplayerBridge {
     this.remotePlayers = new RemotePlayerManager(
       this.scene,
       (feetY) => this.depthFromFeetY(feetY),
-      this.uiCamera
+      this.uiCamera,
+      () => this.callbacks.getWorldInteractiveCursor?.() ?? "pointer"
     );
 
-    const wsUrl = getMultiplayerWsUrl();
+    const wsUrl = buildAuthenticatedWsUrl();
     this.networkClient = new NetworkClient(
       wsUrl,
       {
@@ -113,6 +118,12 @@ export class MultiplayerBridge {
         }
         if (code === 4003) {
           this.skipNextDisconnectNotice = true;
+          return;
+        }
+        if (code === 4001) {
+          clearAuthSession();
+          this.callbacks.onStatus("Sesion expirada");
+          this.callbacks.onChatLine("Tu sesion expiro o la cuenta ya no existe. Volve a iniciar sesion.");
           return;
         }
         this.callbacks.onStatus("Desconectado del servidor");
@@ -167,6 +178,8 @@ export class MultiplayerBridge {
         this.callbacks.onWorldItemUpdated(mapId, item),
       onWorldItemRemoved: (mapId, worldItemId) =>
         this.callbacks.onWorldItemRemoved(mapId, worldItemId),
+      onPartyUpdate: (message) => this.callbacks.onPartyUpdate?.(message),
+      onPartyInviteRequest: (message) => this.callbacks.onPartyInviteRequest?.(message),
       onLogoutComplete: () => this.callbacks.onLogoutComplete?.(),
       onChat: (from, text) => {
         this.callbacks.onChatLine(`${from}: ${text}`);
@@ -229,7 +242,23 @@ export class MultiplayerBridge {
     if (!this.networkClient?.isConnected()) {
       return;
     }
-    this.networkClient.sendJoin(this.callbacks.getJoinPayload());
+    try {
+      const payload = this.callbacks.getJoinPayload();
+      console.info("[multiplayer] sending join", {
+        name: payload.name,
+        characterId: payload.characterId,
+        mapId: payload.mapId,
+        isNewCharacter: payload.isNewCharacter,
+      });
+      this.networkClient.sendJoin(payload);
+    } catch (error) {
+      console.error("[multiplayer] failed to build/send join payload:", error);
+      this.callbacks.onStatus("Error preparando conexion");
+      this.callbacks.onChatLine(
+        "No se pudo preparar la entrada al servidor. Revisa la consola para mas detalles."
+      );
+      this.networkClient.disconnect();
+    }
   }
 
   sendMove(facing: Facing) {
@@ -348,6 +377,15 @@ export class MultiplayerBridge {
 
   sendRequestLogout() {
     this.networkClient?.sendRequestLogout();
+  }
+
+  sendPartyAction(
+    action: Extract<import("../../shared/protocol").ClientMessage, { type: "party_action" }>["action"],
+    targetName?: string,
+    leaderId?: string,
+    targetId?: string
+  ) {
+    this.networkClient?.sendPartyAction(action, targetName, leaderId, targetId);
   }
 
   updateRemote(player: NetPlayerState, mapId: string) {

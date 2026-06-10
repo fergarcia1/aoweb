@@ -19,8 +19,13 @@ import {
   isResurrectSpell,
   TARGET_NOT_IMMOBILIZED_MESSAGE,
 } from "../../../game-data/spellBehaviors";
+import {
+  applyAntiOneshotToSpellDamage,
+  createEmptyPvpSpellHitRecords,
+} from "../../../game-data/antiOneshot";
+import { mitigatePhysicalDamage } from "../../../game-data/physicalDamageMitigation";
 import { MECHANICS } from "../../../shared/gameMechanics";
-import { SAFE_ZONE_MAP_IDS } from "../../../shared/constants";
+import { SAFE_ZONE_MAP_IDS } from "../../../game-data/constants";
 import {
   ATTACK_COOLDOWN_MS,
   getImmobilizeMobDurationMs,
@@ -150,6 +155,338 @@ export class CombatSystem {
     this.world.sendCombatLog(session, "No hay nadie para golpear.");
   }
 
+  private getPlayersInRange(
+    mapId: string,
+    tileX: number,
+    tileY: number,
+    radius: number,
+    exceptId?: string
+  ): PlayerSession[] {
+    const players: PlayerSession[] = [];
+    for (const player of this.world.getPlayers().values()) {
+      if (!player.joined || player.mapId !== mapId || player.id === exceptId) continue;
+      if (player.hp <= 0) continue;
+      const dx = Math.abs(player.tileX - tileX);
+      const dy = Math.abs(player.tileY - tileY);
+      if (dx <= radius && dy <= radius) {
+        players.push(player);
+      }
+    }
+    return players;
+  }
+
+  private getMobsInRange(
+    mapId: string,
+    tileX: number,
+    tileY: number,
+    radius: number
+  ): MobEntity[] {
+    const mobs: MobEntity[] = [];
+    for (const mob of this.world.getMobs().values()) {
+      if (!mob.alive || mob.mapId !== mapId) continue;
+      const dx = Math.abs(mob.tileX - tileX);
+      const dy = Math.abs(mob.tileY - tileY);
+      if (dx <= radius && dy <= radius) {
+        mobs.push(mob);
+      }
+    }
+    return mobs;
+  }
+
+  private handleAoECast(
+    session: PlayerSession,
+    spell: NonNullable<ReturnType<typeof getSpellDefinition>>,
+    targetTileX: number,
+    targetTileY: number
+  ) {
+    session.mp -= spell.manaCost;
+
+    this.world.broadcastGameEvent(session.mapId, targetTileX, targetTileY, {
+      kind: "spell_fx",
+      spellId: spell.idSpell,
+      tileX: targetTileX,
+      tileY: targetTileY,
+      sourcePlayerId: session.id,
+      sourceTileX: session.tileX,
+      sourceTileY: session.tileY,
+    });
+
+    const players = this.getPlayersInRange(
+      session.mapId,
+      targetTileX,
+      targetTileY,
+      spell.aoeRadiusTiles
+    );
+    const mobs = this.getMobsInRange(
+      session.mapId,
+      targetTileX,
+      targetTileY,
+      spell.aoeRadiusTiles
+    );
+
+    for (const player of players) {
+      this.applySpellEffectsToTarget(session, spell, undefined, player, targetTileX, targetTileY, true);
+    }
+    for (const mob of mobs) {
+      this.applySpellEffectsToTarget(session, spell, mob, undefined, targetTileX, targetTileY, true);
+    }
+  }
+
+  private applySpellEffectsToTarget(
+    session: PlayerSession,
+    spell: NonNullable<ReturnType<typeof getSpellDefinition>>,
+    targetMob: MobEntity | undefined,
+    targetPlayer: PlayerSession | undefined,
+    targetTileX: number,
+    targetTileY: number,
+    isAoE: boolean = false
+  ): boolean {
+    const spellId = spell.idSpell;
+    const targetsSelf = targetPlayer?.id === session.id;
+    const onCasterTile = this.isTileOnCaster(session, targetTileX, targetTileY);
+    const allyStatBuff = isAllyStatBuffSpell(spellId) && spell.puedeUsarseEnAliados;
+
+    const healTarget = this.resolveHealTarget(
+      session,
+      spell,
+      targetPlayer,
+      targetsSelf,
+      targetTileX,
+      targetTileY
+    );
+    let healRestored = 0;
+    if (healTarget) {
+      const heal = rollInt(spell.healMin, spell.healMax);
+      const before = healTarget.hp;
+      healTarget.hp = Math.min(healTarget.hpMax, healTarget.hp + heal);
+      healRestored = healTarget.hp - before;
+
+      this.world.broadcastGameEvent(session.mapId, healTarget.tileX, healTarget.tileY, {
+        kind: "heal",
+        targetKind: "player",
+        targetId: healTarget.id,
+        amount: healRestored,
+        tileX: healTarget.tileX,
+        tileY: healTarget.tileY,
+        sourcePlayerId: session.id,
+        sourceTileX: session.tileX,
+        sourceTileY: session.tileY,
+      });
+    }
+
+    const invisTarget = isInvisibilitySpell(spellId)
+      ? this.resolveInvisibilityTarget(
+          session,
+          spell,
+          targetPlayer,
+          targetsSelf,
+          targetTileX,
+          targetTileY
+        )
+      : undefined;
+    if (invisTarget) {
+      const until = Date.now() + INVISIBILITY_DURATION_MS;
+      invisTarget.invisibleUntil = Math.max(invisTarget.invisibleUntil, until);
+    }
+
+    let allyStatBuffApplied = false;
+    if (allyStatBuff) {
+      const buffTarget = this.resolveSpellBuffTarget(
+        session,
+        spell,
+        targetPlayer,
+        targetsSelf,
+        targetTileX,
+        targetTileY
+      );
+      if (buffTarget) {
+        allyStatBuffApplied = this.applySpellBuffsToPlayer(
+          session,
+          buffTarget,
+          spellId,
+          spell.nombre
+        );
+      }
+    }
+
+    const vitalsNotifyTarget =
+      healTarget && invisTarget && healTarget.id !== invisTarget.id
+        ? healTarget
+        : healTarget ?? invisTarget;
+    if (vitalsNotifyTarget) {
+      this.syncPlayersAfterSpellCast(session, vitalsNotifyTarget);
+    }
+    if (invisTarget && invisTarget.id !== session.id && invisTarget.id !== healTarget?.id) {
+      this.world.sendPlayerState(invisTarget);
+    }
+
+    if (healTarget) {
+      const logText =
+        healTarget.id === session.id
+          ? `${session.name}: ${spell.nombre} te cura ${healRestored} HP.`
+          : `${session.name}: ${spell.nombre} cura ${healRestored} HP a ${healTarget.name}.`;
+      this.world.broadcastCombatLog(
+        session.mapId,
+        healTarget.tileX,
+        healTarget.tileY,
+        logText
+      );
+    }
+
+    if (invisTarget) {
+      const logText =
+        invisTarget.id === session.id
+          ? `${session.name}: ${spell.nombre} te vuelve invisible.`
+          : `${session.name}: ${spell.nombre} vuelve invisible a ${invisTarget.name}.`;
+      this.world.broadcastCombatLog(
+        session.mapId,
+        invisTarget.tileX,
+        invisTarget.tileY,
+        logText
+      );
+    }
+
+    if (allyStatBuffApplied) {
+      return true;
+    }
+
+    const spellBehavior = getSpellBehavior(spellId);
+    if (spellBehavior?.removeAllEffects) {
+      if (targetsSelf) {
+        session.clearImmobilized();
+        session.clearInvisible();
+        session.attributeBuffs = { strength: 0, agility: 0, expiresAtMs: 0 };
+        this.world.sendPlayerState(session, { includeAttributeBuffs: true });
+        this.world.broadcastCombatLog(
+          session.mapId,
+          session.tileX,
+          session.tileY,
+          `${session.name}: ${spell.nombre} remueve todos los efectos mágicos.`
+        );
+        return true;
+      }
+    }
+
+    if (targetMob && isImmobilizeSpell(spellId)) {
+      const durationMs = getImmobilizeMobDurationMs(spellId);
+      targetMob.immobilizedUntil = Math.max(
+        targetMob.immobilizedUntil,
+        Date.now() + durationMs
+      );
+      const label = spellId === INMOVILIZAR_SPELL_ID ? "inmoviliza" : "paraliza";
+      this.world.broadcastCombatLog(
+        session.mapId,
+        targetMob.tileX,
+        targetMob.tileY,
+        `${session.name}: ${spell.nombre} ${label} a ${targetMob.name}.`
+      );
+      this.world.broadcastMobUpdated(targetMob);
+      return true;
+    }
+
+    if (isRemoveImmobilizeSpell(spellId)) {
+      if (
+        this.applyRemoveImmobilize(
+          session,
+          spell,
+          targetMob,
+          targetPlayer,
+          targetsSelf,
+          onCasterTile
+        )
+      ) {
+        return true;
+      }
+    }
+
+    if (targetPlayer && isImmobilizeSpell(spellId)) {
+      if (targetsSelf && !spell.puedeUsarseEnAliados) return false;
+      if (this.isInSafeZone(session) || this.isInSafeZone(targetPlayer)) {
+        if (!isAoE) this.world.sendCombatLog(session, "Esta es zona segura.");
+        return false;
+      }
+      const attackerFaction = normalizeFactionId(session.factionId);
+      const defenderFaction = normalizeFactionId(targetPlayer.factionId);
+      if (!canFactionsFight(attackerFaction, defenderFaction)) {
+        if (!isAoE) this.world.sendCombatLog(session, "No podés atacar a este jugador (misma facción o alianza).");
+        return false;
+      }
+      const durationMs = getImmobilizePlayerDurationMs(spellId);
+      targetPlayer.immobilizedUntil = Math.max(
+        targetPlayer.immobilizedUntil,
+        Date.now() + durationMs
+      );
+      const label = spellId === INMOVILIZAR_SPELL_ID ? "inmoviliza" : "paraliza";
+      this.world.broadcastCombatLog(
+        session.mapId,
+        targetPlayer.tileX,
+        targetPlayer.tileY,
+        `${session.name}: ${spell.nombre} ${label} a ${targetPlayer.name}.`
+      );
+      this.world.sendPlayerState(targetPlayer);
+      return true;
+    }
+
+    if (targetMob && (spell.danioMax > 0 || spell.danioMin > 0)) {
+      if (spell.puedeUsarseEnAliados) return false;
+      const base = rollInt(spell.danioMin, spell.danioMax);
+      const damage = Math.max(
+        0,
+        Math.floor(base * (1 + session.magicDamageBonusPercent))
+      );
+      this.applyDamageToMob(session, targetMob, damage, spell.nombre);
+      return true;
+    }
+
+    if (targetPlayer && (spell.danioMax > 0 || spell.danioMin > 0)) {
+      if (targetsSelf && !spell.puedeUsarseEnAliados) return false;
+      if (this.isInSafeZone(session) || this.isInSafeZone(targetPlayer)) {
+        if (!isAoE) this.world.sendCombatLog(session, "Esta es zona segura.");
+        return false;
+      }
+      const attackerFaction = normalizeFactionId(session.factionId);
+      const defenderFaction = normalizeFactionId(targetPlayer.factionId);
+      if (!canFactionsFight(attackerFaction, defenderFaction)) {
+        if (!isAoE) this.world.sendCombatLog(session, "No podés atacar a este jugador (misma facción o alianza).");
+        return false;
+      }
+      const base = rollInt(spell.danioMin, spell.danioMax);
+      const damage = Math.max(
+        0,
+        Math.floor(base * (1 + session.magicDamageBonusPercent))
+      );
+      this.applyDamageToPlayer(session, targetPlayer, damage, spell.nombre);
+      return true;
+    }
+
+    if (spell.remueveDebuff && !isRemoveImmobilizeSpell(spellId)) {
+      this.world.broadcastCombatLog(
+        session.mapId,
+        session.tileX,
+        session.tileY,
+        `${session.name}: ${spell.nombre} remueve ${spell.remueveDebuff}.`
+      );
+      return true;
+    }
+
+    const debuffBehavior = getSpellBehavior(spellId);
+    if (debuffBehavior?.buffEffects?.length && !spell.puedeUsarseEnAliados) {
+      const buffTarget = this.resolveSpellBuffTarget(
+        session,
+        spell,
+        targetPlayer,
+        targetsSelf,
+        targetTileX,
+        targetTileY
+      );
+      if (buffTarget && this.applySpellBuffsToPlayer(session, buffTarget, spellId, spell.nombre)) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
   public handleCastSpell(
     session: PlayerSession,
     spellIdRaw: number,
@@ -172,9 +509,7 @@ export class CombatSystem {
       return;
     }
 
-    const spellEarly = getSpellDefinition(spellId);
-
-    const spell = spellEarly ?? getSpellDefinition(spellId);
+    const spell = getSpellDefinition(spellId);
     if (!spell) {
       this.world.sendCombatLog(session, "Hechizo desconocido.");
       return;
@@ -194,6 +529,11 @@ export class CombatSystem {
       return;
     }
 
+    if (spell.aoe) {
+      this.handleAoECast(session, spell, targetTileX, targetTileY);
+      return;
+    }
+
     const targetMob = this.findMobAtTile(session.mapId, targetTileX, targetTileY);
     const targetPlayer = this.findPlayerAtTile(session.mapId, targetTileX, targetTileY, session.id);
     const targetsSelf =
@@ -207,9 +547,6 @@ export class CombatSystem {
         return;
       }
     } else if (!targetMob && !targetPlayer) {
-      if (this.tryHandleResurrectCast(session, spellId, targetTileX, targetTileY, targetPlayerId)) {
-        return;
-      }
       const canSelfTarget =
         (allyStatBuff ||
           isRemoveImmobilizeSpell(spellId) ||
@@ -248,222 +585,17 @@ export class CombatSystem {
 
     session.mp -= spell.manaCost;
 
-    const healTarget = this.resolveHealTarget(
-      session,
-      spell,
-      targetPlayer,
-      targetsSelf,
-      targetTileX,
-      targetTileY
-    );
-    let healRestored = 0;
-    if (healTarget) {
-      const heal = rollInt(spell.healMin, spell.healMax);
-      const before = healTarget.hp;
-      healTarget.hp = Math.min(healTarget.hpMax, healTarget.hp + heal);
-      healRestored = healTarget.hp - before;
-    }
-
-    const invisTarget = isInvisibilitySpell(spellId)
-      ? this.resolveInvisibilityTarget(
-          session,
-          spell,
-          targetPlayer,
-          targetsSelf,
-          targetTileX,
-          targetTileY
-        )
-      : undefined;
-    if (invisTarget) {
-      const until = Date.now() + INVISIBILITY_DURATION_MS;
-      invisTarget.invisibleUntil = Math.max(invisTarget.invisibleUntil, until);
-    }
-
-    const vitalsNotifyTarget =
-      healTarget && invisTarget && healTarget.id !== invisTarget.id
-        ? healTarget
-        : healTarget ?? invisTarget;
-    this.syncPlayersAfterSpellCast(session, vitalsNotifyTarget);
-    if (invisTarget && invisTarget.id !== session.id && invisTarget.id !== healTarget?.id) {
-      this.world.sendPlayerState(invisTarget);
-    }
-
     this.world.broadcastGameEvent(session.mapId, targetTileX, targetTileY, {
       kind: "spell_fx",
       spellId,
       tileX: targetTileX,
       tileY: targetTileY,
+      sourcePlayerId: session.id,
+      sourceTileX: session.tileX,
+      sourceTileY: session.tileY,
     });
 
-    if (healTarget) {
-      const logText =
-        healTarget.id === session.id
-          ? `${session.name}: ${spell.nombre} te cura ${healRestored} HP.`
-          : `${session.name}: ${spell.nombre} cura ${healRestored} HP a ${healTarget.name}.`;
-      this.world.broadcastCombatLog(
-        session.mapId,
-        healTarget.tileX,
-        healTarget.tileY,
-        logText
-      );
-      return;
-    }
-
-    if (invisTarget) {
-      const logText =
-        invisTarget.id === session.id
-          ? `${session.name}: ${spell.nombre} te vuelve invisible.`
-          : `${session.name}: ${spell.nombre} vuelve invisible a ${invisTarget.name}.`;
-      this.world.broadcastCombatLog(
-        session.mapId,
-        invisTarget.tileX,
-        invisTarget.tileY,
-        logText
-      );
-      return;
-    }
-
-    const spellBehavior = getSpellBehavior(spellId);
-    if (spellBehavior?.removeAllEffects) {
-      session.clearImmobilized();
-      session.clearInvisible();
-      session.attributeBuffs = { strength: 0, agility: 0, expiresAtMs: 0 };
-      this.world.sendPlayerState(session, { includeAttributeBuffs: true });
-      this.world.broadcastCombatLog(
-        session.mapId,
-        session.tileX,
-        session.tileY,
-        `${session.name}: ${spell.nombre} remueve todos los efectos mágicos.`
-      );
-      return;
-    }
-
-    if (targetMob && isImmobilizeSpell(spellId)) {
-      const durationMs = getImmobilizeMobDurationMs(spellId);
-      targetMob.immobilizedUntil = Math.max(
-        targetMob.immobilizedUntil,
-        Date.now() + durationMs
-      );
-      const label = spellId === INMOVILIZAR_SPELL_ID ? "inmoviliza" : "paraliza";
-      this.world.broadcastCombatLog(
-        session.mapId,
-        targetMob.tileX,
-        targetMob.tileY,
-        `${session.name}: ${spell.nombre} ${label} a ${targetMob.name}.`
-      );
-      this.world.broadcastMobUpdated(targetMob);
-      return;
-    }
-
-    if (allyStatBuff) {
-      const buffTarget = this.resolveSpellBuffTarget(
-        session,
-        spell,
-        targetPlayer,
-        targetsSelf,
-        targetTileX,
-        targetTileY
-      );
-      if (buffTarget && this.applySpellBuffsToPlayer(session, buffTarget, spellId, spell.nombre)) {
-        return;
-      }
-    }
-
-    if (isRemoveImmobilizeSpell(spellId)) {
-      if (
-        this.applyRemoveImmobilize(
-          session,
-          spell,
-          targetMob,
-          targetPlayer,
-          targetsSelf,
-          onCasterTile
-        )
-      ) {
-        return;
-      }
-    }
-
-    if (targetPlayer && isImmobilizeSpell(spellId)) {
-      if (this.isInSafeZone(session) || this.isInSafeZone(targetPlayer)) {
-        this.world.sendCombatLog(session, "Esta es zona segura.");
-        return;
-      }
-      const attackerFaction = normalizeFactionId(session.factionId);
-      const defenderFaction = normalizeFactionId(targetPlayer.factionId);
-      if (!canFactionsFight(attackerFaction, defenderFaction)) {
-        this.world.sendCombatLog(session, "No podés atacar a este jugador (misma facción o alianza).");
-        return;
-      }
-      const durationMs = getImmobilizePlayerDurationMs(spellId);
-      targetPlayer.immobilizedUntil = Math.max(
-        targetPlayer.immobilizedUntil,
-        Date.now() + durationMs
-      );
-      const label = spellId === INMOVILIZAR_SPELL_ID ? "inmoviliza" : "paraliza";
-      this.world.broadcastCombatLog(
-        session.mapId,
-        targetPlayer.tileX,
-        targetPlayer.tileY,
-        `${session.name}: ${spell.nombre} ${label} a ${targetPlayer.name}.`
-      );
-      return;
-    }
-
-    if (targetMob && (spell.danioMax > 0 || spell.danioMin > 0)) {
-      const base = rollInt(spell.danioMin, spell.danioMax);
-      const damage = Math.max(
-        0,
-        Math.floor(base * (1 + session.magicDamageBonusPercent))
-      );
-      this.applyDamageToMob(session, targetMob, damage, spell.nombre);
-      return;
-    }
-
-    if (targetPlayer && (spell.danioMax > 0 || spell.danioMin > 0)) {
-      if (this.isInSafeZone(session) || this.isInSafeZone(targetPlayer)) {
-        this.world.sendCombatLog(session, "Esta es zona segura.");
-        return;
-      }
-      const attackerFaction = normalizeFactionId(session.factionId);
-      const defenderFaction = normalizeFactionId(targetPlayer.factionId);
-      if (!canFactionsFight(attackerFaction, defenderFaction)) {
-        this.world.sendCombatLog(session, "No podés atacar a este jugador (misma facción o alianza).");
-        return;
-      }
-      const base = rollInt(spell.danioMin, spell.danioMax);
-      const damage = Math.max(
-        0,
-        Math.floor(base * (1 + session.magicDamageBonusPercent))
-      );
-      this.applyDamageToPlayer(session, targetPlayer, damage, spell.nombre);
-      return;
-    }
-
-    if (spell.remueveDebuff && !isRemoveImmobilizeSpell(spellId)) {
-      this.world.broadcastCombatLog(
-        session.mapId,
-        session.tileX,
-        session.tileY,
-        `${session.name}: ${spell.nombre} remueve ${spell.remueveDebuff}.`
-      );
-      return;
-    }
-
-    const debuffBehavior = getSpellBehavior(spellId);
-    if (debuffBehavior?.buffEffects?.length && !spell.puedeUsarseEnAliados) {
-      const buffTarget = this.resolveSpellBuffTarget(
-        session,
-        spell,
-        targetPlayer,
-        targetsSelf,
-        targetTileX,
-        targetTileY
-      );
-      if (buffTarget && this.applySpellBuffsToPlayer(session, buffTarget, spellId, spell.nombre)) {
-        return;
-      }
-    }
+    this.applySpellEffectsToTarget(session, spell, targetMob, targetPlayer, targetTileX, targetTileY);
   }
 
   private isTileOnCaster(
@@ -557,9 +689,9 @@ export class CombatSystem {
     caster: PlayerSession,
     healTarget?: PlayerSession
   ): void {
-    this.world.sendPlayerState(caster);
+    this.world.sendPlayerState(caster, { includeAttributeBuffs: true });
     if (healTarget && healTarget.id !== caster.id) {
-      this.world.sendPlayerState(healTarget);
+      this.world.sendPlayerState(healTarget, { includeAttributeBuffs: true });
     }
   }
 
@@ -730,6 +862,9 @@ export class CombatSystem {
       amount: damage,
       tileX: mob.tileX,
       tileY: mob.tileY,
+      sourcePlayerId: session.id,
+      sourceTileX: session.tileX,
+      sourceTileY: session.tileY,
     });
     this.world.broadcastMobUpdated(mob);
 
@@ -830,8 +965,34 @@ export class CombatSystem {
     rawDamage: number,
     spellName?: string
   ) {
-    const reduction = spellName ? victim.magicResistancePercent : victim.damageReductionPercent;
-    const mitigated = Math.max(1, Math.floor(rawDamage * (1 - reduction)));
+    let spellDamage = rawDamage;
+    if (spellName && attacker.id !== victim.id) {
+      const antiOneshot = applyAntiOneshotToSpellDamage(
+        rawDamage,
+        victim.recentPvpSpellHits,
+        attacker.id,
+        Date.now()
+      );
+      victim.recentPvpSpellHits = antiOneshot.records;
+      spellDamage = antiOneshot.damage;
+    }
+
+    let mitigated: number;
+    let shieldBlocked = false;
+    if (spellName) {
+      mitigated = Math.max(
+        1,
+        Math.floor(spellDamage * (1 - victim.magicResistancePercent))
+      );
+    } else {
+      const physical = mitigatePhysicalDamage(spellDamage, {
+        damageReductionPercent: victim.damageReductionPercent,
+        shieldBlockChancePercent: victim.shieldBlockChancePercent,
+        shieldBlockReductionPercent: victim.shieldBlockReductionPercent,
+      });
+      mitigated = physical.damage;
+      shieldBlocked = physical.blocked;
+    }
     victim.hp = Math.max(0, victim.hp - mitigated);
 
     this.world.broadcastGameEvent(victim.mapId, victim.tileX, victim.tileY, {
@@ -841,6 +1002,9 @@ export class CombatSystem {
       amount: mitigated,
       tileX: victim.tileX,
       tileY: victim.tileY,
+      sourcePlayerId: attacker.id,
+      sourceTileX: attacker.tileX,
+      sourceTileY: attacker.tileY,
     });
 
     this.world.broadcastToAoi(victim.mapId, victim.tileX, victim.tileY, {
@@ -851,11 +1015,12 @@ export class CombatSystem {
 
     if (victim.hp > 0) {
       const action = spellName ? `${spellName} golpea` : "Golpea";
+      const blockNote = shieldBlocked ? " (bloqueado con escudo)" : "";
       this.world.broadcastCombatLog(
         victim.mapId,
         victim.tileX,
         victim.tileY,
-        `${attacker.name} ${action} a ${victim.name} por ${mitigated}.`
+        `${attacker.name} ${action} a ${victim.name} por ${mitigated}${blockNote}.`
       );
       return;
     }
@@ -883,10 +1048,12 @@ export class CombatSystem {
     if (victim.deathLootProcessed) {
       victim.isDead = true;
       victim.hp = 0;
+      victim.recentPvpSpellHits = createEmptyPvpSpellHitRecords();
       return;
     }
     victim.isDead = true;
     victim.hp = 0;
+    victim.recentPvpSpellHits = createEmptyPvpSpellHitRecords();
     // We don't have access to InventorySystem here directly, but handlePlayerKilled
     // logic includes inventory drop. 
     // We can just keep the original structure in WorldInstance by calling back into it.
@@ -1298,6 +1465,7 @@ export class CombatSystem {
     }
 
     target.isDead = false;
+    target.recentPvpSpellHits = createEmptyPvpSpellHitRecords();
     target.hp = Math.max(1, Math.floor(target.hpMax * RESURRECT_REVIVE_HP_RATIO));
     this.world.sendPlayerState(target);
     this.world.send(target, {

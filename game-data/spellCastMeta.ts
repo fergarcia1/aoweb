@@ -24,7 +24,7 @@ export const SPELL_CAST_META_BY_ID: Record<number, SpellCastMeta> = {
   9: { wav: 240, palabrasMagicas: "EN CORP SANCTIS" },
   10: { wav: 203, palabrasMagicas: "HOAX VORP" },
   11: { wav: 56, palabrasMagicas: "T'HY KOOOL" },
-  13: { wav: 92, palabrasMagicas: "ÛX'ÔL'HIC" },
+  13: { wav: 0, namedWav: "furiaUkhrul", palabrasMagicas: "ÛX'ÔL'HIC" },
   14: { wav: 123 },
   15: { wav: 27, palabrasMagicas: "RAX IN ZAR" },
   16: { wav: 49, palabrasMagicas: "Impendere et worg" },

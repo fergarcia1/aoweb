@@ -13,7 +13,7 @@
       "detectionRangeTiles": 6,
       "leashRangeTiles": 15,
       "respawnMs": 5000,
-      "expReward": 12,
+      "expReward": 32,
       "drops": [],
       "npcId": 594,
       "minHit": 2,
@@ -33,7 +33,7 @@
       "detectionRangeTiles": 6,
       "leashRangeTiles": 15,
       "respawnMs": 4000,
-      "expReward": 16,
+      "expReward": 36,
       "drops": [],
       "npcId": 500,
       "minHit": 3,
@@ -53,8 +53,17 @@
       "detectionRangeTiles": 6,
       "leashRangeTiles": 15,
       "respawnMs": 8000,
-      "expReward": 120,
-      "drops": [],
+      "expReward": 145,
+      "drops": [
+           {
+          "itemId": "piel_lobo",
+          "chancePercent": 100
+        },
+        {
+          "itemId": "diente_lobo",
+          "chancePercent": 20
+        }
+      ],
       "npcId": 133,
       "minHit": 12,
       "maxHit": 12,
@@ -73,7 +82,7 @@
       "detectionRangeTiles": 6,
       "leashRangeTiles": 15,
       "respawnMs": 7000,
-      "expReward": 40,
+      "expReward": 62,
       "drops": [],
       "npcId": 504,
       "minHit": 8,
@@ -94,7 +103,12 @@
       "leashRangeTiles": 15,
       "respawnMs": 7500,
       "expReward": 1350,
-      "drops": [],
+      "drops": [
+           {
+          "itemId": "orbe_ponzona",
+          "chancePercent": 8
+        }
+      ],
       "npcId": 510,
       "minHit": 70,
       "maxHit": 100,
@@ -114,7 +128,12 @@
       "leashRangeTiles": 15,
       "respawnMs": 12000,
       "expReward": 1200,
-      "drops": [],
+      "drops": [  
+        {
+          "itemId": "pelaje_oso",
+          "chancePercent": 100
+        }
+      ],
       "npcId": 538,
       "minHit": 70,
       "maxHit": 120,
@@ -134,7 +153,16 @@
       "leashRangeTiles": 15,
       "respawnMs": 20000,
       "expReward": 120000,
-      "drops": [],
+      "drops": [   
+        {
+          "itemId": "gema_gris",
+          "chancePercent": 5
+        },
+        {
+          "itemId": "shield_leon",
+          "chancePercent": 7
+        }
+      ],
       "npcId": 579,
       "minHit": 380,
       "maxHit": 410,
@@ -154,7 +182,12 @@
       "leashRangeTiles": 15,
       "respawnMs": 18000,
       "expReward": 45000,
-      "drops": [],
+      "drops": [
+        {
+          "itemId": "weapon_nudillos_oro",
+          "chancePercent": 7
+        }
+      ],
       "npcId": 577,
       "minHit": 120,
       "maxHit": 210,
@@ -174,7 +207,12 @@
       "leashRangeTiles": 15,
       "respawnMs": 30000,
       "expReward": 260000,
-      "drops": [],
+      "drops": [
+          {
+          "itemId": "pendiente_sacrificial",
+          "chancePercent": 3
+        }
+      ],
       "npcId": 587,
       "minHit": 450,
       "maxHit": 540,
@@ -313,7 +351,12 @@
       "leashRangeTiles": 15,
       "respawnMs": 28000,
       "expReward": 16000,
-      "drops": [],
+      "drops": [
+        {
+          "itemId": "pendiente_sacrificial",
+          "chancePercent": 2
+        }
+      ],
       "npcId": 543,
       "minHit": 145,
       "maxHit": 180,
@@ -454,7 +497,12 @@
       "leashRangeTiles": 15,
       "respawnMs": 6000,
       "expReward": 250,
-      "drops": [],
+      "drops": [
+         {
+          "itemId": "pluma",
+          "chancePercent": 15
+        }
+      ],
       "minHit": 7,
       "maxHit": 28,
       "gold": 30
@@ -496,8 +544,8 @@
       "expReward": 1600,
       "drops": [
         {
-          "itemId": "potion_hp",
-          "chancePercent": 40
+          "itemId": "corteza_ent",
+          "chancePercent": 20
         }
       ],
       "minHit": 65,
@@ -539,17 +587,295 @@
       "leashRangeTiles": 20,
       "respawnMs": 60000,
       "expReward": 100000,
-      "drops": [],
+      "drops": [
+        {
+          "itemId": "gema_lunar",
+          "chancePercent": 8
+        },
+        {
+          "itemId": "pendiente_sacrificial",
+          "chancePercent": 3
+        },
+        {
+          "itemId": "escama_dragon",
+          "chancePercent": 10
+        }
+      ],
       "minHit": 275,
       "maxHit": 275,
       "gold": 150000
+    },
+    {
+      "mobId": "golem_infernal",
+      "name": "Golem infernal",
+      "behavior": "aggressive",
+      "hitboxOffsetY": -32,
+      "hitboxHeightTiles": 2,
+      "hitboxWidthTiles": 2,
+      "sizeTiles": 2,
+      "modelId": "golem_infernal",
+      "npcId": 581,
+      "maxHp": 150000,
+      "detectionRangeTiles": 8,
+      "leashRangeTiles": 20,
+      "respawnMs": 60000,
+      "expReward": 200000,
+      "drops": [],
+      "minHit": 440,
+      "maxHit": 530,
+      "gold": 60000
+    },
+    {
+      "mobId": "golem_piedra",
+      "name": "Golem de piedra",
+      "behavior": "aggressive",
+      "hitboxOffsetY": -32,
+      "hitboxHeightTiles": 2,
+      "hitboxWidthTiles": 2,
+      "sizeTiles": 2,
+      "modelId": "golem_piedra",
+      "npcId": 552,
+      "maxHp": 46500,
+      "detectionRangeTiles": 8,
+      "leashRangeTiles": 20,
+      "respawnMs": 60000,
+      "expReward": 80000,
+      "drops": [],
+      "minHit": 300,
+      "maxHit": 480,
+      "gold": 24000
+    },
+    {
+      "mobId": "hormiga",
+      "name": "Hormiga",
+      "behavior": "aggressive",
+      "hitboxOffsetY": -32,
+      "hitboxHeightTiles": 1,
+      "hitboxWidthTiles": 1,
+      "sizeTiles": 1,
+      "modelId": "hormiga",
+      "npcId": 535,
+      "maxHp": 5,
+      "detectionRangeTiles": 5,
+      "leashRangeTiles": 12,
+      "respawnMs": 5000,
+      "expReward": 6,
+      "drops": [],
+      "minHit": 1,
+      "maxHit": 1,
+      "gold": 0
+    },
+    {
+      "mobId": "huargo",
+      "name": "Huargo de Nieve",
+      "behavior": "aggressive",
+      "hitboxOffsetY": -32,
+      "hitboxHeightTiles": 2,
+      "hitboxWidthTiles": 1,
+      "sizeTiles": 1,
+      "modelId": "huargo",
+      "npcId": 605,
+      "maxHp": 800,
+      "detectionRangeTiles": 7,
+      "leashRangeTiles": 18,
+      "respawnMs": 15000,
+      "expReward": 1070,
+      "drops": [],
+      "minHit": 110,
+      "maxHit": 120,
+      "gold": 200
+    },
+    {
+      "mobId": "leviatan",
+      "name": "Leviatán",
+      "behavior": "aggressive",
+      "hitboxOffsetY": -32,
+      "hitboxHeightTiles": 2,
+      "hitboxWidthTiles": 2,
+      "sizeTiles": 2,
+      "modelId": "leviatan",
+      "npcId": 548,
+      "maxHp": 7000,
+      "detectionRangeTiles": 8,
+      "leashRangeTiles": 20,
+      "respawnMs": 30000,
+      "expReward": 20000,
+      "drops": [],
+      "minHit": 80,
+      "maxHit": 250,
+      "gold": 5000,
+      "aquatic": true
+    },
+    {
+      "mobId": "lobo_invernal",
+      "name": "Lobo Invernal",
+      "behavior": "aggressive",
+      "hitboxOffsetY": -32,
+      "hitboxHeightTiles": 2,
+      "hitboxWidthTiles": 1,
+      "sizeTiles": 1,
+      "modelId": "lobo_invernal",
+      "npcId": 580,
+      "maxHp": 225,
+      "detectionRangeTiles": 7,
+      "leashRangeTiles": 15,
+      "respawnMs": 10000,
+      "expReward": 560,
+      "drops": [],
+      "minHit": 15,
+      "maxHit": 40,
+      "gold": 150
+    },
+    {
+      "mobId": "wisp",
+      "name": "Fuego Fatuo",
+      "behavior": "aggressive",
+      "hitboxOffsetY": -32,
+      "hitboxHeightTiles": 1,
+      "hitboxWidthTiles": 1,
+      "sizeTiles": 1,
+      "modelId": "wisp",
+      "npcId": 569,
+      "maxHp": 15000,
+      "detectionRangeTiles": 7,
+      "leashRangeTiles": 15,
+      "respawnMs": 20000,
+      "expReward": 35000,
+      "drops": [],
+      "minHit": 100,
+      "maxHit": 100,
+      "gold": 0
+    },
+    {
+      "mobId": "ogro",
+      "name": "Ogro",
+      "behavior": "aggressive",
+      "hitboxOffsetY": -32,
+      "hitboxHeightTiles": 2,
+      "hitboxWidthTiles": 1,
+      "sizeTiles": 1,
+      "modelId": "ogro",
+      "npcId": 541,
+      "maxHp": 2200,
+      "detectionRangeTiles": 7,
+      "leashRangeTiles": 15,
+      "respawnMs": 20000,
+      "expReward": 2900,
+      "drops": [],
+      "minHit": 130,
+      "maxHit": 145,
+      "gold": 700
+    },
+    {
+      "mobId": "ogro_esclavo",
+      "name": "Ogro Esclavo",
+      "behavior": "aggressive",
+      "hitboxOffsetY": -32,
+      "hitboxHeightTiles": 2,
+      "hitboxWidthTiles": 1,
+      "sizeTiles": 1,
+      "modelId": "ogro_esclavo",
+      "maxHp": 1400,
+      "detectionRangeTiles": 7,
+      "leashRangeTiles": 15,
+      "respawnMs": 15000,
+      "expReward": 1800,
+      "drops": [],
+      "minHit": 90,
+      "maxHit": 110,
+      "gold": 400
+    },
+    {
+      "mobId": "ogro_lider",
+      "name": "Ogro Líder",
+      "behavior": "aggressive",
+      "hitboxOffsetY": -32,
+      "hitboxHeightTiles": 2,
+      "hitboxWidthTiles": 1,
+      "sizeTiles": 1,
+      "modelId": "ogro_lider",
+      "maxHp": 4500,
+      "detectionRangeTiles": 7,
+      "leashRangeTiles": 15,
+      "respawnMs": 30000,
+      "expReward": 6000,
+      "drops": [],
+      "minHit": 180,
+      "maxHit": 250,
+      "gold": 1200
+    },
+    {
+      "mobId": "pirata_arquero",
+      "name": "Arquero Pirata",
+      "behavior": "aggressive",
+      "hitboxOffsetY": -32,
+      "hitboxHeightTiles": 2,
+      "hitboxWidthTiles": 1,
+      "sizeTiles": 1,
+      "modelId": "pirata_arquero",
+      "npcId": 567,
+      "maxHp": 9000,
+      "detectionRangeTiles": 7,
+      "leashRangeTiles": 15,
+      "respawnMs": 30000,
+      "expReward": 17000,
+      "drops": [],
+      "minHit": 45,
+      "maxHit": 275,
+      "gold": 2000
+    },
+    {
+      "mobId": "pirata_guerrero",
+      "name": "Guerrero Pirata",
+      "behavior": "aggressive",
+      "hitboxOffsetY": -32,
+      "hitboxHeightTiles": 2,
+      "hitboxWidthTiles": 1,
+      "sizeTiles": 1,
+      "modelId": "pirata_guerrero",
+      "npcId": 568,
+      "maxHp": 15000,
+      "detectionRangeTiles": 7,
+      "leashRangeTiles": 15,
+      "respawnMs": 30000,
+      "expReward": 28000,
+      "drops": [],
+      "minHit": 90,
+      "maxHit": 300,
+      "gold": 8500
     }
   ],
   "mapSpawns": [
     {
+      "mapId": "mapa37",
+      "mobId": "gallina",
+      "count": 16
+    },
+    {
+      "mapId": "mapa37",
+      "mobId": "conejo",
+      "count": 12
+    },
+    {
+      "mapId": "mapa37",
+      "mobId": "escorpion",
+      "count": 12
+    },
+     {
+      "mapId": "mapa37",
+      "mobId": "serpiente",
+      "count": 12
+    },
+    {
+      "mapId": "mapa37",
+      "mobId": "lobo",
+      "count": 6
+    },
+
+    {
       "mapId": "mapa2",
       "mobId": "gallina",
-      "count": 4
+      "count": 12
     },
     {
       "mapId": "mapa2",
@@ -558,8 +884,8 @@
     },
     {
       "mapId": "mapa2",
-      "mobId": "arana",
-      "count": 8
+      "mobId": "asesino",
+      "count": 6
     },
     {
       "mapId": "mapa2",

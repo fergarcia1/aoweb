@@ -4,7 +4,7 @@ import {
   MOUNT_ID_LABELS,
   type ItemSpecialUse,
 } from "../../game-data/items/itemSpecialUse";
-import type { ItemDefinition } from "../items/itemDefinitions";
+import type { ItemDefinition } from "../../game-data/items/definitions";
 import { TILE } from "../maps/tileDefinitions";
 
 const ADJACENT_OFFSETS = [

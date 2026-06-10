@@ -1,7 +1,7 @@
 import Phaser from "phaser";
 import { TILE_SIZE } from "../../config";
 import { tileToFeetWorld } from "../../player/playerSprites";
-import { getItemDefinition, type EquipmentSlot, type ItemId } from "../../items/itemDefinitions";
+import { getItemDefinition, type EquipmentSlot, type ItemId } from "../../../game-data/items/definitions";
 import {
   getImmobilizeMobDurationMs,
   isMobImmobilizedAt,
@@ -37,8 +37,9 @@ import {
   ATTACK_MAX_DAMAGE,
   ATTACK_MIN_DAMAGE,
 } from "./constants";
+import { mitigatePhysicalDamage } from "../../../game-data/physicalDamageMitigation";
 import { getStrengthDamageBonus } from "./progressFormulas";
-import type { MobModelId } from "../../data/mobs";
+import type { MobModelId } from "../../../game-data/mobs";
 import type {
   DamageType,
   DummyState,
@@ -109,6 +110,7 @@ export type GameSceneCombatDeps = {
   hasSpellEnemyTargetAtTile: (tileX: number, tileY: number) => boolean;
   findDeadAllyPlayerIdAtTile: (tileX: number, tileY: number) => string | undefined;
   isServerConnected: () => boolean;
+  syncWorldInteractiveCursors: () => void;
 };
 
 /**
@@ -161,6 +163,9 @@ export class GameSceneCombatController {
 
   /** Daño / CC sobre criaturas o jugadores enemigos (no al suelo vacío). */
   private spellRequiresEnemyTarget(spell: SpellCastRequest): boolean {
+    if (spell.aoe) {
+      return false;
+    }
     if (this.isResurrectPending(spell)) {
       return false;
     }
@@ -181,6 +186,9 @@ export class GameSceneCombatController {
   }
 
   private rejectMissingEnemyTarget(tileX: number, tileY: number): boolean {
+    if (this.pendingSpellCast?.aoe) {
+      return false;
+    }
     if (this.deps.hasSpellEnemyTargetAtTile(tileX, tileY)) {
       return false;
     }
@@ -229,12 +237,14 @@ export class GameSceneCombatController {
         : spell;
     this.pendingSpellCast = normalizedSpell;
     this.deps.input.setDefaultCursor("crosshair");
+    this.deps.syncWorldInteractiveCursors();
     return true;
   }
 
   cancelSpellTargeting(message?: string): void {
     this.pendingSpellCast = null;
     this.deps.input.setDefaultCursor("default");
+    this.deps.syncWorldInteractiveCursors();
     if (message) {
       this.deps.getGameUi().addChatLine(message);
     }
@@ -547,6 +557,8 @@ export class GameSceneCombatController {
     let attackMax = ATTACK_MAX_DAMAGE;
     let damageReductionPercent = 0;
     let magicResistancePercent = 0;
+    let shieldBlockChancePercent = 0;
+    let shieldBlockReductionPercent = 0;
     let magicDamageBonusPercent = 0;
     const strBonus = getStrengthDamageBonus(coreStats.strength);
     attackMin += strBonus.minBonus;
@@ -563,12 +575,20 @@ export class GameSceneCombatController {
       damageReductionPercent += mods.damageReductionPercent ?? 0;
       magicResistancePercent += mods.magicResistancePercent ?? 0;
       magicDamageBonusPercent += mods.magicDamageBonusPercent ?? 0;
+      if (mods.shieldBlockChancePercent != null) {
+        shieldBlockChancePercent = mods.shieldBlockChancePercent;
+      }
+      if (mods.shieldBlockReductionPercent != null) {
+        shieldBlockReductionPercent = mods.shieldBlockReductionPercent;
+      }
     }
 
     attackMin = Math.max(1, Math.floor(attackMin));
     attackMax = Math.max(attackMin, Math.floor(attackMax));
     damageReductionPercent = Phaser.Math.Clamp(damageReductionPercent, 0, 0.9);
     magicResistancePercent = Phaser.Math.Clamp(magicResistancePercent, 0, 0.9);
+    shieldBlockChancePercent = Phaser.Math.Clamp(shieldBlockChancePercent, 0, 1);
+    shieldBlockReductionPercent = Phaser.Math.Clamp(shieldBlockReductionPercent, 0, 0.9);
 
     let weaponCanCrit = false;
     let weaponCritChance = 0;
@@ -588,6 +608,8 @@ export class GameSceneCombatController {
       attackMax,
       damageReductionPercent,
       magicResistancePercent,
+      shieldBlockChancePercent,
+      shieldBlockReductionPercent,
       magicDamageBonusPercent,
       weaponCanCrit,
       weaponCritChance,
@@ -600,11 +622,16 @@ export class GameSceneCombatController {
       return 0;
     }
     const combat = this.getCombatSnapshot();
-    const mitigationPercent =
-      damageType === "magic"
-        ? combat.magicResistancePercent
-        : combat.damageReductionPercent;
-    const reduced = Math.max(0, Math.floor(rawDamage * (1 - mitigationPercent)));
+    let reduced: number;
+    if (damageType === "magic") {
+      reduced = Math.max(0, Math.floor(rawDamage * (1 - combat.magicResistancePercent)));
+    } else {
+      reduced = mitigatePhysicalDamage(rawDamage, {
+        damageReductionPercent: combat.damageReductionPercent,
+        shieldBlockChancePercent: combat.shieldBlockChancePercent,
+        shieldBlockReductionPercent: combat.shieldBlockReductionPercent,
+      }).damage;
+    }
     const progress = this.deps.getPlayerProgress();
     progress.hp = Math.max(0, progress.hp - reduced);
     this.deps.refreshHud();
@@ -614,10 +641,11 @@ export class GameSceneCombatController {
     return reduced;
   }
 
-  showDamageNumber(
+  showCombatNumber(
     worldX: number,
     worldY: number,
-    damage: number,
+    amount: number,
+    type: "damage" | "heal" = "damage",
     source: "player" | "mob" = "player"
   ): void {
     if (source === "player") {
@@ -625,14 +653,17 @@ export class GameSceneCombatController {
     }
 
     const { scene } = this.deps;
-    const damageValue = Math.max(0, Math.floor(damage));
-    const textValue = damageValue > 200 ? `${damageValue}!¡` : `${damageValue}`;
-    const damageText = scene.add
+    const value = Math.max(0, Math.floor(amount));
+    const textValue = type === "damage" && value > 200 ? `${value}!¡` : `${value}`;
+    const color = type === "heal" ? "#33ccff" : "#ff3333";
+    const stroke = type === "heal" ? "#002244" : "#240000";
+
+    const combatText = scene.add
       .text(worldX, worldY, textValue, {
         fontFamily: GAME_FONT,
         fontSize: "15px",
-        color: "#ff3333",
-        stroke: "#240000",
+        color,
+        stroke,
         strokeThickness: 4,
         fontStyle: "bold",
         resolution: GAME_TEXT_RESOLUTION,
@@ -642,11 +673,11 @@ export class GameSceneCombatController {
 
     const uiCamera = this.deps.getUiCamera();
     if (uiCamera) {
-      uiCamera.ignore(damageText);
+      uiCamera.ignore(combatText);
     }
 
     const tween = this.deps.tweens.add({
-      targets: damageText,
+      targets: combatText,
       y: worldY - 20,
       alpha: 0,
       duration: 800,
@@ -656,12 +687,12 @@ export class GameSceneCombatController {
           this.activePlayerDamageText = undefined;
           this.activePlayerDamageTween = undefined;
         }
-        damageText.destroy();
+        combatText.destroy();
       },
     });
 
     if (source === "player") {
-      this.activePlayerDamageText = damageText;
+      this.activePlayerDamageText = combatText;
       this.activePlayerDamageTween = tween;
     }
   }
@@ -713,7 +744,13 @@ export class GameSceneCombatController {
         dummy.facing
       );
     }
-    this.showDamageNumber(dummy.sprite.x, dummy.sprite.y - 38, damageApplied, "player");
+    this.showCombatNumber(
+      dummy.sprite.x,
+      dummy.sprite.y - 38,
+      damageApplied,
+      "damage",
+      "player"
+    );
     if (damageApplied > 0) {
       this.deps.playMobHitSound?.(dummy.modelId);
     }

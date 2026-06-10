@@ -166,6 +166,22 @@ export const MAPA1_MAGE_VENDOR: StaticNpcDefinition = {
   faceOffsetX: 0,
 };
 
+/** Vendedor General, disponible en ciudades. */
+export const GENERAL_MERCHANT_MAPA34: StaticNpcDefinition = {
+  id: "general_merchant_mapa34",
+  role: "general",
+  displayName: "Vendedor General",
+  mapId: "mapa34",
+  tileX: 29,
+  tileY: 72,
+  facing: "down",
+  raceId: "human",
+  genderId: "male",
+  faceIndex: 1,
+  bodyTextureKey: BANKER_ARMOR_TEXTURE_KEY, // Reuse banker armor for generic look
+  bodyAssetPath: BANKER_ARMOR_PATH,
+};
+
 /** NPCs estáticos por mapa. */
 export const STATIC_NPCS: StaticNpcDefinition[] = [
   MAPA1_PRIEST,
@@ -175,6 +191,7 @@ export const STATIC_NPCS: StaticNpcDefinition[] = [
   MAPA1_TAILOR,
   MAPA1_ALCHEMIST,
   MAPA1_MAGE_VENDOR,
+  GENERAL_MERCHANT_MAPA34,
 ];
 
 export function getNpcsForMap(mapId: string): StaticNpcDefinition[] {

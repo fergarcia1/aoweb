@@ -1,4 +1,11 @@
 import { findTransition } from "../../shared/maps";
+import {
+  canStayInNewbieDungeon,
+  NEWBIE_DUNGEON_LEVEL_EXCEEDED_MESSAGE,
+  NEWBIE_DUNGEON_MAP_ID,
+  ULLATHORPE_MAP_ID,
+  ULLATHORPE_NEWBIE_RETURN_TILE,
+} from "../../shared/newbieDungeon";
 import { randomUUID } from "node:crypto";
 import { FactionSystem } from "./FactionSystem";
 import { ChatSystem } from "./systems/ChatSystem";
@@ -6,6 +13,7 @@ import { InventorySystem } from "./systems/InventorySystem";
 import { CombatSystem } from "./systems/CombatSystem";
 import { MobSystem } from "./systems/MobSystem";
 import { MovementSystem } from "./systems/MovementSystem";
+import { InteractionSystem } from "./systems/InteractionSystem";
 import type { WorldContext } from "./systems/WorldContext";
 import type { WebSocket } from "ws";
 import { isInAoi } from "../../shared/aoi";
@@ -14,7 +22,7 @@ import {
   resolveJoinFallbackGold,
   resolveJoinGoldFromMessage,
 } from "../../shared/joinSession";
-import { DEFAULT_MAP_ID, LOGOUT_GRACE_MS, SAFE_ZONE_MAP_IDS, UNSAFE_LOGOUT_COUNTDOWN_SECONDS, WORLD_TICK_MS } from "../../shared/constants";
+import { DEFAULT_MAP_ID, LOGOUT_GRACE_MS, SAFE_ZONE_MAP_IDS, UNSAFE_LOGOUT_COUNTDOWN_SECONDS, WORLD_TICK_MS } from "../../game-data/constants";
 import {
   clampPlayerLevel,
   clampVitalPair,
@@ -52,6 +60,11 @@ import {
 import { getConsumableById } from "../../game-data/consumables";
 import { isKnownItemId } from "../../game-data/items/registry";
 import { outfitForArmorItemId } from "../../game-data/outfits";
+import {
+  splitPartyMobExp,
+  splitPartyMobGold,
+} from "../../game-data/partyMobRewards";
+import { createEmptyPvpSpellHitRecords } from "../../game-data/antiOneshot";
 import { applyExpGain } from "../../game-data/playerExpProgression";
 import { applyLevelUpVitals, getMaxVitalsAtLevel } from "../../game-data/vitalProgression";
 import type { CharacterClassId } from "../../game-data/classes";
@@ -92,6 +105,7 @@ import {
   isMapTileWalkable,
   setDoorTileOverride,
 } from "../../shared/mapWalkability";
+import { BOAT_ITEM_IDS, isWaterTile } from "../../shared/navigation";
 import { MOB_MODELS, MOB_SPAWNS, type MobModelId } from "../../game-data/mobs";
 import { MOB_DEFAULT_MOVE_SPEED_RATIO } from "../../game-data/mobVisualConfig";
 import { STEP_DURATION_MS } from "../../game-data/constants";
@@ -113,6 +127,7 @@ import { isPlayerGhostFromVitals } from "../../shared/characterDeathState";
 import { PlayerSession } from "./PlayerSession";
 import { MobEntity } from "./MobEntity";
 import { WorldItemRegistry } from "./WorldItemRegistry";
+import { PartySystem } from "./systems/PartySystem";
 import {
   buildSnapshotFromPlayerSession,
   MemoryCharacterRepository,
@@ -165,9 +180,11 @@ export class WorldInstance implements WorldContext {
   public readonly combatSystem: CombatSystem;
   public readonly mobSystem: MobSystem;
   public readonly movementSystem: MovementSystem;
+  public readonly interactionSystem: InteractionSystem;
   private readonly socketSessions = new Map<WebSocket, PlayerSession>();
   private readonly mobs = new Map<string, MobEntity>();
   private readonly worldItems = new WorldItemRegistry();
+  private readonly partySystem = new PartySystem();
   private readonly characterRepo: CharacterRepository;
   private readonly dynamicMapObjs = new Map<string, { tileX: number; tileY: number; objIndex: number; isOpen: boolean }[]>();
   /** Puertas y otros cambios de tile sin mutar el GameMap importado. */
@@ -192,6 +209,7 @@ export class WorldInstance implements WorldContext {
     this.combatSystem = new CombatSystem(this);
     this.mobSystem = new MobSystem(this);
     this.movementSystem = new MovementSystem(this);
+    this.interactionSystem = new InteractionSystem(this);
     this.initAllMobs();
   }
 
@@ -199,19 +217,34 @@ export class WorldInstance implements WorldContext {
     this.applyFreshMobPlacements();
   }
 
-  private getDynamicObjs(mapId: string) {
+  public getDynamicMapObjs(mapId: string) {
     let objs = this.dynamicMapObjs.get(mapId);
     if (!objs) {
       objs = [];
       const map = getMap(mapId);
+      let overrides = this.tileOverridesByMap.get(mapId);
       if (map && map.legacyObjs) {
         for (const o of map.legacyObjs) {
-          objs.push({ tileX: o.tileX, tileY: o.tileY, objIndex: o.objIndex, isOpen: false });
+          const def = resolveImportedObjDef(o.objIndex);
+          const isDoor = def?.objType === 14;
+          const isOpen = isDoor ? false : false; // Default closed
+          objs.push({ tileX: o.tileX, tileY: o.tileY, objIndex: o.objIndex, isOpen });
+          if (isDoor) {
+            if (!overrides) {
+              overrides = new Map();
+              this.tileOverridesByMap.set(mapId, overrides);
+            }
+            setDoorTileOverride(overrides, o.tileX, o.tileY, isOpen);
+          }
         }
       }
       this.dynamicMapObjs.set(mapId, objs);
     }
     return objs;
+  }
+
+  public setDynamicMapObjs(mapId: string, objs: { tileX: number; tileY: number; objIndex: number; isOpen: boolean }[]) {
+    this.dynamicMapObjs.set(mapId, objs);
   }
 
   private countJoinedPlayers(): number {
@@ -253,7 +286,6 @@ export class WorldInstance implements WorldContext {
       return false;
     }
 
-    // Reconexión tras F5: la sesión anterior suele estar cerrando WS pero aún en memoria.
     if (existing.socket.readyState !== 1) {
       this.clearPendingLogout(existing.id);
       this.capturePendingReconnectPosition(existing);
@@ -279,20 +311,13 @@ export class WorldInstance implements WorldContext {
     return true;
   }
 
-  /** Nuevas posiciones aleatorias para todos los mobs (sin repetir tiles en el mapa). */
   private applyFreshMobPlacements() {
     this.mobSystem.applyFreshMobPlacements();
   }
 
-  
-
   private maybeRerollMobPlacementsForNewSession() {
     this.mobSystem.maybeRerollMobPlacementsForNewSession();
   }
-
-  
-
-  
 
   start() {
     if (this.tickTimer) return;
@@ -302,7 +327,7 @@ export class WorldInstance implements WorldContext {
   public getPlayers() { return this.players; }
   public getMobs() { return this.mobs; }
   public getWorldItems() { return this.worldItems; }
-  public aggroMobOnPlayerHit(mob: import("./MobEntity").MobEntity, attacker: import("./PlayerSession").PlayerSession) { this.mobSystem.aggroMobOnPlayerHit(mob, attacker); }
+  public aggroMobOnPlayerHit(mob: MobEntity, attacker: PlayerSession) { this.mobSystem.aggroMobOnPlayerHit(mob, attacker); }
 
   stop() {
     if (this.tickTimer) {
@@ -311,17 +336,26 @@ export class WorldInstance implements WorldContext {
     }
   }
 
-  
-
   private onTick() {
     try {
       this.tick += 1;
       this.mobSystem.tick();
       this.combatSystem.tickResurrectChannels();
       this.tickMeditations();
+      this.tickAttributeBuffs();
       this.autosavePlayersIfDue();
+      if (this.tick % 10 === 0) {
+        this.cleanupItems();
+      }
     } catch (error) {
       console.error("[tick] unhandled error:", error);
+    }
+  }
+
+  private cleanupItems() {
+    const expired = this.worldItems.cleanupExpiredItems();
+    for (const item of expired) {
+      this.broadcastWorldItemRemoved(item.mapId, item.tileX, item.tileY, item.id);
     }
   }
 
@@ -337,8 +371,17 @@ export class WorldInstance implements WorldContext {
     this.factionSystem.onUserKill(killer, victim);
   }
 
-  getMapTileOverrides(mapId: string): ReadonlyMap<string, number> | undefined {
+  public getMapTileOverrides(mapId: string): ReadonlyMap<string, number> | undefined {
     return this.tileOverridesByMap.get(mapId);
+  }
+
+  public setDoorTileOverride(mapId: string, tileX: number, tileY: number, isOpen: boolean) {
+    let overrides = this.tileOverridesByMap.get(mapId);
+    if (!overrides) {
+      overrides = new Map();
+      this.tileOverridesByMap.set(mapId, overrides);
+    }
+    setDoorTileOverride(overrides, tileX, tileY, isOpen);
   }
 
   private autosavePlayersIfDue() {
@@ -434,17 +477,14 @@ export class WorldInstance implements WorldContext {
         continue;
       }
 
-      const before = session.mp;
       const amount = Math.max(
         1,
         Math.ceil(session.mpMax * MECHANICS.MEDITATION_MP_REGEN_PERCENT_PER_TICK)
       );
       session.mp = Math.min(session.mpMax, session.mp + amount);
       session.nextMeditationRegenAt = now + MECHANICS.INTERVAL_MEDITATION_REGEN;
-      if (session.mp !== before) {
-        this.broadcastPlayerState(session);
-        this.schedulePersistSessionDebounced(session);
-      }
+      this.broadcastPlayerState(session);
+      this.schedulePersistSessionDebounced(session);
       if (session.mp >= session.mpMax) {
         session.mp = session.mpMax;
         this.stopMeditation(session, "Tu mana esta completo.");
@@ -453,31 +493,14 @@ export class WorldInstance implements WorldContext {
     }
   }
 
-  
-
-  
-
-  
-
-  
-
-  
-
-  
-
-  
-
-  
-
-  
-
-  /** Respawns pendientes; cada uno reaparece en un tile aleatorio del mapa. */
-  
-
   handleConnection(socket: WebSocket) {
     const joinDeadline = Date.now() + JOIN_TIMEOUT_MS;
     const joinTimer = setTimeout(() => {
-      if (!this.socketSessions.has(socket) && socket.readyState === socket.OPEN) {
+      const session = this.socketSessions.get(socket);
+      if ((!session || !session.joined) && socket.readyState === socket.OPEN) {
+        console.warn(
+          `[join] timeout esperando join/welcome${session ? ` para ${session.name || session.id}` : ""}`
+        );
         socket.close(4000, "join timeout");
       }
     }, JOIN_TIMEOUT_MS);
@@ -487,6 +510,7 @@ export class WorldInstance implements WorldContext {
         const raw = typeof data === "string" ? data : data.toString("utf8");
         const message = parseClientMessage(raw);
         if (!message) {
+          console.warn(`[ws] mensaje invalido antes/durante join: ${raw.slice(0, 500)}`);
           const session = this.socketSessions.get(socket);
           if (session) {
             this.send(session, { type: "error", message: "Mensaje inválido." });
@@ -495,10 +519,17 @@ export class WorldInstance implements WorldContext {
         }
 
         if (message.type === "join") {
+          console.log(
+            `[join] recibido ${String(message.name ?? "").slice(0, 24)} (${String(
+              message.characterId ?? ""
+            ).slice(0, 32)})`
+          );
           clearTimeout(joinTimer);
           let session = this.socketSessions.get(socket);
           if (!session) {
             session = new PlayerSession(randomUUID(), socket);
+            session.accountId =
+              (socket as typeof socket & { accountId?: string }).accountId ?? null;
             this.players.set(session.id, session);
             this.socketSessions.set(socket, session);
           }
@@ -508,6 +539,7 @@ export class WorldInstance implements WorldContext {
 
         const session = this.socketSessions.get(socket);
         if (!session) {
+          console.warn(`[join] mensaje ${message.type} recibido antes de join`);
           if (Date.now() > joinDeadline) {
             socket.close(4001, "join required");
           }
@@ -691,27 +723,27 @@ export class WorldInstance implements WorldContext {
     }
     if (message.type === "bank_action") {
       this.stopMeditationForAction(session);
-      this.handleBankAction(session, message.action, message.amount, message.slotIndex);
+      this.interactionSystem.handleBankAction(session, message.action, message.amount, message.slotIndex);
       return;
     }
     if (message.type === "shop_buy") {
       this.stopMeditationForAction(session);
-      this.handleShopBuy(session, message.role, message.itemId, message.amount);
+      this.interactionSystem.handleShopBuy(session, message.role, message.itemId, message.amount);
       return;
     }
     if (message.type === "shop_sell") {
       this.stopMeditationForAction(session);
-      this.handleShopSell(session, message.role, message.inventorySlot, message.amount);
+      this.interactionSystem.handleShopSell(session, message.role, message.inventorySlot, message.amount);
       return;
     }
     if (message.type === "spell_shop_buy") {
       this.stopMeditationForAction(session);
-      this.handleSpellShopBuy(session, message.spellId);
+      this.interactionSystem.handleSpellShopBuy(session, message.spellId);
       return;
     }
     if (message.type === "revive") {
       this.stopMeditationForAction(session);
-      this.handleRevive(
+      this.interactionSystem.handleRevive(
         session,
         message.source,
         message.tileX,
@@ -722,157 +754,13 @@ export class WorldInstance implements WorldContext {
     }
     if (message.type === "interact_map") {
       this.stopMeditationForAction(session);
-      this.handleInteractMap(session, message.tileX, message.tileY);
+      this.interactionSystem.handleInteractMap(session, message.tileX, message.tileY);
       return;
     }
-  }
-
-  private handleInteractMap(session: PlayerSession, tileX: number, tileY: number) {
-    if (!session.joined || session.isDead) return;
-    const dist = Math.abs(session.tileX - tileX) + Math.abs(session.tileY - tileY);
-    if (dist > 2) return; // Too far
-
-    const objs = this.getDynamicObjs(session.mapId);
-    const obj = objs.find(o => o.tileX === tileX && o.tileY === tileY);
-    if (!obj) return;
-
-    const def = resolveImportedObjDef(obj.objIndex);
-    
-    if (def && def.objType === 6) {
-      const isCurrentlyOpen = obj.objIndex === def.indexAbierta;
-      const nextIndex = isCurrentlyOpen ? def.indexCerrada : def.indexAbierta;
-      
-      if (nextIndex && nextIndex > 0) {
-        obj.objIndex = nextIndex;
-        obj.isOpen = !isCurrentlyOpen;
-
-        let overrides = this.tileOverridesByMap.get(session.mapId);
-        if (!overrides) {
-          overrides = new Map();
-          this.tileOverridesByMap.set(session.mapId, overrides);
-        }
-        setDoorTileOverride(overrides, tileX, tileY, obj.isOpen);
-
-        this.broadcastToAoi(session.mapId, tileX, tileY, {
-          type: "game_event",
-          event: {
-            kind: "map_object_updated",
-            tileX,
-            tileY,
-            objIndex: nextIndex
-          }
-        });
-      }
-    }
-  }
-
-  private handleRevive(
-    session: PlayerSession,
-    source: "priest" | "ally",
-    tileX?: number,
-    tileY?: number,
-    mapId?: string
-  ) {
-    if (!session.joined) {
+    if (message.type === "party_action") {
+      this.handlePartyAction(session, message);
       return;
     }
-    if (!session.isDead && session.hp > 0) {
-      return;
-    }
-
-    session.isDead = false;
-    session.deathLootProcessed = false;
-    if (source === "priest") {
-      session.hp = session.hpMax;
-      this.applyServerPriestRevivePosition(session);
-    } else {
-      session.hp = Math.max(1, Math.floor(session.hpMax * 0.35));
-      this.applyRevivePosition(session, tileX, tileY, mapId);
-    }
-
-    this.sendPlayerState(session);
-    this.sendInventoryUpdated(session);
-    this.send(session, {
-      type: "player_moved",
-      player: session.toNetState(),
-    });
-    this.movementSystem.broadcastPlayerMoved(session);
-    void this.persistSession(session).catch((error) => {
-      console.error("[revive] persist failed:", error);
-    });
-  }
-
-  /** Revive en sacerdote: posición autoritativa en el sacerdote más cercano. */
-  private applyServerPriestRevivePosition(session: PlayerSession) {
-    const priest = getNearestPriestSpawn(
-      session.mapId,
-      session.tileX,
-      session.tileY,
-      {
-        mapId: session.mapId,
-        tileX: getMapSpawnTile(session.mapId).tileX,
-        tileY: getMapSpawnTile(session.mapId).tileY,
-      }
-    );
-    const targetMapId = priest.mapId;
-    const beside = findWalkableTileBeside(
-      priest.tileX,
-      priest.tileY,
-      (tileX, tileY) =>
-        isMapTileWalkable(
-          targetMapId,
-          tileX,
-          tileY,
-          this.tileOverridesByMap.get(targetMapId)
-        ) && !this.isTileOccupied(tileX, tileY, targetMapId, session.id)
-    );
-
-    if (targetMapId !== session.mapId) {
-      for (const otherId of session.aoiVisiblePlayerIds) {
-        const other = this.players.get(otherId);
-        if (other) {
-          other.aoiVisiblePlayerIds.delete(session.id);
-          this.send(other, { type: "player_left", playerId: session.id });
-        }
-      }
-      session.aoiVisiblePlayerIds.clear();
-      session.mapId = targetMapId;
-      this.movementSystem.initAoiOnJoin(session);
-    }
-
-    session.tileX = beside.tileX;
-    session.tileY = beside.tileY;
-    session.facing = "down";
-  }
-
-  /** Aplica tile de revive del cliente si es caminable y no está ocupado. */
-  private applyRevivePosition(
-    session: PlayerSession,
-    tileX?: number,
-    tileY?: number,
-    mapId?: string
-  ) {
-    if (
-      typeof tileX !== "number" ||
-      typeof tileY !== "number" ||
-      !Number.isFinite(tileX) ||
-      !Number.isFinite(tileY)
-    ) {
-      return;
-    }
-    const targetMapId =
-      typeof mapId === "string" && mapId.trim() ? mapId.trim() : session.mapId;
-    const nextX = Math.floor(tileX);
-    const nextY = Math.floor(tileY);
-    if (!isMapTileWalkable(targetMapId, nextX, nextY, this.tileOverridesByMap.get(targetMapId))) {
-      return;
-    }
-    if (this.isTileOccupied(nextX, nextY, targetMapId, session.id)) {
-      return;
-    }
-    session.mapId = targetMapId;
-    session.tileX = nextX;
-    session.tileY = nextY;
   }
 
   private handleSyncInventory(
@@ -880,7 +768,25 @@ export class WorldInstance implements WorldContext {
     inventory: Extract<ClientMessage, { type: "sync_inventory" }>["inventory"]
   ) {
     if (!session.joined) return;
+
+    // Actualizar los slots del inventario en la sesión del servidor
+    session.inventorySlots = inventory.map((slot) => ({
+      slotIndex: slot.slotIndex,
+      itemId: slot.itemId as any,
+      amount: slot.amount,
+      isEquipped: slot.isEquipped,
+    }));
+
+    // Sincronizar equipamiento visual si algo cambió (opcional pero recomendado)
+    this.inventorySystem.handleSyncVitals(session, {}); 
+
+    // Notificar éxito (aunque el cliente ya lo movió localmente, esto confirma el estado)
     this.sendInventoryUpdated(session);
+
+    // Persistir el nuevo orden en la DB
+    void this.persistSession(session).catch((error) => {
+      console.error("[sync_inventory] failed to persist session:", error);
+    });
   }
 
   private handleSyncBank(
@@ -891,299 +797,6 @@ export class WorldInstance implements WorldContext {
     this.sendInventoryUpdated(session);
     this.sendBankUpdated(session);
   }
-
-  private sendBankUpdated(session: PlayerSession): void {
-    this.send(session, {
-      type: "bank_updated",
-      bankGold: session.bankGold,
-      bankInventory: session.bankSlots.map((slot) => ({
-        slotIndex: slot.slotIndex,
-        itemId: slot.itemId,
-        amount: slot.amount,
-      })),
-    });
-  }
-
-  private sendSpellsUpdated(session: PlayerSession): void {
-    this.send(session, {
-      type: "spells_updated",
-      learnedSpellIds: [...session.learnedSpellIds],
-    });
-  }
-
-  private isNearNpcRole(
-    session: PlayerSession,
-    role: string,
-    maxDistance: number
-  ): boolean {
-    return getNpcsForMap(session.mapId).some((npc) => {
-      if (npc.role !== role) return false;
-      const distance = Math.max(
-        Math.abs(session.tileX - npc.tileX),
-        Math.abs(session.tileY - npc.tileY)
-      );
-      return distance <= maxDistance;
-    });
-  }
-
-  private addToBankSlots(
-    session: PlayerSession,
-    itemId: string,
-    count: number
-  ): { added: number; remaining: number } {
-    if (count <= 0 || !isKnownItemId(itemId)) {
-      return { added: 0, remaining: count };
-    }
-    const maxStack = getItemMaxStack(itemId as ItemId);
-    let remaining = count;
-
-    for (const slot of session.bankSlots) {
-      if (remaining <= 0) break;
-      if (!slot.itemId || slot.itemId !== itemId || slot.amount <= 0) continue;
-      const add = Math.min(maxStack - slot.amount, remaining);
-      if (add <= 0) continue;
-      slot.amount += add;
-      remaining -= add;
-    }
-
-    for (const slot of session.bankSlots) {
-      if (remaining <= 0) break;
-      if (slot.itemId && slot.amount > 0) continue;
-      const add = Math.min(maxStack, remaining);
-      slot.itemId = itemId;
-      slot.amount = add;
-      remaining -= add;
-    }
-
-    return { added: count - remaining, remaining };
-  }
-
-  private removeFromBankSlot(
-    session: PlayerSession,
-    slotIndex: number,
-    amount: number
-  ): { removed: number; itemId: string | null } {
-    const slot = session.bankSlots[slotIndex];
-    if (!slot?.itemId || slot.amount <= 0 || amount <= 0) {
-      return { removed: 0, itemId: null };
-    }
-    const removed = Math.min(slot.amount, Math.floor(amount));
-    const itemId = slot.itemId;
-    slot.amount -= removed;
-    if (slot.amount <= 0) {
-      slot.itemId = null;
-      slot.amount = 0;
-    }
-    return { removed, itemId };
-  }
-
-  private handleBankAction(
-    session: PlayerSession,
-    action: "deposit_item" | "withdraw_item" | "deposit_gold" | "withdraw_gold",
-    amountRaw: number,
-    slotIndexRaw?: number
-  ): void {
-    if (!session.joined || session.hp <= 0) return;
-    if (!this.isNearNpcRole(session, "banker", BANKER_INTERACT_MAX_TILE_DISTANCE)) {
-      this.sendCombatLog(session, "Tenés que estar cerca del banquero.");
-      return;
-    }
-
-    const amount = Math.max(1, Math.floor(Number(amountRaw)));
-    if (!Number.isFinite(amount)) return;
-    const slotIndex =
-      typeof slotIndexRaw === "number" && Number.isFinite(slotIndexRaw)
-        ? Math.floor(slotIndexRaw)
-        : -1;
-
-    session.inventorySlots = sanitizeJoinInventory(session.inventorySlots);
-    session.bankSlots = sanitizeJoinBankSlots(session.bankSlots);
-
-    if (action === "deposit_gold" || action === "withdraw_gold") {
-      if (action === "deposit_gold") {
-        const transfer = Math.min(amount, session.gold);
-        if (transfer <= 0) {
-          this.sendCombatLog(session, "No tenés oro para depositar.");
-          return;
-        }
-        session.gold -= transfer;
-        session.bankGold += transfer;
-        this.sendCombatLog(session, `Depositaste ${transfer.toLocaleString("es-AR")} monedas de oro.`);
-      } else {
-        const transfer = Math.min(amount, session.bankGold);
-        if (transfer <= 0) {
-          this.sendCombatLog(session, "No tenés oro en el banco.");
-          return;
-        }
-        session.bankGold -= transfer;
-        session.gold += transfer;
-        this.sendCombatLog(session, `Retiraste ${transfer.toLocaleString("es-AR")} monedas de oro del banco.`);
-      }
-      this.sendInventoryUpdated(session);
-      this.sendBankUpdated(session);
-      void this.persistSession(session);
-      return;
-    }
-
-    if (slotIndex < 0) return;
-
-    if (action === "deposit_item") {
-      const slot = session.inventorySlots[slotIndex];
-      if (!slot?.itemId || slot.amount <= 0 || !isKnownItemId(slot.itemId)) return;
-      if (slot.isEquipped || Object.values(session.equipment).includes(slot.itemId)) {
-        this.sendCombatLog(session, "Desequipá ese objeto antes de guardarlo en el banco.");
-        return;
-      }
-      const itemId = slot.itemId;
-      const { removed } = removeFromServerSlot(session.inventorySlots, slotIndex, amount);
-      if (removed <= 0) return;
-      const { added, remaining } = this.addToBankSlots(session, itemId, removed);
-      if (remaining > 0) {
-        addToServerInventory(session.inventorySlots, itemId, remaining);
-      }
-      if (added <= 0) {
-        this.sendCombatLog(session, "No hay espacio en el banco para ese objeto.");
-      } else {
-        const item = getItemDefinition(itemId as ItemId);
-        this.sendCombatLog(session, `Depositaste ${item.name} x${added} en el banco.`);
-      }
-    } else {
-      const { removed, itemId } = this.removeFromBankSlot(session, slotIndex, amount);
-      if (removed <= 0 || !itemId) return;
-      const { added, remaining } = addToServerInventory(session.inventorySlots, itemId, removed);
-      if (remaining > 0) {
-        this.addToBankSlots(session, itemId, remaining);
-      }
-      if (added <= 0) {
-        this.sendCombatLog(session, "No hay espacio en tu inventario.");
-      } else {
-        const item = getItemDefinition(itemId as ItemId);
-        this.sendCombatLog(session, `Retiraste ${item.name} x${added} del banco.`);
-      }
-    }
-
-    this.syncInventoryEquippedFlags(session);
-    this.sendInventoryUpdated(session);
-    this.sendBankUpdated(session);
-    void this.persistSession(session);
-  }
-
-  private validateShopAccess(session: PlayerSession, role: MerchantRole): boolean {
-    if (!session.joined || session.hp <= 0) return false;
-    if (!isMerchantRole(role)) return false;
-    if (!this.isNearNpcRole(session, role, MERCHANT_INTERACT_MAX_TILE_DISTANCE)) {
-      this.sendCombatLog(session, "Tenés que estar cerca del comerciante.");
-      return false;
-    }
-    return true;
-  }
-
-  private handleShopBuy(
-    session: PlayerSession,
-    role: MerchantRole,
-    itemId: string,
-    amountRaw: number
-  ): void {
-    if (!this.validateShopAccess(session, role) || isSpellMerchantRole(role)) return;
-    if (!isKnownItemId(itemId) || !getShopCatalogForRole(role).includes(itemId as ItemId)) {
-      this.sendCombatLog(session, "Ese objeto no está a la venta.");
-      return;
-    }
-    const qty = Math.min(1_000, Math.max(1, Math.floor(Number(amountRaw))));
-    if (!Number.isFinite(qty)) return;
-    const item = getItemDefinition(itemId as ItemId);
-    const usability = canUseItem(
-      session.classId as CharacterClassId,
-      session.raceId as any,
-      session.level,
-      item,
-      session.isAdmin()
-    );
-    if (!usability.allowed) {
-      this.sendCombatLog(session, usability.reason ?? "No podés usar ese objeto.");
-      return;
-    }
-    if (session.gold < getBuyPrice(item.value, 1)) {
-      this.sendCombatLog(session, "No tenés suficiente oro.");
-      return;
-    }
-    const affordableQty = Math.min(qty, Math.floor(session.gold / getBuyPrice(item.value, 1)));
-    const { added } = addToServerInventory(session.inventorySlots, itemId, affordableQty);
-    if (added <= 0) {
-      this.sendCombatLog(session, "No tenés espacio en el inventario.");
-      return;
-    }
-    const cost = getBuyPrice(item.value, added);
-    session.gold -= cost;
-    this.sendCombatLog(session, `Compraste ${item.name} x${added} por ${cost.toLocaleString("es-AR")} de oro.`);
-    this.sendInventoryUpdated(session);
-    void this.persistSession(session);
-  }
-
-  private handleShopSell(
-    session: PlayerSession,
-    role: MerchantRole,
-    inventorySlotRaw: number,
-    amountRaw: number
-  ): void {
-    if (!this.validateShopAccess(session, role) || isSpellMerchantRole(role)) return;
-    const slotIndex = Math.floor(Number(inventorySlotRaw));
-    const amount = Math.max(1, Math.floor(Number(amountRaw)));
-    if (!Number.isFinite(slotIndex) || !Number.isFinite(amount)) return;
-    const slot = session.inventorySlots[slotIndex];
-    if (!slot?.itemId || slot.amount <= 0 || !isKnownItemId(slot.itemId)) return;
-    if (slot.isEquipped || Object.values(session.equipment).includes(slot.itemId)) {
-      this.sendCombatLog(session, "Desequipá ese objeto antes de venderlo.");
-      return;
-    }
-    const itemId = slot.itemId;
-    const { removed } = removeFromServerSlot(session.inventorySlots, slotIndex, amount);
-    if (removed <= 0) return;
-    const item = getItemDefinition(itemId as ItemId);
-    const gained = getSellPrice(item.value, removed);
-    session.gold += gained;
-    this.sendCombatLog(session, `Vendiste ${item.name} x${removed} por ${gained.toLocaleString("es-AR")} de oro.`);
-    this.sendInventoryUpdated(session);
-    void this.persistSession(session);
-  }
-
-  private handleSpellShopBuy(session: PlayerSession, spellIdRaw: number): void {
-    if (!this.validateShopAccess(session, "mage")) return;
-    const spellId = Math.floor(Number(spellIdRaw));
-    if (!Number.isFinite(spellId)) return;
-    const spell = getMageVendorSpellCatalog().find((entry) => entry.idSpell === spellId);
-    if (!spell) {
-      this.sendCombatLog(session, "Ese hechizo no está a la venta.");
-      return;
-    }
-    if (isSpellLearnedByPlayer(spellId, session.learnedSpellIds)) {
-      this.sendCombatLog(session, `Ya conocés ${spell.nombre}.`);
-      return;
-    }
-    if (!session.isAdmin() && !spell.usableBy.includes(session.classId as any)) {
-      this.sendCombatLog(session, `Tu clase no puede aprender ${spell.nombre}.`);
-      return;
-    }
-    if (!session.isAdmin() && spell.nivelRequerido > session.level) {
-      this.sendCombatLog(session, `Necesitás ser nivel ${spell.nivelRequerido} para aprender ${spell.nombre}.`);
-      return;
-    }
-    const cost = Math.max(0, Math.floor(spell.valor));
-    if (session.gold < cost) {
-      this.sendCombatLog(session, "No tenés suficiente oro.");
-      return;
-    }
-    session.gold -= cost;
-    session.learnedSpellIds.add(spellId);
-    this.sendCombatLog(session, `Aprendiste ${spell.nombre} por ${cost.toLocaleString("es-AR")} de oro.`);
-    this.sendInventoryUpdated(session);
-    this.sendSpellsUpdated(session);
-    void this.persistSession(session);
-  }
-
-  
-
-  
 
   private toEquipmentKey(slot: EquipmentSlot): "weaponId" | "shieldId" | "helmetId" | "armorId" {
     if (slot === "weapon") return "weaponId";
@@ -1199,7 +812,9 @@ export class WorldInstance implements WorldContext {
     this.resetEphemeralCombatState(session);
     const incomingName = message.name.trim().slice(0, 24) || "Viajero";
     session.name = incomingName;
-    session.accountId = null;
+    session.accountId =
+      (session.socket as typeof session.socket & { accountId?: string }).accountId ??
+      session.accountId;
     session.characterId =
       typeof message.characterId === "string" && message.characterId.trim()
         ? message.characterId.trim().slice(0, 64)
@@ -1280,11 +895,37 @@ export class WorldInstance implements WorldContext {
       this.applyJoinFallback(session, message);
       return;
     }
+    if (session.accountId && persisted.character.accountId !== session.accountId) {
+      this.send(session, {
+        type: "error",
+        message: persisted.character.accountId
+          ? "Ese personaje pertenece a otra cuenta."
+          : "Ese personaje todavia no esta vinculado a ninguna cuenta.",
+      });
+      session.socket.close(4004, "character ownership mismatch");
+      return;
+    }
+    if (!session.accountId && persisted.character.accountId) {
+      this.send(session, {
+        type: "error",
+        message: "Inicia sesion con la cuenta dueña de ese personaje.",
+      });
+      session.socket.close(4004, "character requires account");
+      return;
+    }
     if (
       requestedCharacterId &&
       persisted.character.id.trim() &&
       persisted.character.id.trim() !== requestedCharacterId
     ) {
+      if (session.accountId) {
+        this.send(session, {
+          type: "error",
+          message: "Ya existe un personaje con ese nombre.",
+        });
+        session.socket.close(4004, "character name already exists");
+        return;
+      }
       this.applyJoinFallback(session, message);
       return;
     }
@@ -1299,7 +940,7 @@ export class WorldInstance implements WorldContext {
   private applyPersistedSnapshot(session: PlayerSession, persisted: PersistedCharacterSnapshot) {
     const c = persisted.character;
     session.characterId = c.id;
-    session.accountId = c.accountId;
+    session.accountId = c.accountId ?? session.accountId;
     session.name = c.name;
     session.role = c.role;
     session.mapId = resolveMultiplayerMapId(c.mapId);
@@ -1349,10 +990,6 @@ export class WorldInstance implements WorldContext {
     this.syncInventoryEquippedFlags(session);
   }
 
-  /**
-   * Mientras no exista intent autoritativo de equipar/mover inventario,
-   * usamos el join del cliente como última verdad para equipo/inventario.
-   */
   private applyJoinClientOverrides(
     session: PlayerSession,
     message: Extract<ClientMessage, { type: "join" }>,
@@ -1363,7 +1000,6 @@ export class WorldInstance implements WorldContext {
     if (!trustSnapshot) {
       session.equipment = clientEquipment;
     }
-    // Banco autoritativo en PostgreSQL cuando hay snapshot persistido (igual que vitales).
     if (!trustSnapshot) {
       if (Array.isArray(message.bankInventory)) {
         session.bankSlots = sanitizeJoinBankSlots(message.bankInventory);
@@ -1400,7 +1036,6 @@ export class WorldInstance implements WorldContext {
     this.ensureStarterLearnedSpellsIfEmpty(session);
   }
 
-  /** Personajes con mana y sin hechizos persistidos (p. ej. join con inventario inicial ya lleno). */
   private ensureStarterLearnedSpellsIfEmpty(session: PlayerSession): void {
     if (session.learnedSpellIds.size > 0) {
       return;
@@ -1468,20 +1103,47 @@ export class WorldInstance implements WorldContext {
     }
 
     const mapId = pending.mapId;
-    if (
-      isMapTileWalkable(
-        mapId,
-        pending.tileX,
-        pending.tileY,
-        this.tileOverridesByMap.get(mapId)
-      )
-    ) {
+    if (this.canUseJoinTile(session, mapId, pending.tileX, pending.tileY)) {
       session.mapId = mapId;
       session.tileX = pending.tileX;
       session.tileY = pending.tileY;
       session.facing = normalizeFacing(pending.facing);
+      this.applyNavigationStateForJoinTile(session, mapId, pending.tileX, pending.tileY);
     }
     this.pendingReconnectPositions.delete(characterId);
+  }
+
+  private hasNavigationItem(session: PlayerSession): boolean {
+    return session.inventorySlots.some(
+      (slot) => slot.itemId && slot.amount > 0 && BOAT_ITEM_IDS.has(slot.itemId)
+    );
+  }
+
+  private canUseJoinTile(
+    session: PlayerSession,
+    mapId: string,
+    tileX: number,
+    tileY: number
+  ): boolean {
+    const tileOverrides = this.tileOverridesByMap.get(mapId);
+    if (isMapTileWalkable(mapId, tileX, tileY, tileOverrides)) {
+      return true;
+    }
+    if (!this.hasNavigationItem(session)) {
+      return false;
+    }
+    return isWaterTile(getMap(mapId), tileX, tileY, tileOverrides);
+  }
+
+  private applyNavigationStateForJoinTile(
+    session: PlayerSession,
+    mapId: string,
+    tileX: number,
+    tileY: number
+  ): void {
+    const tileOverrides = this.tileOverridesByMap.get(mapId);
+    session.isNavigating =
+      this.hasNavigationItem(session) && isWaterTile(getMap(mapId), tileX, tileY, tileOverrides);
   }
 
   private resolveJoinTilePosition(
@@ -1498,7 +1160,7 @@ export class WorldInstance implements WorldContext {
         return false;
       }
       return (
-        isMapTileWalkable(mapId, tile.tileX, tile.tileY, this.tileOverridesByMap.get(mapId)) &&
+        this.canUseJoinTile(session, mapId, tile.tileX, tile.tileY) &&
         !this.isTileOccupied(tile.tileX, tile.tileY, mapId, session.id)
       );
     };
@@ -1595,6 +1257,13 @@ export class WorldInstance implements WorldContext {
     const resolvedTile = this.resolveJoinTilePosition(session, message, message.mapId);
     session.tileX = resolvedTile.tileX;
     session.tileY = resolvedTile.tileY;
+    this.applyNavigationStateForJoinTile(
+      session,
+      session.mapId,
+      resolvedTile.tileX,
+      resolvedTile.tileY
+    );
+    this.enforceNewbieDungeonLevelCap(session);
 
     this.maybeRerollMobPlacementsForNewSession();
     session.joined = true;
@@ -1651,7 +1320,6 @@ export class WorldInstance implements WorldContext {
     try {
       await this.characterRepo.upsert(snapshot);
     } catch (error) {
-      // Nunca propagar: una falla de persistencia no debe tumbar el tick ni el WS.
       console.error(`[persist] upsert failed (${session.name}/${session.characterId}):`, error);
     }
   }
@@ -1667,7 +1335,7 @@ export class WorldInstance implements WorldContext {
     }
   }
 
-  private syncInventoryEquippedFlags(session: PlayerSession) {
+  public syncInventoryEquippedFlags(session: PlayerSession) {
     const equippedIds = new Set<string>(
       [session.equipment.weaponId, session.equipment.shieldId, session.equipment.helmetId, session.equipment.armorId]
         .filter((value): value is string => Boolean(value))
@@ -1677,114 +1345,258 @@ export class WorldInstance implements WorldContext {
     }
   }
 
-  
-
-  /** Movimiento rechazado: el cliente predice el paso y necesita corrección autoritativa. */
-  
-
-  
-  
-
-  
-
-  
-
-  
-
-  private applyDamageToMob(
-    session: PlayerSession,
-    mob: MobEntity,
-    rawDamage: number,
-    spellName?: string
-  ) {
-    this.aggroMobOnPlayerHit(mob, session);
-    const damage = Math.max(0, Math.floor(rawDamage));
-    mob.hp = Math.max(0, mob.hp - damage);
-
-    if (mob.hp <= 0) {
-      mob.alive = false;
-      mob.respawnAt = Date.now() + mob.respawnMs;
+  public dropPlayerDeathLoot(session: PlayerSession): void {
+    if (!MULTIPLAYER_SERVER_MAP_IDS.has(session.mapId)) {
+      return;
     }
-
-    this.broadcastGameEvent(session.mapId, mob.tileX, mob.tileY, {
-      kind: "damage",
-      targetKind: "mob",
-      targetId: mob.id,
-      amount: damage,
-      tileX: mob.tileX,
-      tileY: mob.tileY,
-    });
-    this.broadcastMobUpdated(mob);
-
-    if (mob.alive) {
-      const action = spellName ? `${spellName} golpea` : "Golpea";
-      this.broadcastCombatLog(
-        session.mapId,
-        mob.tileX,
-        mob.tileY,
-        `${session.name} ${action} a ${mob.name} por ${damage}.`
-      );
-    } else {
-      const action = spellName ? `${spellName} elimina` : "Elimina";
-      this.broadcastCombatLog(
-        session.mapId,
-        mob.tileX,
-        mob.tileY,
-        `${session.name} ${action} a ${mob.name} (${damage}).`
-      );
+    if (session.deathLootProcessed) {
+      return;
     }
-  }
+    session.deathLootProcessed = true;
 
-  private getMobInFrontOfPlayer(session: PlayerSession): MobEntity | undefined {
-    const front = this.getFrontTile(session);
-    return this.findMobAtTile(session.mapId, front.x, front.y);
-  }
+    session.inventorySlots = sanitizeJoinInventory(session.inventorySlots);
+    this.syncInventoryEquippedFlags(session);
 
-  private getFrontTile(session: PlayerSession) {
-    if (session.facing === "up") return { x: session.tileX, y: session.tileY - 1 };
-    if (session.facing === "down") return { x: session.tileX, y: session.tileY + 1 };
-    if (session.facing === "left") return { x: session.tileX - 1, y: session.tileY };
-    return { x: session.tileX + 1, y: session.tileY };
-  }
+    const mapId = session.mapId;
+    const originX = session.tileX;
+    const originY = session.tileY;
 
-  private findMobAtTile(mapId: string, tileX: number, tileY: number) {
-    for (const mob of this.mobs.values()) {
-      if (!mob.alive || mob.mapId !== mapId) continue;
-      if (
-        mobTargetFootprintOccupiesTile(
-          tileX,
-          tileY,
-          mob.tileX,
-          mob.tileY,
-          mob.hitboxOffsetTiles,
-          mob.hitboxWidthTiles,
-          mob.hitboxHeightTiles
-        )
-      ) {
-        return mob;
+    const lootStacks = collectDeathLootStacks(
+      session.inventorySlots,
+      session.equipment,
+      {
+        isKnownItemId: (itemId) => isKnownItemId(itemId),
+        itemDropsOnDeath: (itemId) => itemDropsOnDeath(getItemDefinition(itemId as ItemId)),
+        addOrphanToInventory: (itemId) => {
+          const { added } = addToServerInventory(session.inventorySlots, itemId, 1);
+          return added > 0;
+        },
       }
-      if (isAdjacent(mob.tileX, mob.tileY, tileX, tileY)) return mob;
+    );
+
+    for (const slot of session.inventorySlots) {
+      if (!slot.itemId || slot.amount <= 0) continue;
+      if (!isKnownItemId(slot.itemId)) {
+        slot.itemId = null;
+        slot.amount = 0;
+        slot.isEquipped = false;
+        continue;
+      }
+      const item = getItemDefinition(slot.itemId as ItemId);
+      if (!itemDropsOnDeath(item)) continue;
+      slot.itemId = null;
+      slot.amount = 0;
+      slot.isEquipped = false;
     }
-    return undefined;
+
+    session.equipment.weaponId = null;
+    session.equipment.shieldId = null;
+    session.equipment.helmetId = null;
+    session.equipment.armorId = null;
+    session.equipment.equippedOutfit =
+      outfitForArmorItemId(session.equipment.armorId) ?? "base";
+    this.syncInventoryEquippedFlags(session);
+    session.recalcDefenseStats();
+    session.recalcAttackStats();
+
+    const occupied = new Set<string>();
+    for (const worldItem of this.worldItems.listForMap(mapId)) {
+      occupied.add(`${worldItem.tileX},${worldItem.tileY}`);
+    }
+
+    const canDrop = (tileX: number, tileY: number) =>
+      isWorldItemDropTileAllowed(mapId, tileX, tileY, (x, y) =>
+        isMapTileWalkable(mapId, x, y, this.tileOverridesByMap.get(mapId))
+      ) && !occupied.has(`${tileX},${tileY}`);
+
+    for (const stack of lootStacks) {
+      const dropTile = findNearestWalkableDropTile(originX, originY, canDrop, 32);
+      if (!dropTile) {
+        continue;
+      }
+      occupied.add(`${dropTile.tileX},${dropTile.tileY}`);
+      this.spawnDeathLootAt(
+        mapId,
+        stack.itemId,
+        stack.amount,
+        dropTile.tileX,
+        dropTile.tileY
+      );
+    }
   }
 
-  private findPlayerAtTile(mapId: string, tileX: number, tileY: number, exceptId: string): PlayerSession | undefined {
-    for (const player of this.players.values()) {
-      if (!player.joined || player.mapId !== mapId || player.id === exceptId) continue;
-      if (player.hp <= 0) continue;
-      if (player.tileX === tileX && player.tileY === tileY) return player;
-      if (isAdjacent(player.tileX, player.tileY, tileX, tileY)) return player;
+  public grantMobKillGold(killer: PlayerSession, mob: MobEntity): void {
+    if (mob.goldReward <= 0) {
+      return;
     }
-    return undefined;
+    if (!MULTIPLAYER_SERVER_MAP_IDS.has(killer.mapId) || killer.mapId !== mob.mapId) {
+      return;
+    }
+
+    const recipients = this.resolveMobKillRewardRecipients(killer, mob);
+    const goldShare = splitPartyMobGold(mob.goldReward, recipients.length);
+    if (goldShare <= 0) {
+      return;
+    }
+
+    const inPartySplit = recipients.length > 1;
+    for (const recipient of recipients) {
+      recipient.gold += goldShare;
+      const splitNote = inPartySplit ? " (reparto de grupo)" : "";
+      this.sendCombatLog(
+        recipient,
+        `Obtuviste ${goldShare.toLocaleString("es-AR")} de oro por derrotar a ${mob.name}${splitNote}.`
+      );
+      this.sendInventoryUpdated(recipient);
+      void this.persistSession(recipient).catch((error) => {
+        console.error("[mob_kill_gold] persist failed:", error);
+      });
+    }
   }
 
-  
+  public grantMobKillExp(killer: PlayerSession, mob: MobEntity): void {
+    if (mob.expReward <= 0) {
+      return;
+    }
+    if (!MULTIPLAYER_SERVER_MAP_IDS.has(killer.mapId) || killer.mapId !== mob.mapId) {
+      return;
+    }
+
+    const recipients = this.resolveMobKillRewardRecipients(killer, mob);
+    const { sharePerMember, hasGroupBonus } = splitPartyMobExp(
+      mob.expReward,
+      recipients.length
+    );
+    if (sharePerMember <= 0) {
+      return;
+    }
+
+    for (const recipient of recipients) {
+      this.grantExpToPlayer(recipient, sharePerMember, mob.name, hasGroupBonus);
+    }
+  }
+
+  private resolveMobKillRewardRecipients(
+    killer: PlayerSession,
+    mob: MobEntity
+  ): PlayerSession[] {
+    const party = this.partySystem.getPartyForPlayer(killer.id);
+    if (!party) {
+      return [killer];
+    }
+
+    const present = this.partySystem.getMembersPresentOnMap(
+      party,
+      mob.mapId,
+      this.players
+    );
+    if (present.length === 0) {
+      return [killer];
+    }
+    return present;
+  }
+
+  private grantExpToPlayer(
+    session: PlayerSession,
+    amount: number,
+    mobName: string,
+    partyBonus: boolean
+  ): void {
+    const previousLevel = session.level;
+    const result = applyExpGain(session.level, session.exp, session.expToNext, amount);
+    session.level = result.level;
+    session.exp = result.exp;
+    session.expToNext = result.expToNext;
+
+    const bonusNote = partyBonus ? " (+15% bonus de grupo)" : "";
+    this.sendCombatLog(
+      session,
+      `Ganaste ${amount.toLocaleString("es-AR")} de experiencia por derrotar a ${mobName}${bonusNote}.`
+    );
+
+    if (result.levelsGained > 0) {
+      if (!session.isAdmin()) {
+        const patch = applyLevelUpVitals({
+          race: session.raceId,
+          classId: session.classId as CharacterClassId,
+          previousLevel,
+          newLevel: session.level,
+          currentHp: session.hp,
+          currentMp: session.mp,
+          healToNewMax: false,
+        });
+        session.hpMax = patch.hpMax;
+        session.mpMax = patch.mpMax;
+        session.hp = patch.hp;
+        session.mp = patch.mp;
+      } else {
+        session.assignRoleByName();
+      }
+      this.sendCombatLog(session, `¡Subiste al nivel ${session.level}!`);
+      this.sendPlayerState(session);
+
+      if (
+        session.mapId === NEWBIE_DUNGEON_MAP_ID &&
+        !canStayInNewbieDungeon(session.level)
+      ) {
+        this.sendCombatLog(session, NEWBIE_DUNGEON_LEVEL_EXCEEDED_MESSAGE);
+        this.teleportPlayer(
+          session,
+          ULLATHORPE_MAP_ID,
+          ULLATHORPE_NEWBIE_RETURN_TILE.tileX,
+          ULLATHORPE_NEWBIE_RETURN_TILE.tileY,
+          "down"
+        );
+      }
+    }
+
+    this.sendPlayerProgressUpdated(session);
+    void this.persistSession(session).catch((error) => {
+      console.error("[mob_kill_exp] persist failed:", error);
+    });
+  }
+
+  public sendPlayerProgressUpdated(session: PlayerSession): void {
+    this.send(session, {
+      type: "player_progress_updated",
+      exp: session.exp,
+      expToNext: session.expToNext,
+      level: session.level,
+    });
+  }
+
+  private enforceNewbieDungeonLevelCap(session: PlayerSession): void {
+    if (session.mapId !== NEWBIE_DUNGEON_MAP_ID || canStayInNewbieDungeon(session.level)) {
+      return;
+    }
+    this.sendCombatLog(session, NEWBIE_DUNGEON_LEVEL_EXCEEDED_MESSAGE);
+    session.mapId = ULLATHORPE_MAP_ID;
+    session.tileX = ULLATHORPE_NEWBIE_RETURN_TILE.tileX;
+    session.tileY = ULLATHORPE_NEWBIE_RETURN_TILE.tileY;
+    session.facing = "down";
+  }
+
+  private teleportPlayer(
+    session: PlayerSession,
+    mapId: string,
+    tileX: number,
+    tileY: number,
+    facing: import("../../shared/types").Facing = "down"
+  ): void {
+    this.movementSystem.changeMap(session, {
+      tileX: session.tileX,
+      tileY: session.tileY,
+      toMapId: mapId,
+      toTileX: tileX,
+      toTileY: tileY,
+      facing,
+    });
+  }
 
   private isInSafeZone(player: PlayerSession): boolean {
     return SAFE_ZONE_MAP_IDS.has(player.mapId);
   }
 
-  /** Invisibilidad / inmovilizar no persisten entre sesiones; buffs de stats sí (con expiry). */
   private resetEphemeralCombatState(session: PlayerSession): void {
     session.clearInvisible();
     session.clearImmobilized();
@@ -1793,6 +1605,21 @@ export class WorldInstance implements WorldContext {
   private expireAttributeBuffsIfNeeded(session: PlayerSession, now = Date.now()): void {
     if (session.attributeBuffs.expiresAtMs <= now) {
       session.attributeBuffs = { strength: 0, agility: 0, expiresAtMs: 0 };
+    }
+  }
+
+  private tickAttributeBuffs(): void {
+    const now = Date.now();
+    for (const session of this.players.values()) {
+      const beforeExpiresAt = session.attributeBuffs.expiresAtMs;
+      if (beforeExpiresAt <= 0) {
+        continue;
+      }
+      this.expireAttributeBuffsIfNeeded(session, now);
+      if (session.attributeBuffs.expiresAtMs !== beforeExpiresAt) {
+        this.sendPlayerState(session, { includeAttributeBuffs: true });
+        this.schedulePersistSessionDebounced(session);
+      }
     }
   }
 
@@ -1817,9 +1644,7 @@ export class WorldInstance implements WorldContext {
     clearInterval(countdown);
     this.pendingLogoutCountdownTimers.delete(session.id);
     this.sendCombatLog(session, "Desconexión cancelada.");
-    console.log(
-      `[logout] cancelado por movimiento — ${session.name} (${session.id.slice(0, 8)})`
-    );
+    console.log(`[logout] cancelado por movimiento — ${session.name} (${session.id.slice(0, 8)})`);
   }
 
   private scheduleLogoutGraceRemoval(playerId: string): void {
@@ -1927,7 +1752,6 @@ export class WorldInstance implements WorldContext {
     return false;
   }
 
-  /** Empuja fantasmas del tile destino; devuelve false si alguno no tiene adónde ir. */
   public displaceGhostsFromTile(
     mapId: string,
     tileX: number,
@@ -1938,54 +1762,24 @@ export class WorldInstance implements WorldContext {
   ): boolean {
     const ghostsOnTile: PlayerSession[] = [];
     for (const player of this.players.values()) {
-      if (
-        !player.joined ||
-        player.id === moverPlayerId ||
-        player.mapId !== mapId ||
-        player.tileX !== tileX ||
-        player.tileY !== tileY
-      ) {
-        continue;
-      }
-      if (isPlayerGhostFromVitals(player.hp, player.isDead)) {
-        ghostsOnTile.push(player);
-      }
+      if (!player.joined || player.id === moverPlayerId || player.mapId !== mapId || player.tileX !== tileX || player.tileY !== tileY) continue;
+      if (isPlayerGhostFromVitals(player.hp, player.isDead)) ghostsOnTile.push(player);
     }
-
-    if (ghostsOnTile.length === 0) {
-      return true;
-    }
-
+    if (ghostsOnTile.length === 0) return true;
     const reserved = new Set<string>([`${tileX},${tileY}`]);
-
     for (const ghost of ghostsOnTile) {
-      const dest = this.findGhostDisplacementTile(
-        mapId,
-        tileX,
-        tileY,
-        incomingFromTileX,
-        incomingFromTileY,
-        ghost.id,
-        reserved
-      );
-      if (!dest) {
-        return false;
-      }
+      const dest = this.findGhostDisplacementTile(mapId, tileX, tileY, incomingFromTileX, incomingFromTileY, ghost.id, reserved);
+      if (!dest) return false;
       reserved.add(`${dest.tileX},${dest.tileY}`);
-
       const prevGx = ghost.tileX;
       const prevGy = ghost.tileY;
       ghost.tileX = dest.tileX;
       ghost.tileY = dest.tileY;
       this.schedulePersistSessionDebounced(ghost);
-      this.send(ghost, {
-        type: "player_moved",
-        player: ghost.toNetState(),
-      });
+      this.send(ghost, { type: "player_moved", player: ghost.toNetState() });
       this.syncAoiAfterMove(ghost, prevGx, prevGy);
       this.broadcastPlayerMoved(ghost);
     }
-
     return true;
   }
 
@@ -2002,25 +1796,13 @@ export class WorldInstance implements WorldContext {
     const incomingDy = occupiedTileY - incomingFromTileY;
     const candidates: Array<{ tileX: number; tileY: number; score: number }> = [];
 
-    for (const [dx, dy] of [
-      [1, 0],
-      [-1, 0],
-      [0, 1],
-      [0, -1],
-    ] as const) {
+    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
       const nextX = occupiedTileX + dx;
       const nextY = occupiedTileY + dy;
       const key = `${nextX},${nextY}`;
       if (reservedTiles.has(key)) continue;
-      if (
-        !isMapTileWalkable(mapId, nextX, nextY, this.tileOverridesByMap.get(mapId)) ||
-        isTileBlockedByMapObject(getMap(mapId).objects, nextX, nextY)
-      ) {
-        continue;
-      }
-      if (this.isTileOccupied(nextX, nextY, mapId, ghostId)) {
-        continue;
-      }
+      if (!isMapTileWalkable(mapId, nextX, nextY, this.tileOverridesByMap.get(mapId)) || isTileBlockedByMapObject(getMap(mapId).objects, nextX, nextY)) continue;
+      if (this.isTileOccupied(nextX, nextY, mapId, ghostId)) continue;
       const score = -(dx * incomingDx + dy * incomingDy);
       candidates.push({ tileX: nextX, tileY: nextY, score });
     }
@@ -2030,104 +1812,37 @@ export class WorldInstance implements WorldContext {
       return { tileX: candidates[0].tileX, tileY: candidates[0].tileY };
     }
 
-    return findNearestWalkableSpawnTile(
-      mapId,
-      { tileX: occupiedTileX, tileY: occupiedTileY },
-      (nextX, nextY) => {
-        const key = `${nextX},${nextY}`;
-        if (reservedTiles.has(key)) return true;
-        if (nextX === occupiedTileX && nextY === occupiedTileY) return true;
-        if (
-          !isMapTileWalkable(mapId, nextX, nextY, this.tileOverridesByMap.get(mapId)) ||
-          isTileBlockedByMapObject(getMap(mapId).objects, nextX, nextY)
-        ) {
-          return true;
-        }
-        return this.isTileOccupied(nextX, nextY, mapId, ghostId);
-      },
-      8
-    );
+    return findNearestWalkableSpawnTile(mapId, { tileX: occupiedTileX, tileY: occupiedTileY }, (nextX, nextY) => {
+      const key = `${nextX},${nextY}`;
+      if (reservedTiles.has(key)) return true;
+      if (nextX === occupiedTileX && nextY === occupiedTileY) return true;
+      if (!isMapTileWalkable(mapId, nextX, nextY, this.tileOverridesByMap.get(mapId)) || isTileBlockedByMapObject(getMap(mapId).objects, nextX, nextY)) return true;
+      return this.isTileOccupied(nextX, nextY, mapId, ghostId);
+    }, 8);
   }
-
-  private buildSnapshotForSession(session: PlayerSession) {
-    const { mapId, tileX, tileY, id } = session;
-    const players = [...this.players.values()]
-      .filter(
-        (p) =>
-          p.joined &&
-          p.mapId === mapId &&
-          p.id !== id &&
-          isInAoi(tileX, tileY, p.tileX, p.tileY)
-      )
-      .map((p) => p.toNetState());
-    const mobs = [...this.mobs.values()]
-      .filter((m) => m.mapId === mapId && isInAoi(tileX, tileY, m.tileX, m.tileY))
-      .map((m) => m.toNetState());
-    const worldItems = this.worldItems
-      .listInAoi(mapId, tileX, tileY)
-      .map((item) => this.worldItems.toNetState(item));
-
-    return {
-      tick: this.tick,
-      mapId,
-      players,
-      mobs,
-      worldItems,
-    };
-  }
-
-  /** Estado inicial al join (solo entidades en AOI); ver FULL_SNAPSHOT_ON_JOIN_ONLY. */
-  
-
-  
-
-  
 
   public sendCombatLog(session: PlayerSession, text: string) {
     this.send(session, { type: "combat_log", text });
   }
 
-  public broadcastCombatLog(
-    mapId: string,
-    tileX: number,
-    tileY: number,
-    text: string
-  ) {
+  public broadcastCombatLog(mapId: string, tileX: number, tileY: number, text: string) {
     this.broadcastToAoi(mapId, tileX, tileY, { type: "combat_log", text });
   }
 
-  public broadcastGameEvent(
-    mapId: string,
-    tileX: number,
-    tileY: number,
-    event: GameEvent
-  ) {
+  public broadcastGameEvent(mapId: string, tileX: number, tileY: number, event: GameEvent) {
     this.broadcastToAoi(mapId, tileX, tileY, { type: "game_event", event });
   }
 
   public broadcastMobUpdated(mob: MobEntity) {
-    this.broadcastToAoi(mob.mapId, mob.tileX, mob.tileY, {
-      type: "mob_updated",
-      mob: mob.toNetState(),
-    });
+    this.broadcastToAoi(mob.mapId, mob.tileX, mob.tileY, { type: "mob_updated", mob: mob.toNetState() });
   }
 
-  /** HP/MP autoritativos al jugador local (curas, gasto de maná, etc.). */
   public sendPlayerState(session: PlayerSession, options?: { includeAttributeBuffs?: boolean }) {
-    this.send(session, {
-      type: "player_updated",
-      player: session.toNetState(options),
-    });
+    this.send(session, { type: "player_updated", player: session.toNetState(options) });
   }
 
-  private broadcastPlayerState(
-    session: PlayerSession,
-    options?: { includeAttributeBuffs?: boolean }
-  ) {
-    const message: ServerMessage = {
-      type: "player_updated",
-      player: session.toNetState(options),
-    };
+  private broadcastPlayerState(session: PlayerSession, options?: { includeAttributeBuffs?: boolean }) {
+    const message: ServerMessage = { type: "player_updated", player: session.toNetState(options) };
     this.send(session, message);
     this.broadcastToAoi(session.mapId, session.tileX, session.tileY, message, session.id);
   }
@@ -2141,14 +1856,7 @@ export class WorldInstance implements WorldContext {
     }
   }
 
-  /** Jugadores en el mismo mapa dentro del radio AOI respecto a (tileX, tileY). */
-  public broadcastToAoi(
-    mapId: string,
-    tileX: number,
-    tileY: number,
-    message: ServerMessage,
-    exceptId?: string
-  ) {
+  public broadcastToAoi(mapId: string, tileX: number, tileY: number, message: ServerMessage, exceptId?: string) {
     for (const player of this.players.values()) {
       if (!player.joined || player.mapId !== mapId) continue;
       if (exceptId && player.id === exceptId) continue;
@@ -2170,50 +1878,128 @@ export class WorldInstance implements WorldContext {
     });
   }
 
-  public broadcastWorldItemState(
-    mapId: string,
-    tileX: number,
-    tileY: number,
-    record: import("./WorldItemRegistry").WorldItemRecord,
-    kind: "spawned" | "updated"
-  ) {
-    const item = this.worldItems.toNetState(record);
-    const message: ServerMessage =
-      kind === "spawned"
-        ? { type: "world_item_spawned", mapId, item }
-        : { type: "world_item_updated", mapId, item };
-    this.broadcastToAoi(mapId, tileX, tileY, message);
-  }
-
-  public broadcastWorldItemRemoved(
-    mapId: string,
-    tileX: number,
-    tileY: number,
-    worldItemId: string
-  ) {
-    this.broadcastToAoi(mapId, tileX, tileY, {
-      type: "world_item_removed",
-      mapId,
-      worldItemId,
+  public sendBankUpdated(session: PlayerSession): void {
+    this.send(session, {
+      type: "bank_updated",
+      bankGold: session.bankGold,
+      bankInventory: session.bankSlots.map((slot) => ({
+        slotIndex: slot.slotIndex,
+        itemId: slot.itemId,
+        amount: slot.amount,
+      })),
     });
   }
 
-  private unequipItemIdIfNeeded(session: PlayerSession, itemId: string) {
-    const keys = ["weaponId", "shieldId", "helmetId", "armorId"] as const;
-    for (const key of keys) {
-      if (session.equipment[key] === itemId) {
-        session.equipment[key] = null;
-      }
-    }
-    session.equipment.equippedOutfit =
-      outfitForArmorItemId(session.equipment.armorId) ?? "base";
-    session.recalcDefenseStats();
-    session.recalcAttackStats();
+  public sendSpellsUpdated(session: PlayerSession): void {
+    this.send(session, {
+      type: "spells_updated",
+      learnedSpellIds: [...session.learnedSpellIds],
+    });
   }
 
-  
+  public broadcastWorldItemState(mapId: string, tileX: number, tileY: number, record: import("./WorldItemRegistry").WorldItemRecord, kind: "spawned" | "updated") {
+    const item = this.worldItems.toNetState(record);
+    const message: ServerMessage = kind === "spawned" ? { type: "world_item_spawned", mapId, item } : { type: "world_item_updated", mapId, item };
+    this.broadcastToAoi(mapId, tileX, tileY, message);
+  }
 
-  
+  public broadcastWorldItemRemoved(mapId: string, tileX: number, tileY: number, worldItemId: string) {
+    this.broadcastToAoi(mapId, tileX, tileY, { type: "world_item_removed", mapId, worldItemId });
+  }
+
+  public syncAoiAfterMove(session: PlayerSession, oldX: number, oldY: number) { this.movementSystem.syncAoiAfterMove(session, oldX, oldY); }
+  public broadcastPlayerMoved(session: PlayerSession) { this.movementSystem.broadcastPlayerMoved(session); }
+  public buildWorldSnapshot(mapId: string): import("../../shared/protocol").WorldSnapshot {
+    const players: import("../../shared/types").NetPlayerState[] = [];
+    for (const player of this.players.values()) {
+      if (player.joined && player.mapId === mapId) players.push(player.toNetState());
+    }
+    const mobs: import("../../shared/types").NetMobState[] = [];
+    for (const mob of this.mobs.values()) {
+      if (mob.alive && mob.mapId === mapId) mobs.push(mob.toNetState());
+    }
+    const worldItems = this.worldItems.listForMap(mapId).map((item) => this.worldItems.toNetState(item));
+    return { tick: this.tick, mapId, players, mobs, worldItems };
+  }
+
+  public handlePartyAction(session: PlayerSession, message: import("../../shared/protocol").ClientPartyActionMessage) {
+    if (message.action === "invite") {
+      const target = [...this.players.values()].find(p => p.name.toLowerCase() === message.targetName?.toLowerCase());
+      if (!target || !target.joined) {
+        this.sendCombatLog(session, "No se encontró al jugador.");
+        return;
+      }
+      const res = this.partySystem.invite(session, target);
+      if (res.ok) {
+        this.sendCombatLog(session, `Invitación enviada a ${target.name}.`);
+        this.sendPartyInviteRequest(target, session);
+      } else {
+        this.sendCombatLog(session, res.reason);
+      }
+    } else if (message.action === "accept") {
+      const res = this.partySystem.acceptInvite(session, message.leaderId || "");
+      if (res.ok) this.broadcastPartyUpdate(res.party);
+      else this.sendCombatLog(session, res.reason);
+    } else if (message.action === "leave") {
+      const res = this.partySystem.leave(session);
+      if (res.ok) {
+        this.sendPartyUpdate(session, null);
+        if (!res.dissolved) {
+          const party = this.partySystem.getPartyForPlayer(res.oldParty.leaderId);
+          if (party) this.broadcastPartyUpdate(party);
+        } else {
+          for (const id of res.oldParty.memberIds) {
+            const member = this.players.get(id);
+            if (member) {
+              this.sendCombatLog(member, "El grupo ha sido disuelto.");
+              this.sendPartyUpdate(member, null);
+            }
+          }
+        }
+      } else this.sendCombatLog(session, res.reason);
+    } else if (message.action === "kick") {
+      const targetId = message.targetId || "";
+      const res = this.partySystem.kick(session, targetId);
+      if (res.ok) {
+        const kicked = this.players.get(res.kickedId);
+        if (kicked) {
+          this.sendCombatLog(kicked, "Fuiste expulsado del grupo.");
+          this.sendPartyUpdate(kicked, null);
+        }
+        this.broadcastPartyUpdate(res.party);
+      } else this.sendCombatLog(session, res.reason);
+    } else if (message.action === "dissolve") {
+      const res = this.partySystem.dissolve(session);
+      if (res.ok) {
+        for (const id of res.oldParty.memberIds) {
+          const member = this.players.get(id);
+          if (member) {
+            this.sendCombatLog(member, "El grupo ha sido disuelto.");
+            this.sendPartyUpdate(member, null);
+          }
+        }
+      } else this.sendCombatLog(session, res.reason);
+    }
+  }
+
+  private sendPartyInviteRequest(session: PlayerSession, leader: PlayerSession) {
+    this.send(session, { type: "party_invite_request", leaderId: leader.id, leaderName: leader.name });
+  }
+
+  private broadcastPartyUpdate(party: import("./systems/PartySystem").Party) {
+    const members = party.memberIds.map(id => {
+      const p = this.players.get(id);
+      return { id, name: p?.name || "Desconocido", level: p?.level || 1, hp: p?.hp || 0, hpMax: p?.hpMax || 1 };
+    });
+    for (const id of party.memberIds) {
+      const member = this.players.get(id);
+      if (member) this.send(member, { type: "party_update", partyId: party.id, leaderId: party.leaderId, members });
+    }
+  }
+
+  private sendPartyUpdate(session: PlayerSession, party: import("./systems/PartySystem").Party | null) {
+    if (!party) this.send(session, { type: "party_update", partyId: null, leaderId: null, members: [] });
+  }
 
   private spawnDeathLootAt(
     mapId: string,
@@ -2235,187 +2021,4 @@ export class WorldInstance implements WorldContext {
     const kind = before?.id === record.id ? "updated" : "spawned";
     this.broadcastWorldItemState(mapId, tileX, tileY, record, kind);
   }
-
-  public dropPlayerDeathLoot(session: PlayerSession) {
-    if (!MULTIPLAYER_SERVER_MAP_IDS.has(session.mapId)) {
-      return;
-    }
-    if (session.deathLootProcessed) {
-      return;
-    }
-    session.deathLootProcessed = true;
-
-    session.inventorySlots = sanitizeJoinInventory(session.inventorySlots);
-    this.syncInventoryEquippedFlags(session);
-
-    const mapId = session.mapId;
-    const originX = session.tileX;
-    const originY = session.tileY;
-
-    const lootStacks = collectDeathLootStacks(
-      session.inventorySlots,
-      session.equipment,
-      {
-        isKnownItemId: (itemId) => isKnownItemId(itemId),
-        itemDropsOnDeath: (itemId) => itemDropsOnDeath(getItemDefinition(itemId as ItemId)),
-        addOrphanToInventory: (itemId) => {
-          const { added } = addToServerInventory(session.inventorySlots, itemId, 1);
-          return added > 0;
-        },
-      }
-    );
-
-    for (const slot of session.inventorySlots) {
-      if (!slot.itemId || slot.amount <= 0) continue;
-      if (!isKnownItemId(slot.itemId)) {
-        slot.itemId = null;
-        slot.amount = 0;
-        slot.isEquipped = false;
-        continue;
-      }
-      const item = getItemDefinition(slot.itemId as ItemId);
-      if (!itemDropsOnDeath(item)) continue;
-      slot.itemId = null;
-      slot.amount = 0;
-      slot.isEquipped = false;
-    }
-
-    session.equipment.weaponId = null;
-    session.equipment.shieldId = null;
-    session.equipment.helmetId = null;
-    session.equipment.armorId = null;
-    session.equipment.equippedOutfit =
-      outfitForArmorItemId(session.equipment.armorId) ?? "base";
-    this.syncInventoryEquippedFlags(session);
-    session.recalcDefenseStats();
-    session.recalcAttackStats();
-
-    const occupied = new Set<string>();
-    for (const worldItem of this.worldItems.listForMap(mapId)) {
-      occupied.add(`${worldItem.tileX},${worldItem.tileY}`);
-    }
-
-    const canDrop = (tileX: number, tileY: number) =>
-      isWorldItemDropTileAllowed(mapId, tileX, tileY, (x, y) =>
-        isMapTileWalkable(mapId, x, y, this.tileOverridesByMap.get(mapId))
-      ) && !occupied.has(`${tileX},${tileY}`);
-
-    for (const stack of lootStacks) {
-      const dropTile = findNearestWalkableDropTile(originX, originY, canDrop, 32);
-      if (!dropTile) {
-        continue;
-      }
-      occupied.add(`${dropTile.tileX},${dropTile.tileY}`);
-      this.spawnDeathLootAt(
-        mapId,
-        stack.itemId,
-        stack.amount,
-        dropTile.tileX,
-        dropTile.tileY
-      );
-    }
-  }
-
-  public grantMobKillGold(killer: PlayerSession, mob: MobEntity): void {
-    if (mob.goldReward <= 0) {
-      return;
-    }
-    if (!MULTIPLAYER_SERVER_MAP_IDS.has(killer.mapId) || killer.mapId !== mob.mapId) {
-      return;
-    }
-
-    killer.gold += mob.goldReward;
-    this.sendCombatLog(
-      killer,
-      `Obtuviste ${mob.goldReward.toLocaleString("es-AR")} de oro por derrotar a ${mob.name}.`
-    );
-    this.sendInventoryUpdated(killer);
-    void this.persistSession(killer).catch((error) => {
-      console.error("[mob_kill_gold] persist failed:", error);
-    });
-  }
-
-  public grantMobKillExp(killer: PlayerSession, mob: MobEntity): void {
-    if (mob.expReward <= 0) {
-      return;
-    }
-    if (!MULTIPLAYER_SERVER_MAP_IDS.has(killer.mapId) || killer.mapId !== mob.mapId) {
-      return;
-    }
-
-    const previousLevel = killer.level;
-    const result = applyExpGain(killer.level, killer.exp, killer.expToNext, mob.expReward);
-    killer.level = result.level;
-    killer.exp = result.exp;
-    killer.expToNext = result.expToNext;
-
-    this.sendCombatLog(
-      killer,
-      `Ganaste ${mob.expReward.toLocaleString("es-AR")} de experiencia por derrotar a ${mob.name}.`
-    );
-
-    if (result.levelsGained > 0) {
-      if (!killer.isAdmin()) {
-        const patch = applyLevelUpVitals({
-          race: killer.raceId,
-          classId: killer.classId as CharacterClassId,
-          previousLevel,
-          newLevel: killer.level,
-          currentHp: killer.hp,
-          currentMp: killer.mp,
-          healToNewMax: false,
-        });
-        killer.hpMax = patch.hpMax;
-        killer.mpMax = patch.mpMax;
-        killer.hp = patch.hp;
-        killer.mp = patch.mp;
-      } else {
-        killer.assignRoleByName();
-      }
-      this.sendCombatLog(killer, `¡Subiste al nivel ${killer.level}!`);
-      this.sendPlayerState(killer);
-    }
-
-    this.sendPlayerProgressUpdated(killer);
-    void this.persistSession(killer).catch((error) => {
-      console.error("[mob_kill_exp] persist failed:", error);
-    });
-  }
-
-  public sendPlayerProgressUpdated(session: PlayerSession): void {
-    this.send(session, {
-      type: "player_progress_updated",
-      exp: session.exp,
-      expToNext: session.expToNext,
-      level: session.level,
-    });
-  }
-
-  
-
-  public syncAoiAfterMove(session: PlayerSession, oldX: number, oldY: number) { this.movementSystem.syncAoiAfterMove(session, oldX, oldY); }
-  public broadcastPlayerMoved(session: PlayerSession) { this.movementSystem.broadcastPlayerMoved(session); }
-  public buildWorldSnapshot(mapId: string): import("../../shared/protocol").WorldSnapshot {
-    const players: import("../../shared/types").NetPlayerState[] = [];
-    for (const player of this.players.values()) {
-      if (player.joined && player.mapId === mapId) {
-        players.push(player.toNetState());
-      }
-    }
-    const mobs: import("../../shared/types").NetMobState[] = [];
-    for (const mob of this.mobs.values()) {
-      if (mob.alive && mob.mapId === mapId) {
-        mobs.push(mob.toNetState());
-      }
-    }
-    const worldItems = this.worldItems.listForMap(mapId).map((item) => this.worldItems.toNetState(item));
-    return {
-      tick: this.tick,
-      mapId,
-      players,
-      mobs,
-      worldItems,
-    };
-  }
-
 }

@@ -233,15 +233,6 @@ export function getAowebSkinLayout(): AowebSkinLayout {
   return getAowebSkinLayoutForVariant(getAowebSkinVariant());
 }
 
-/** @deprecated Usar getAowebSkinLayout().native */
-export const AOWEB_SKIN_NATIVE = AOWEB_SKIN_LAYOUT_LIGHT.native;
-
-/** @deprecated Usar getAowebSkinLayout().inventoryCell */
-export const AOWEB_SKIN_INVENTORY_CELL = AOWEB_SKIN_LAYOUT_LIGHT.inventoryCell;
-
-/** @deprecated Usar getAowebSkinLayout().regions */
-export const AOWEB_SKIN_REGIONS = AOWEB_SKIN_LAYOUT_LIGHT.regions;
-
 export function getAowebSkinRegions() {
   return getAowebSkinLayout().regions;
 }

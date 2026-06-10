@@ -27,9 +27,6 @@ export {
   type AowebUiSkinVariant,
 } from "./aowebSkinVariant";
 
-/** @deprecated Usar getAowebSkinTextureKey() */
-export const AOWEB_SKIN_TEXTURE_KEY = getAowebSkinTextureKey("dark");
-
 export const AOWEB_SKIN_FALLBACK_SIZE = { w: 1449, h: 1085 };
 
 /** Regiones del PNG 128×32 (medidas sobre lvlNameExp.png). */

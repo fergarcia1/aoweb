@@ -1,7 +1,7 @@
 import type Phaser from "phaser";
 import { STEP_DURATION_MS } from "../../config";
 import type { Facing } from "../../player/playerSprites";
-import type { MobModelId } from "../../data/mobs";
+import type { MobModelId } from "../../../game-data/mobs";
 import {
   MOB_DEFAULT_MOVE_SPEED_RATIO,
   MOB_VISUAL_CONFIGS,

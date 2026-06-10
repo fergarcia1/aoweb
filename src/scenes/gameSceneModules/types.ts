@@ -2,8 +2,8 @@ import type Phaser from "phaser";
 import type { CharacterGenderId, CharacterRaceId } from "../../data/characters";
 import type { MacroActionType } from "../../ui/gameUi";
 import type { Facing } from "../../player/playerSprites";
-import type { ItemId } from "../../items/itemDefinitions";
-import type { MobBehavior, MobDropConfig, MobModelId, MobSpawnConfig } from "../../data/mobs";
+import type { ItemId } from "../../../game-data/items/definitions";
+import type { MobBehavior, MobDropConfig, MobModelId, MobSpawnConfig } from "../../../game-data/mobs";
 import type { ImperiumNpcBodySpriteConfig } from "../../game/npcs/imperiumNpcVisual";
 
 export type MoveDirection = {
@@ -81,6 +81,8 @@ export type PlayerCombatSnapshot = {
   attackMax: number;
   damageReductionPercent: number;
   magicResistancePercent: number;
+  shieldBlockChancePercent: number;
+  shieldBlockReductionPercent: number;
   magicDamageBonusPercent: number;
   weaponCanCrit: boolean;
   weaponCritChance: number;

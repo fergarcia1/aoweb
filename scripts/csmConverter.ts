@@ -121,13 +121,13 @@ export function convertCsm(csmPath: string, outputPath: string, mapId: string) {
     if (x >= 0 && x < width && y >= 0 && y < height) L4[x][y] = grh;
   }
 
-  // Skip others to reach TE
+  // Skip others to reach TE. In these CSM files, OBJs are stored before NPCs.
   const skipTriggers = header.numeroTriggers * 6;
   const skipLuces = header.numeroLuces * 11;
   const skipParticulas = header.numeroParticulas * 8;
-  const skipNPCs = header.numeroNPCs * 6;
   const skipOBJs = header.numeroOBJs * 8;
-  offset += skipTriggers + skipLuces + skipParticulas + skipNPCs + skipOBJs;
+  const skipNPCs = header.numeroNPCs * 6;
+  offset += skipTriggers + skipLuces + skipParticulas + skipOBJs + skipNPCs;
 
   // TE (Traslados)
   const transitions: any[] = [];

@@ -1,7 +1,8 @@
 const fs = require('fs');
 const path = require('path');
 
-const srcDir = 'C:/Users/imaga/Desktop/imperiumclassic/Imperium-Clasico/Fixtures/Recursos descomprimidos/Mapas';
+const srcDir = 'C:/Users/imaga/Desktop/Imperium-Clasico/Fixtures/Recursos descomprimidos/Mapas';
+const objPath = 'C:/Users/imaga/Desktop/Imperium-Clasico/Fixtures/Recursos descomprimidos/DATS/Obj.dat';
 const destDir = 'C:/Users/imaga/Desktop/AOWEB/src/maps';
 
 function getString(buf, offsetObj, fixedLen = -1) {
@@ -181,11 +182,6 @@ function parseMap(mapId) {
   for (let i = 0; i < numParticulas; i++) {
     getInt16(buf, offset); getInt16(buf, offset); getInt32(buf, offset);
   }
-  // Skip NPCs
-  for (let i = 0; i < numNPCs; i++) {
-    getInt16(buf, offset); getInt16(buf, offset); getInt16(buf, offset);
-  }
-
   // Parse OBJs
   const objs = [];
   for (let i = 0; i < numOBJs; i++) {
@@ -196,6 +192,11 @@ function parseMap(mapId) {
     if (x >= 0 && x < 100 && y >= 0 && y < 100) {
       objs.push({ tileX: x, tileY: y, objIndex, objAmount });
     }
+  }
+
+  // Skip NPCs. In the CSM files we use, OBJs are stored before NPCs.
+  for (let i = 0; i < numNPCs; i++) {
+    getInt16(buf, offset); getInt16(buf, offset); getInt16(buf, offset);
   }
 
 
@@ -264,6 +265,6 @@ export const MAP_MAPA${mapId}: GameMap = {
   console.log(`Successfully converted mapa${mapId}.ts!`);
 }
 
-for (let i = 1; i <= 10; i++) {
+for (let i = 1; i <= 256; i++) {
   parseMap(i);
 }

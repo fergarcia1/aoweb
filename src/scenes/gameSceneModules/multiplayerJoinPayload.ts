@@ -1,6 +1,6 @@
 import type { ClientJoinMessage } from "../../../shared/protocol";
 import type { Facing } from "../../player/playerSprites";
-import type { ItemId } from "../../items/itemDefinitions";
+import type { ItemId } from "../../../game-data/items/definitions";
 import type { NetPlayerEquipment } from "../../../shared/types";
 
 export type MultiplayerJoinPayloadInput = {

@@ -1,7 +1,7 @@
 import type Phaser from "phaser";
 import { TILE_SIZE } from "../../config";
 import { isAdminCharacterName, type PlayerRole } from "../../data/characters";
-import type { ItemId } from "../../items/itemDefinitions";
+import type { ItemId } from "../../../game-data/items/definitions";
 import { MultiplayerBridge } from "../../network/MultiplayerBridge";
 import { tileToFeetWorld } from "../../player/playerSprites";
 import type { NetInventorySlotState, ServerUseItemAckMessage } from "../../../shared/protocol";
@@ -30,6 +30,7 @@ export type GameSceneMultiplayerDeps = {
   depthFromFeetY: (feetY: number) => number;
 
   getCurrentMapId: () => string;
+  isChangingMap: () => boolean;
   getPlayerName: () => string;
   getCharacterId: () => string;
   getIsNewCharacterForJoin: () => boolean;
@@ -67,6 +68,11 @@ export type GameSceneMultiplayerDeps = {
   setMultiplayerStatus: (message: string) => void;
   addChatLine: (text: string) => void;
   addCombatLine: (text: string) => void;
+  playLevelUpSound: () => void;
+  playGoldDropSound: () => void;
+  playAirHitSound: () => void;
+  getWorldInteractiveCursor: () => string;
+  syncWorldInteractiveCursors: () => void;
 
   syncLocalVitalsFromServer: (state: NetPlayerState | null | undefined) => void;
   syncLocalEquipmentFromServer: (state: NetPlayerState | null | undefined) => void;
@@ -92,6 +98,8 @@ export type GameSceneMultiplayerDeps = {
   onLogoutComplete: () => void;
   handleServerUseItemAck: (ack: ServerUseItemAckMessage) => void;
   handleServerPlayerUpdated: (state: NetPlayerState) => void;
+  handleServerPartyUpdate: (message: import("../../../shared/protocol").ServerPartyUpdateMessage) => void;
+  handleServerPartyInviteRequest: (message: import("../../../shared/protocol").ServerPartyInviteRequestMessage) => void;
 
   applyServerPlayerRole: (serverRole?: PlayerRole) => void;
   isAdminCharacterName: (name: string) => boolean;
@@ -112,7 +120,23 @@ export type GameSceneMultiplayerDeps = {
     amount: number,
     source: "player" | "mob"
   ) => void;
-  playSpellEffect: (spellId: number, tileX: number, tileY: number) => void;
+  showHealNumber: (
+    x: number,
+    y: number,
+    amount: number,
+    source: "player" | "mob"
+  ) => void;
+  playSpellEffect: (
+    spellId: number,
+    tileX: number,
+    tileY: number,
+    playSound?: boolean
+  ) => void;
+  shouldPlayWorldSound: (
+    sourceTileX: number,
+    sourceTileY: number,
+    sourcePlayerId?: string | null
+  ) => boolean;
   playSpawnEffectAtTile: (tileX: number, tileY: number) => void;
   startResurrectChannelEffect: (
     casterId: string,
@@ -187,6 +211,19 @@ export class GameSceneMultiplayerController {
     return this.bridge?.getPlayerId() ?? null;
   }
 
+  getLocalPlayerId(): string | null {
+    return this.getPlayerId();
+  }
+
+  sendPartyAction(
+    action: Extract<import("../../../shared/protocol").ClientMessage, { type: "party_action" }>["action"],
+    targetName?: string,
+    leaderId?: string,
+    targetId?: string
+  ): void {
+    this.bridge?.sendPartyAction(action, targetName, leaderId, targetId);
+  }
+
   connect(): void {
     this.disconnect();
     this.bridge = new MultiplayerBridge(
@@ -197,6 +234,15 @@ export class GameSceneMultiplayerController {
         onStatus: (message) => this.deps.setMultiplayerStatus(message),
         onChatLine: (text) => this.deps.addChatLine(text),
         onCombatLine: (text) => {
+          if (/subiste al nivel/i.test(text)) {
+            this.deps.playLevelUpSound();
+          }
+          if (/^tiraste .+ de oro/i.test(text)) {
+            this.deps.playGoldDropSound();
+          }
+          if (text === "No hay nadie para golpear.") {
+            this.deps.playAirHitSound();
+          }
           this.deps.addCombatLine(text);
         },
         onWelcome: (welcome) => {
@@ -216,9 +262,14 @@ export class GameSceneMultiplayerController {
             );
           }
         },
-        onSnapshot: (snapshot) => this.onWorldSnapshot(snapshot),
+        getWorldInteractiveCursor: () => this.deps.getWorldInteractiveCursor(),
+        onSnapshot: (snapshot) => {
+          this.onWorldSnapshot(snapshot);
+          this.deps.syncWorldInteractiveCursors();
+        },
         onPlayerJoined: (player) => {
           this.bridge?.updateRemote(player, this.deps.getCurrentMapId());
+          this.deps.syncWorldInteractiveCursors();
         },
         onPlayerLeft: () => {},
         onPlayerMoved: (player) => this.onPlayerMoved(player),
@@ -251,6 +302,8 @@ export class GameSceneMultiplayerController {
           this.deps.applyWorldItemUpdated(mapId, item),
         onWorldItemRemoved: (mapId, worldItemId) =>
           this.deps.applyWorldItemRemoved(mapId, worldItemId),
+        onPartyUpdate: (message) => this.deps.handleServerPartyUpdate(message),
+        onPartyInviteRequest: (message) => this.deps.handleServerPartyInviteRequest(message),
         getJoinPayload: () => {
           const progress = this.deps.getPlayerProgress();
           return buildMultiplayerJoinPayload({
@@ -323,8 +376,19 @@ export class GameSceneMultiplayerController {
     this.bridge?.sendAttack(facing);
   }
 
+  prepareForMapTransition(): void {
+    this.networkMovePending = false;
+    this.deps.killPlayerTweens();
+    this.deps.setIsMoving(false);
+  }
+
   tryNetworkStep(dir: MoveDirection): void {
-    if (!this.isActive() || this.deps.isMoving() || this.networkMovePending) {
+    if (
+      !this.isActive() ||
+      this.deps.isChangingMap() ||
+      this.deps.isMoving() ||
+      this.networkMovePending
+    ) {
       return;
     }
 
@@ -357,6 +421,20 @@ export class GameSceneMultiplayerController {
 
   /** Animación inmediata del paso (predicción cliente); el servidor confirma con player_moved. */
   private startLocalStepTween(tileX: number, tileY: number, facing: Facing): void {
+    if (this.deps.isChangingMap()) {
+      this.networkMovePending = false;
+      this.deps.setPlayerTile(tileX, tileY);
+      this.deps.setFacing(facing);
+      this.snapLocalPlayerToTile({
+        id: this.bridge?.getPlayerId() ?? "",
+        tileX,
+        tileY,
+        facing,
+        mapId: this.deps.getCurrentMapId(),
+      } as NetPlayerState);
+      return;
+    }
+
     this.deps.killPlayerTweens();
     this.deps.setPlayerTile(tileX, tileY);
     this.deps.setFacing(facing);
@@ -462,11 +540,11 @@ export class GameSceneMultiplayerController {
     this.bridge?.sendBankAction(action, amount, slotIndex);
   }
 
-  sendShopBuy(role: "blacksmith" | "armorer" | "tailor" | "alchemist" | "mage", itemId: string, amount: number): void {
+  sendShopBuy(role: Extract<import("../../../shared/protocol").ClientMessage, { type: "shop_buy" }>["role"], itemId: string, amount: number): void {
     this.bridge?.sendShopBuy(role, itemId, amount);
   }
 
-  sendShopSell(role: "blacksmith" | "armorer" | "tailor" | "alchemist" | "mage", inventorySlot: number, amount: number): void {
+  sendShopSell(role: Extract<import("../../../shared/protocol").ClientMessage, { type: "shop_sell" }>["role"], inventorySlot: number, amount: number): void {
     this.bridge?.sendShopSell(role, inventorySlot, amount);
   }
 
@@ -503,6 +581,7 @@ export class GameSceneMultiplayerController {
       return;
     }
     this.bridge?.updateRemote(player, this.deps.getCurrentMapId());
+    this.deps.refreshMinimap();
   }
 
   onGameEvent(event: GameEvent): void {
@@ -510,7 +589,14 @@ export class GameSceneMultiplayerController {
       if (this.deps.scene.time.now < this.deps.getSuppressServerSpellFxUntil()) {
         return;
       }
-      this.deps.playSpellEffect(event.spellId, event.tileX, event.tileY);
+      const spellSourceX = event.sourceTileX ?? event.tileX;
+      const spellSourceY = event.sourceTileY ?? event.tileY;
+      const spellAudible = this.deps.shouldPlayWorldSound(
+        spellSourceX,
+        spellSourceY,
+        event.sourcePlayerId
+      );
+      this.deps.playSpellEffect(event.spellId, event.tileX, event.tileY, spellAudible);
       return;
     }
 
@@ -566,25 +652,72 @@ export class GameSceneMultiplayerController {
       return;
     }
 
+    if (event.kind === "heal") {
+      const sourceX = event.sourceTileX ?? event.tileX;
+      const sourceY = event.sourceTileY ?? event.tileY;
+      const { x: worldX, y: worldY } = tileToFeetWorld(sourceX, sourceY, TILE_SIZE);
+      
+      const healerId = event.sourcePlayerId;
+      const isLocalHealer = healerId === this.bridge?.getPlayerId();
+      
+      if (isLocalHealer) {
+        const player = this.deps.getPlayerSprite();
+        this.deps.showHealNumber(player.x, player.y - 44, event.amount, "player");
+      } else if (healerId) {
+        const remoteSprite = this.bridge?.getRemotePlayers()?.getPlayerSprite(healerId);
+        if (remoteSprite) {
+          this.deps.showHealNumber(remoteSprite.x, remoteSprite.y - 38, event.amount, "player");
+        } else {
+          this.deps.showHealNumber(worldX, worldY - 38, event.amount, "player");
+        }
+      } else {
+        this.deps.showHealNumber(worldX, worldY - 38, event.amount, "player");
+      }
+      return;
+    }
+
     if (event.kind !== "damage") {
       return;
     }
 
     const { x, y } = tileToFeetWorld(event.tileX, event.tileY, TILE_SIZE);
+    const sourceX = event.sourceTileX ?? event.tileX;
+    const sourceY = event.sourceTileY ?? event.tileY;
+    const { x: sourceWorldX, y: sourceWorldY } = tileToFeetWorld(sourceX, sourceY, TILE_SIZE);
 
     if (event.targetKind === "mob") {
       const dummy = this.deps.findDummyById(event.targetId);
       if (dummy?.alive) {
         if (event.amount > 0) {
-          this.deps.playMobHitSoundForId(event.targetId);
+          if (
+            this.deps.shouldPlayWorldSound(sourceX, sourceY, event.sourcePlayerId)
+          ) {
+            this.deps.playMobHitSoundForId(event.targetId);
+          }
         }
-        this.deps.showDamageNumber(dummy.sprite.x, dummy.sprite.y - 38, event.amount, "player");
+        
+        const isLocalAttacker = event.sourcePlayerId === this.bridge?.getPlayerId();
+        if (isLocalAttacker) {
+          const player = this.deps.getPlayerSprite();
+          this.deps.showDamageNumber(player.x, player.y - 44, event.amount, "player");
+        } else if (event.sourcePlayerId) {
+          const remoteSprite = this.bridge?.getRemotePlayers()?.getPlayerSprite(event.sourcePlayerId);
+          if (remoteSprite) {
+            this.deps.showDamageNumber(remoteSprite.x, remoteSprite.y - 38, event.amount, "player");
+          } else {
+            this.deps.showDamageNumber(sourceWorldX, sourceWorldY - 38, event.amount, "player");
+          }
+        } else {
+          // Si no hay sourcePlayerId, asumimos que fue un mob o trampa en ese tile de origen
+          this.deps.showDamageNumber(sourceWorldX, sourceWorldY - 38, event.amount, "player");
+        }
+
         this.deps.tintDummySprite(dummy, 0xe4b270);
         this.deps.scene.time.delayedCall(90, () => {
           this.deps.clearDummyTint(dummy);
         });
       } else {
-        this.deps.showDamageNumber(x, y - 38, event.amount, "player");
+        this.deps.showDamageNumber(sourceWorldX, sourceWorldY - 38, event.amount, "player");
       }
       return;
     }
@@ -593,25 +726,50 @@ export class GameSceneMultiplayerController {
       return;
     }
 
+    // El objetivo es el jugador local
     if (event.targetId === this.bridge?.getPlayerId()) {
       const damage = Math.max(0, Math.floor(event.amount));
       if (damage > 0) {
-        const player = this.deps.getPlayerSprite();
-        // El HP lo sincroniza player_updated (daño ya mitigado en servidor).
-        this.deps.showDamageNumber(player.x, player.y - 44, damage, "mob");
+        // En este caso, el origen del daño suele ser un mob o un enemigo
+        if (event.sourcePlayerId) {
+          const remoteSprite = this.bridge?.getRemotePlayers()?.getPlayerSprite(event.sourcePlayerId);
+          if (remoteSprite) {
+            this.deps.showDamageNumber(remoteSprite.x, remoteSprite.y - 38, damage, "player");
+          } else {
+            this.deps.showDamageNumber(sourceWorldX, sourceWorldY - 38, damage, "player");
+          }
+        } else {
+          // Si no hay sourcePlayerId, probablemente un mob (usamos sourceWorldX/Y)
+          this.deps.showDamageNumber(sourceWorldX, sourceWorldY - 38, damage, "mob");
+        }
       }
       return;
     }
 
+    // El objetivo es un jugador remoto
     const remoteSprite = this.bridge?.getRemotePlayers()?.getPlayerSprite(event.targetId);
     if (remoteSprite) {
-      this.deps.showDamageNumber(remoteSprite.x, remoteSprite.y - 38, event.amount, "player");
+      const isLocalAttacker = event.sourcePlayerId === this.bridge?.getPlayerId();
+      if (isLocalAttacker) {
+        const player = this.deps.getPlayerSprite();
+        this.deps.showDamageNumber(player.x, player.y - 44, event.amount, "player");
+      } else if (event.sourcePlayerId) {
+        const attackerSprite = this.bridge?.getRemotePlayers()?.getPlayerSprite(event.sourcePlayerId);
+        if (attackerSprite) {
+          this.deps.showDamageNumber(attackerSprite.x, attackerSprite.y - 38, event.amount, "player");
+        } else {
+          this.deps.showDamageNumber(sourceWorldX, sourceWorldY - 38, event.amount, "player");
+        }
+      } else {
+        this.deps.showDamageNumber(sourceWorldX, sourceWorldY - 38, event.amount, "player");
+      }
+
       remoteSprite.setTint(0xff4444);
       this.deps.scene.time.delayedCall(90, () => {
         remoteSprite.clearTint();
       });
     } else {
-      this.deps.showDamageNumber(x, y - 38, event.amount, "player");
+      this.deps.showDamageNumber(sourceWorldX, sourceWorldY - 38, event.amount, "player");
     }
   }
 
@@ -632,6 +790,12 @@ export class GameSceneMultiplayerController {
   }
 
   syncLocalPlayerFromServer(state: NetPlayerState): void {
+    if (this.deps.isChangingMap()) {
+      this.networkMovePending = false;
+      this.snapLocalPlayerToTile(state);
+      return;
+    }
+
     if (state.mapId !== this.deps.getCurrentMapId()) {
       this.networkMovePending = false;
       this.deps.applyMapTransition(

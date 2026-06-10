@@ -1,9 +1,10 @@
-import Phaser from "phaser";
+﻿import Phaser from "phaser";
 import {
   isMinimapLegacyRoofTile,
   MINIMAP_LEGACY_ROOF_COLOR,
 } from "../../shared/mapWalkability";
 import { computeMinimapCellSize, minimapTileCenterPx } from "../../shared/minimapLayout";
+import { isWaterTile } from "../../shared/navigation";
 import { getTileDefinition, TILE } from "../maps/tileDefinitions";
 import type { GameMap } from "../maps/types";
 import type { SpellDefinition } from "../data/spells";
@@ -11,6 +12,7 @@ import { GAME_FONT, GAME_TEXT_RESOLUTION } from "./fonts";
 import { isPhaserObjectLive } from "./phaserObjectUtils";
 import { getGameViewport, UI_LAYOUT } from "./layout";
 import { createInventoryPanel, type InventoryPanel } from "./inventoryPanel";
+import { PartyOverlay } from "./partyOverlay";
 import {
   type AowebUiSkinVariant,
   FONDO_BOTONES_FALLBACK_SIZE,
@@ -67,11 +69,12 @@ const INVENTORY_SLOT_SCALE = 1.12;
 /** Fracción del casillero que ocupa el ícono (ancho/alto). */
 const INVENTORY_ICON_FILL = 0.9;
 const INVENTORY_GAP = 1;
-const SPELL_ROW_HEIGHT = 18;
-const SPELL_ROW_GAP = 5;
+const SPELL_ROW_HEIGHT = 14;
+const SPELL_ROW_GAP = 2;
 const SPELL_MIN_VISIBLE_ROWS = 8;
-const SPELL_PANEL_FOOTER = 44;
-const SPELL_PANEL_FOOTER_SKIN = 30;
+const SPELL_PANEL_FOOTER = 40;
+const SPELL_PANEL_FOOTER_SKIN = 26;
+const SPELL_SKIN_CONTROL_COL_W = 22;
 const SPELL_MAX_VISIBLE_ROWS = 12;
 const INVENTORY_PADDING = 20;
 const MINIMAP_SIZE = 112;
@@ -85,6 +88,9 @@ const VITAL_BAR_LABEL_FONT_SIZES = [11, 10, 9] as const;
 const VITAL_BAR_LABEL_STROKE = "#1a1208";
 const VITAL_BAR_LABEL_STROKE_THICKNESS = 4;
 const VITAL_BAR_LABEL_RESOLUTION = 3;
+const EXP_LABEL_SKIN_FONT_SIZES = [10, 9, 8] as const;
+/** Desplazamiento vertical del texto de EXP respecto al centro del slot (px nativos skin). */
+const EXP_LABEL_SKIN_Y_OFFSET = 25;
 
 const ATTRIBUTE_STAT_COLOR_DEFAULT = "#f2d188";
 const ATTRIBUTE_STAT_COLOR_DEFAULT_LEGACY = "#f5d76e";
@@ -229,6 +235,8 @@ export class GameUi {
   private activeChatTab: ChatTabId = "chat";
   private chatInputValue = "";
   private chatFocused = false;
+  private sentChatHistory: string[] = [];
+  private sentChatHistoryIndex = -1;
   private chatTextArea = { x: 0, y: 0, w: 0, h: 0 };
   private chatScrollOffset = 0;
 
@@ -379,6 +387,7 @@ export class GameUi {
   private selectedSpellIndex = 0;
   private spellInfoRequestHandler?: (spell: SpellInfoRequest) => void;
   private spellCastRequestHandler?: (spell: SpellInfoRequest) => void;
+  private spellOrderChangeHandler?: (orderedSpellIds: number[]) => void;
   private chatSubmitHandler?: (message: string) => boolean | void;
   private goldClickHandler?: () => void;
 
@@ -430,6 +439,7 @@ export class GameUi {
   private expBarGeom: BarGeom = { x: 0, y: 0, w: 0, h: 8 };
   private expSlotGeom: BarGeom = { x: 0, y: 0, w: 0, h: 8 };
   private expLabelFontPx = 8;
+  private expLabelYOffset = 0;
   private hpBarGeom: BarGeom = { x: 0, y: 0, w: 0, h: 10 };
   private mpBarGeom: BarGeom = { x: 0, y: 0, w: 0, h: 10 };
   private minimapGeom = { x: 0, y: 0, w: 0, h: 0 };
@@ -437,6 +447,8 @@ export class GameUi {
   private fullscreenBtnBg!: Phaser.GameObjects.Image;
   private fullscreenBtnHit!: Phaser.GameObjects.Graphics;
   private fullscreenBtnLabel!: Phaser.GameObjects.Text;
+  private partyOverlay!: PartyOverlay;
+  private partyMemberIds = new Set<string>();
 
   getContainer(): Phaser.GameObjects.Container {
     return this.root;
@@ -797,9 +809,16 @@ export class GameUi {
   }
 
   setSpells(spells: SpellDefinition[]) {
+    const previousSpellId =
+      this.selectedSpellIndex >= 0 ? this.spells[this.selectedSpellIndex]?.idSpell : null;
     this.spells = [...spells];
-    this.spellScrollOffset = 0;
-    this.selectedSpellIndex = this.spells.length > 0 ? 0 : -1;
+    if (previousSpellId != null) {
+      const nextIndex = this.spells.findIndex((spell) => spell.idSpell === previousSpellId);
+      this.selectedSpellIndex = nextIndex >= 0 ? nextIndex : this.spells.length > 0 ? 0 : -1;
+    } else {
+      this.selectedSpellIndex = this.spells.length > 0 ? 0 : -1;
+    }
+    this.ensureSelectedSpellVisible();
     this.relayout();
   }
 
@@ -864,6 +883,40 @@ export class GameUi {
       this.layoutInventoryOptionsMenu();
       this.root.bringToTop(this.inventoryOptionsMenu);
     }
+  }
+
+  handleServerPartyUpdate(message: import("../../shared/protocol").ServerPartyUpdateMessage) {
+    this.partyMemberIds = new Set(message.members.map((member) => member.id));
+    this.partyOverlay.updateParty(message.partyId, message.leaderId, message.members);
+    this.minimapRedrawHandler?.();
+  }
+
+  getPartyMemberIds(): ReadonlySet<string> {
+    return this.partyMemberIds;
+  }
+
+  handleServerPartyInviteRequest(message: import("../../shared/protocol").ServerPartyInviteRequestMessage) {
+    this.showConfirm(
+      `${message.leaderName} te invita a su grupo.`,
+      () => this.scene.events.emit("ui-party-action", { action: "accept", leaderId: message.leaderId }),
+      () => {}
+    );
+  }
+
+  togglePartyOverlay() {
+    if (this.partyOverlay.isOpen()) {
+      this.partyOverlay.hide();
+      return;
+    }
+    this.scene.events.emit("ui-request-party-show");
+  }
+
+  showPartyOverlay(localPlayerId: string | null) {
+    this.partyOverlay.show(localPlayerId);
+  }
+
+  isPartyOverlayOpen() {
+    return this.partyOverlay.isOpen();
   }
 
   private toggleInventoryOptionsMenu() {
@@ -942,6 +995,10 @@ export class GameUi {
     this.spellCastRequestHandler = handler;
   }
 
+  setSpellOrderChangeHandler(handler: (orderedSpellIds: number[]) => void) {
+    this.spellOrderChangeHandler = handler;
+  }
+
   getSelectedSpellForMacro(): SpellInfoRequest | null {
     const spell = this.getSelectedSpell();
     if (!spell) return null;
@@ -994,7 +1051,8 @@ export class GameUi {
     map: GameMap,
     playerTileX: number,
     playerTileY: number,
-    bounds?: { minTileX: number; minTileY: number; maxTileX: number; maxTileY: number }
+    bounds?: { minTileX: number; minTileY: number; maxTileX: number; maxTileY: number },
+    partyMembers: Array<{ tileX: number; tileY: number }> = []
   ) {
     const g = this.minimapGfx;
     const { x, y, w, h } = this.getMinimapDrawRect();
@@ -1034,7 +1092,7 @@ export class GameUi {
         const def = getTileDefinition(tileId);
         let color = def.color;
 
-        if (tileId === TILE.WATER) {
+        if (isWaterTile(map, tx, ty)) {
           color = 0x2a6a9e;
         } else if (tileId === TILE.DIRT) {
           color = 0x6b5238;
@@ -1068,6 +1126,23 @@ export class GameUi {
     const px = x + minimapTileCenterPx(clampedPlayerX, minTileX, cell, originX);
     const py = y + minimapTileCenterPx(clampedPlayerY, minTileY, cell, originY);
     const markerR = Math.max(2, Math.floor(cell * 0.35));
+    for (const member of partyMembers) {
+      if (
+        member.tileX < minTileX ||
+        member.tileX > maxTileX ||
+        member.tileY < minTileY ||
+        member.tileY > maxTileY
+      ) {
+        continue;
+      }
+      const mx = x + minimapTileCenterPx(member.tileX, minTileX, cell, originX);
+      const my = y + minimapTileCenterPx(member.tileY, minTileY, cell, originY);
+      g.fillStyle(0xffffff, 0.95);
+      g.fillCircle(mx, my, markerR);
+      g.fillStyle(0x2f80ed, 1);
+      g.fillCircle(mx, my, Math.max(1, markerR - 1));
+    }
+
     g.fillStyle(0xffffff, 0.95);
     g.fillCircle(px, py, markerR);
     g.fillStyle(0xe74c3c, 1);
@@ -1093,9 +1168,9 @@ export class GameUi {
       const lineGap = scaleSkinY(13, screenH);
       const mmCenterX = centerX;
       const coordsY = Phaser.Math.Clamp(
-        minimapRect.y + minimapRect.h - labelPadBottom + scaleSkinY(8, screenH) + this.mapNameOffset.y,
+        minimapRect.y + minimapRect.h - labelPadBottom + 40 + scaleSkinY(8, screenH) + this.mapNameOffset.y,
         minimapRect.y + lineGap + 4,
-        minimapRect.y + minimapRect.h - 2
+        minimapRect.y + minimapRect.h - 2 + 40
       );
       const nameY = coordsY - lineGap;
       const labelStroke = { color: "#000000", thickness: 2 };
@@ -1119,7 +1194,7 @@ export class GameUi {
       return;
     }
 
-    const nameY = minimapRect.y - gapAboveMinimap + 8 + this.mapNameOffset.y;
+    const nameY = minimapRect.y - gapAboveMinimap + 8 + 40 + this.mapNameOffset.y;
     this.mapNameText.setOrigin(0.5, 1);
     this.mapNameText.setPosition(centerX, nameY);
     this.mapNameText.setFontSize("11px");
@@ -1359,8 +1434,17 @@ this.chatText.setMask(this.chatMaskGfx.createGeometryMask());
     );
     this.scene.scale.on("enterfullscreen", () => this.syncFullscreenButtonLabel());
     this.scene.scale.on("leavefullscreen", () => this.syncFullscreenButtonLabel());
+    this.partyOverlay = new PartyOverlay(this.scene, {
+      onInvite: (targetName) =>
+        this.scene.events.emit("ui-party-action", { action: "invite", targetName }),
+      onKick: (targetId) =>
+        this.scene.events.emit("ui-party-action", { action: "kick", targetId }),
+      onLeave: () => this.scene.events.emit("ui-party-action", { action: "leave" }),
+      onDissolve: () => this.scene.events.emit("ui-party-action", { action: "dissolve" }),
+      onClose: () => this.partyOverlay.hide(),
+    });
 
-    this.inventoryPanel = createInventoryPanel(this.scene, 0, 0, {
+this.inventoryPanel = createInventoryPanel(this.scene, 0, 0, {
       cols: INVENTORY_COLS,
       rows: INVENTORY_ROWS,
       slotScale: INVENTORY_SLOT_SCALE,
@@ -1868,12 +1952,17 @@ this.chatText.setMask(this.chatMaskGfx.createGeometryMask());
         return;
       }
 
+      if (this.partyOverlay?.isOpen()) {
+        return;
+      }
+
       if (event.key === "Enter") {
         event.preventDefault();
   
         if (!this.chatFocused) {
           this.chatFocused = true;
           this.chatInputValue = "";
+          this.sentChatHistoryIndex = -1;
           this.relayout();
           return;
         }
@@ -1885,9 +1974,16 @@ this.chatText.setMask(this.chatMaskGfx.createGeometryMask());
           if (!handled) {
             this.addChatLine(`Tú: ${message}`);
           }
+          if (this.sentChatHistory[this.sentChatHistory.length - 1] !== message) {
+            this.sentChatHistory.push(message);
+            if (this.sentChatHistory.length > 50) {
+              this.sentChatHistory.shift();
+            }
+          }
         }
   
         this.chatInputValue = "";
+        this.sentChatHistoryIndex = -1;
         this.chatFocused = false;
         this.relayout();
         return;
@@ -1901,22 +1997,66 @@ this.chatText.setMask(this.chatMaskGfx.createGeometryMask());
   
       if (event.key === "Escape") {
         this.chatInputValue = "";
+        this.sentChatHistoryIndex = -1;
         this.chatFocused = false;
         this.relayout();
         return;
       }
-  
-      if (event.key === "Backspace") {
-        this.chatInputValue = this.chatInputValue.slice(0, -1);
-        this.relayout();
+
+      if (event.key === "ArrowUp") {
+        if (this.sentChatHistory.length > 0) {
+          if (this.sentChatHistoryIndex === -1) {
+            this.sentChatHistoryIndex = this.sentChatHistory.length - 1;
+          } else {
+            this.sentChatHistoryIndex = Math.max(0, this.sentChatHistoryIndex - 1);
+          }
+          this.chatInputValue = this.sentChatHistory[this.sentChatHistoryIndex] ?? "";
+          this.refreshChatInputText();
+        }
         return;
       }
-  
-      if (event.key.length === 1 && this.chatInputValue.length < 80) {
+
+      if (event.key === "ArrowDown") {
+        if (this.sentChatHistoryIndex !== -1) {
+          if (this.sentChatHistoryIndex >= this.sentChatHistory.length - 1) {
+            this.sentChatHistoryIndex = -1;
+            this.chatInputValue = "";
+          } else {
+            this.sentChatHistoryIndex += 1;
+            this.chatInputValue = this.sentChatHistory[this.sentChatHistoryIndex] ?? "";
+          }
+          this.refreshChatInputText();
+        }
+        return;
+      }
+   
+      if (event.key === "Backspace") {
+        this.chatInputValue = this.chatInputValue.slice(0, -1);
+        this.sentChatHistoryIndex = -1;
+        this.refreshChatInputText();
+        return;
+      }
+   
+      if (
+        event.key.length === 1 &&
+        !event.repeat &&
+        !event.ctrlKey &&
+        !event.metaKey &&
+        !event.altKey &&
+        this.chatInputValue.length < 80
+      ) {
         this.chatInputValue += event.key;
-        this.relayout();
+        this.sentChatHistoryIndex = -1;
+        this.refreshChatInputText();
       }
     });
+  }
+
+  private refreshChatInputText() {
+    if (!this.chatFocused) {
+      return;
+    }
+    this.chatInputText.setText(`> ${this.chatInputValue}`);
   }
   
   isChatFocused() {
@@ -2516,6 +2656,7 @@ this.chatText.setMask(this.chatMaskGfx.createGeometryMask());
     this.spells.splice(next, 0, movedSpell);
     this.selectedSpellIndex = next;
     this.ensureSelectedSpellVisible();
+    this.spellOrderChangeHandler?.(this.spells.map((spell) => spell.idSpell));
     this.relayout();
   }
 
@@ -3168,14 +3309,16 @@ this.chatText.setMask(this.chatMaskGfx.createGeometryMask());
     const content = this.getSkinSpellPanelContentRect(panel, screenW, screenH);
     this.spellPanelContentGeom = content;
 
-    const listPad = scaleSkinX(4, screenW);
+    const listPad = scaleSkinX(3, screenW);
+    const controlColW = scaleSkinX(SPELL_SKIN_CONTROL_COL_W, screenW);
     const footerH = scaleSkinY(SPELL_PANEL_FOOTER_SKIN, screenH);
     const listX = content.x + listPad;
     const listY = content.y + listPad;
-    const listW = content.w - listPad * 2;
-    const castH = Math.max(scaleSkinY(20, screenH), footerH - scaleSkinY(6, screenH));
+    const listW = Math.max(48, content.w - listPad * 2 - controlColW);
+    const controlX = content.x + content.w - listPad - controlColW;
+    const castH = Math.max(scaleSkinY(18, screenH), footerH - scaleSkinY(4, screenH));
     const castY = content.y + content.h - castH - scaleSkinY(2, screenH);
-    const listH = Math.max(SPELL_ROW_HEIGHT, castY - listY - scaleSkinY(14, screenH));
+    const listH = Math.max(SPELL_ROW_HEIGHT, castY - listY - scaleSkinY(4, screenH));
     const rowStride = SPELL_ROW_HEIGHT + SPELL_ROW_GAP;
 
     this.spellVisibleRows = Math.min(
@@ -3208,8 +3351,8 @@ this.chatText.setMask(this.chatMaskGfx.createGeometryMask());
       const spellIndex = this.spellScrollOffset + rowIndex;
       const spell = this.spells[spellIndex];
       const rowY = listY + rowIndex * rowStride;
-      row.setPosition(listX + 4, rowY + SPELL_ROW_HEIGHT / 2);
-      row.setFontSize("10px");
+      row.setPosition(listX + 3, rowY + SPELL_ROW_HEIGHT / 2);
+      row.setFontSize("9px");
       row.setText(spell ? spell.nombre : "");
       row.setColor(spellIndex === this.selectedSpellIndex ? "#ffe08a" : "#e8dcc0");
       this.spellRowZones[rowIndex].setPosition(listX, rowY).setSize(listW, SPELL_ROW_HEIGHT);
@@ -3225,27 +3368,58 @@ this.chatText.setMask(this.chatMaskGfx.createGeometryMask());
       }
     }
 
-    this.drawConfirmButton(this.spellCastBtn, listX, castY, listW, castH);
-    this.spellCastZone.setPosition(listX, castY).setSize(listW, castH);
-    this.spellCastLabel.setPosition(listX + listW / 2, castY + castH / 2);
+    const canReorderUp = this.selectedSpellIndex > 0;
+    const canReorderDown =
+      this.selectedSpellIndex >= 0 && this.selectedSpellIndex < this.spells.length - 1;
+    const canScrollUp = maxScroll > 0 && this.spellScrollOffset > 0;
+    const canScrollDown = maxScroll > 0 && this.spellScrollOffset < maxScroll;
+    const reorderBtnW = Math.max(18, controlColW - 2);
+    const reorderBtnH = Math.max(14, scaleSkinY(15, screenH));
+
+    this.drawConfirmButton(this.spellUpBtn, controlX, listY, reorderBtnW, reorderBtnH);
+    this.drawConfirmButton(
+      this.spellDownBtn,
+      controlX,
+      listY + reorderBtnH + 2,
+      reorderBtnW,
+      reorderBtnH
+    );
+    this.spellUpBtn.setAlpha(canReorderUp ? 1 : 0.35);
+    this.spellDownBtn.setAlpha(canReorderDown ? 1 : 0.35);
+    this.spellUpZone
+      .setPosition(controlX, listY)
+      .setSize(reorderBtnW, reorderBtnH)
+      .setVisible(true);
+    this.spellDownZone
+      .setPosition(controlX, listY + reorderBtnH + 2)
+      .setSize(reorderBtnW, reorderBtnH)
+      .setVisible(true);
+    this.spellUpZone.input!.enabled = canReorderUp;
+    this.spellDownZone.input!.enabled = canReorderDown;
+    this.spellUpLabel
+      .setPosition(controlX + reorderBtnW / 2, listY + reorderBtnH / 2)
+      .setAlpha(canReorderUp ? 1 : 0.35)
+      .setVisible(true);
+    this.spellDownLabel
+      .setPosition(controlX + reorderBtnW / 2, listY + reorderBtnH + 2 + reorderBtnH / 2)
+      .setAlpha(canReorderDown ? 1 : 0.35)
+      .setVisible(true);
 
     [
-      this.spellUpBtn,
-      this.spellDownBtn,
       this.spellScrollUpBtn,
       this.spellScrollDownBtn,
       this.spellInfoBtn,
-      this.spellUpZone,
-      this.spellDownZone,
       this.spellScrollUpZone,
       this.spellScrollDownZone,
       this.spellInfoZone,
-      this.spellUpLabel,
-      this.spellDownLabel,
       this.spellScrollUpLabel,
       this.spellScrollDownLabel,
       this.spellInfoLabel,
     ].forEach((obj) => obj.setVisible(false));
+
+    this.drawConfirmButton(this.spellCastBtn, listX, castY, listW + controlColW, castH);
+    this.spellCastZone.setPosition(listX, castY).setSize(listW + controlColW, castH);
+    this.spellCastLabel.setPosition(listX + (listW + controlColW) / 2, castY + castH / 2);
 
     if (maxScroll > 0) {
       const firstVisible = this.spellScrollOffset + 1;
@@ -3255,7 +3429,7 @@ this.chatText.setMask(this.chatMaskGfx.createGeometryMask());
       );
       this.spellScrollHintText
         .setText(`${firstVisible}-${lastVisible}/${this.spells.length}`)
-        .setPosition(listX, castY - scaleSkinY(12, screenH))
+        .setPosition(listX, castY - scaleSkinY(8, screenH))
         .setFontSize("8px")
         .setVisible(true);
     } else {
@@ -3420,9 +3594,14 @@ this.chatText.setMask(this.chatMaskGfx.createGeometryMask());
     };
     this.expSlotGeom = { x: expR.x, y: expR.y, w: expR.w, h: expR.h };
     this.expFill.setVisible(true);
+    this.expLabelYOffset = scaleSkinY(EXP_LABEL_SKIN_Y_OFFSET, h);
+    this.expLabelFontPx = EXP_LABEL_SKIN_FONT_SIZES[0];
     this.expLabelText
-      .setPosition(expR.x + expR.w / 2, expR.y + expR.h / 2)
-      .setFontSize("7px")
+      .setColor("#f8f0d8")
+      .setFontStyle("bold")
+      .setStroke(VITAL_BAR_LABEL_STROKE, 3)
+      .setResolution(VITAL_BAR_LABEL_RESOLUTION)
+      .setOrigin(0.5, 0.5)
       .setVisible(true);
 
     const tabsR = scaleSkinRect(R.tabs, w, h);
@@ -3979,6 +4158,7 @@ this.chatText.setMask(this.chatMaskGfx.createGeometryMask());
         const spell = this.spells[spellIndex];
         const rowY = listY + rowIndex * rowStride;
         row.setPosition(listX + 6, rowY + SPELL_ROW_HEIGHT / 2);
+        row.setFontSize("9px");
         row.setText(spell ? spell.nombre : "");
         row.setColor(spellIndex === this.selectedSpellIndex ? "#ffe08a" : "#d8dee8");
         this.spellRowZones[rowIndex]
@@ -4169,12 +4349,7 @@ this.chatText.setMask(this.chatMaskGfx.createGeometryMask());
       this.nameText.setColor(s.nameColor);
     }
     this.levelText.setText(String(s.level));
-    if (this.useAowebSkin) {
-      const expPct = s.expMax > 0 ? Math.round((s.exp / s.expMax) * 100) : 0;
-      this.expLabelText.setText(`${expPct}%`);
-    } else {
-      this.expLabelText.setText(`${s.exp}/${s.expMax}`);
-    }
+    this.expLabelText.setText(`${s.exp}/${s.expMax}`);
     this.fitExpLabelText();
     this.goldText.setText(
       this.useAowebSkin
@@ -4283,10 +4458,14 @@ this.chatText.setMask(this.chatMaskGfx.createGeometryMask());
     this.expFill.setVisible(true);
 
     this.expSlotGeom = { x: slotX, y: slotY, w: slotW, h: slotH };
+    this.expLabelYOffset = 0;
     this.expLabelFontPx = Math.max(7, Math.round(8 * scale));
     this.expLabelText
-      .setPosition(slotX + slotW / 2, slotY + slotH / 2)
       .setOrigin(0.5, 0.5)
+      .setColor("#e8d8a0")
+      .setFontStyle("bold")
+      .setStroke("", 0)
+      .setResolution(GAME_TEXT_RESOLUTION)
       .setFontSize(`${this.expLabelFontPx}px`)
       .setVisible(true);
     this.fitExpLabelText();
@@ -4297,13 +4476,30 @@ this.chatText.setMask(this.chatMaskGfx.createGeometryMask());
   private fitExpLabelText() {
     const slot = this.expSlotGeom;
     const maxW = Math.max(8, slot.w - 4);
-    let size = this.expLabelFontPx;
-    this.expLabelText.setFontSize(`${size}px`);
-    while (size > 6 && this.expLabelText.width > maxW) {
-      size -= 1;
+    const sizes = this.useAowebSkin
+      ? EXP_LABEL_SKIN_FONT_SIZES
+      : ([this.expLabelFontPx] as readonly number[]);
+
+    let size = sizes[0];
+    for (const trySize of sizes) {
+      size = trySize;
       this.expLabelText.setFontSize(`${size}px`);
+      if (this.expLabelText.width <= maxW) {
+        break;
+      }
     }
-    this.expLabelText.setPosition(slot.x + slot.w / 2, slot.y + slot.h / 2);
+
+    if (!this.useAowebSkin) {
+      while (size > 6 && this.expLabelText.width > maxW) {
+        size -= 1;
+        this.expLabelText.setFontSize(`${size}px`);
+      }
+    }
+
+    this.expLabelText.setPosition(
+      slot.x + slot.w / 2,
+      slot.y + slot.h / 2 + this.expLabelYOffset
+    );
   }
 
   private bringSidebarHudToFront() {

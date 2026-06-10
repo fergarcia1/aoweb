@@ -1,6 +1,6 @@
 import { SPELL_CAST_META_BY_ID } from "../../game-data/spellCastMeta";
-import type { NamedWavId } from "../../game-data/namedWavs";
-import { playNamedWav } from "./namedWav";
+import { NAMED_WAV_FILES, type NamedWavId } from "../../game-data/namedWavs";
+import { playNamedWav, preloadNamedWavs } from "./namedWav";
 
 /** Índices WAV referenciados por hechizos (sin 0 = silencio en IAO). */
 export function getUniqueSpellWavIndices(): number[] {
@@ -19,12 +19,41 @@ export function spellWavAudioKey(wavIndex: number): string {
   return `ao_spell_wav_${wavIndex}`;
 }
 
-export function preloadSpellWavs(scene: Phaser.Scene): void {
+export function preloadSpellWavs(scene: Phaser.Scene): number {
+  let queued = 0;
   for (const wavIndex of getUniqueSpellWavIndices()) {
     const key = spellWavAudioKey(wavIndex);
     if (scene.cache.audio.exists(key)) continue;
     scene.load.audio(key, spellWavAssetPath(wavIndex));
+    queued += 1;
   }
+  return queued;
+}
+
+/** WAV de lanzamiento solo para los hechizos que el personaje puede usar. */
+export function preloadSpellAudioForSpellIds(
+  scene: Phaser.Scene,
+  spellIds: Iterable<number>
+): number {
+  let queued = 0;
+  const namedIds = new Set<NamedWavId>();
+
+  for (const spellId of spellIds) {
+    const meta = SPELL_CAST_META_BY_ID[spellId];
+    if (!meta) continue;
+    if (meta.namedWav && meta.namedWav in NAMED_WAV_FILES) {
+      namedIds.add(meta.namedWav as NamedWavId);
+      continue;
+    }
+    if (meta.wav <= 0) continue;
+    const key = spellWavAudioKey(meta.wav);
+    if (scene.cache.audio.exists(key)) continue;
+    scene.load.audio(key, spellWavAssetPath(meta.wav));
+    queued += 1;
+  }
+
+  queued += preloadNamedWavs(scene, [...namedIds]);
+  return queued;
 }
 
 export function playSpellNamedWav(

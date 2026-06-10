@@ -16,7 +16,7 @@ import {
   shouldUseMobNpcBodiesArt,
   type MobModelId,
   type MobSpawnConfig,
-} from "../../data/mobs";
+} from "../../../game-data/mobs";
 import { createMobSprite } from "../../game/mobs/mobVisualRuntime";
 import {
   PEACEFUL_WANDER_MIN_MS,
@@ -90,6 +90,7 @@ export type GameSceneMobDeps = {
     hitboxWidthTiles: number,
     hitboxOffsetY: number
   ) => void;
+  getWorldInteractiveCursor: () => string;
   syncDummyWorldPosition: (dummy: DummyState) => void;
   attachMobFaceIfNeeded: (dummy: DummyState, facing?: Facing) => void;
   setMobAnimationState: (dummy: DummyState, state: "idle" | "walk") => void;
@@ -97,7 +98,7 @@ export type GameSceneMobDeps = {
   rebuildMobHitbox: (dummy: DummyState) => void;
   isTileWalkableForMob: (tileX: number, tileY: number, source: DummyState) => boolean;
   isTileOccupiedByStaticNpc: (tileX: number, tileY: number, mapId?: string) => boolean;
-  playMobFootstepSound?: (modelId: MobModelId) => void;
+  playMobFootstepSound?: (modelId: MobModelId, tileX: number, tileY: number) => void;
 };
 
 /**
@@ -336,7 +337,7 @@ export class GameSceneMobController {
     dummy.isMoving = true;
     this.deps.setMobAnimationState(dummy, "walk");
     if (usesHeavyMobFootsteps(dummy.modelId)) {
-      this.deps.playMobFootstepSound?.(dummy.modelId);
+      this.deps.playMobFootstepSound?.(dummy.modelId, dummy.tileX, dummy.tileY);
     }
 
     this.deps.tweens.add({
@@ -527,7 +528,7 @@ export class GameSceneMobController {
       dummy.sprite.input.hitArea = hitArea;
     } else {
       dummy.sprite.setInteractive(hitArea, Phaser.Geom.Rectangle.Contains);
-      dummy.sprite.input!.cursor = "pointer";
+      dummy.sprite.input!.cursor = this.deps.getWorldInteractiveCursor();
     }
   }
 

@@ -5,9 +5,19 @@ import {
   getMaxVitalsAtLevel,
   VITAL_GROWTH_MAX_LEVEL,
 } from "../../../game-data/vitalProgression";
-import { isMapTileWalkable } from "../../../shared/mapWalkability";
+import {
+  findNearestWalkableSpawnTile,
+  getMapSpawnTile,
+  isMapTileWalkable,
+} from "../../../shared/mapWalkability";
+import { getMap } from "../../../shared/maps";
+import { addToServerInventory } from "../../../shared/serverInventory";
+import { getItemDefinition, type ItemId } from "../../../game-data/items/definitions";
+import { isKnownItemId } from "../../../game-data/items/registry";
 import type { PlayerSession } from "../PlayerSession";
 import type { WorldContext } from "./WorldContext";
+
+const MAX_ADMIN_SPEED_MULTIPLIER = 3;
 
 export class ChatSystem {
   constructor(private readonly world: WorldContext) {}
@@ -15,11 +25,46 @@ export class ChatSystem {
   public handleChat(session: PlayerSession, text: string) {
     const trimmed = text.trim().slice(0, 200);
     if (!trimmed) return;
+
+    if (trimmed.startsWith("/")) {
+      const parts = trimmed.slice(1).split(" ");
+      const command = parts[0].toLowerCase();
+      const args = parts.slice(1);
+
+      if (this.handlePartyCommand(session, command, args)) {
+        return;
+      }
+    }
+
     this.world.broadcastToAoi(session.mapId, session.tileX, session.tileY, {
       type: "chat",
       from: session.name,
       text: trimmed,
     });
+  }
+
+  private handlePartyCommand(session: PlayerSession, command: string, args: string[]): boolean {
+    if (command === "creargrupo" || command === "party") {
+      // @ts-ignore
+      this.world.handlePartyAction(session, { type: "party_action", action: "invite", targetName: session.name });
+      return true;
+    }
+    if (command === "invitar") {
+      const targetName = args.join(" ");
+      // @ts-ignore
+      this.world.handlePartyAction(session, { type: "party_action", action: "invite", targetName });
+      return true;
+    }
+    if (command === "aceptar") {
+      this.world.sendCombatLog(session, "Por favor usa el botón de aceptar en el cartel de invitación.");
+      return true;
+    }
+    if (command === "salirgrupo" || command === "salir") {
+      // @ts-ignore
+      this.world.handlePartyAction(session, { type: "party_action", action: "leave" });
+      return true;
+    }
+    return false;
   }
 
   public handleAdminCommand(session: PlayerSession, command: string, args: string[]) {
@@ -30,6 +75,26 @@ export class ChatSystem {
 
     if (command === "tp") {
       this.handleAdminTeleport(session, args);
+      return;
+    }
+
+    if (command === "tpmap") {
+      this.handleAdminTeleportMap(session, args);
+      return;
+    }
+
+    if (command === "speed") {
+      const multiplier = parseInt(args[0], 10);
+      if (isNaN(multiplier) || multiplier < 1 || multiplier > MAX_ADMIN_SPEED_MULTIPLIER) {
+        this.world.sendCombatLog(session, `Uso: /speed <1-${MAX_ADMIN_SPEED_MULTIPLIER}>`);
+        return;
+      }
+      session.speedMultiplier = multiplier;
+      this.world.send(session, {
+        type: "player_updated",
+        player: session.toNetState(),
+      });
+      this.world.sendCombatLog(session, `Velocidad admin x${multiplier}`);
       return;
     }
 
@@ -48,7 +113,54 @@ export class ChatSystem {
       return;
     }
 
+    if (command === "give") {
+      this.handleAdminGive(session, args);
+      return;
+    }
+
     this.world.sendCombatLog(session, `Comando admin desconocido: /${command}`);
+  }
+
+  private handleAdminGive(session: PlayerSession, args: string[]) {
+    const amount = parseInt(args[0] ?? "", 10);
+    const itemId = args[1];
+    if (!Number.isFinite(amount) || amount <= 0 || !itemId) {
+      this.world.sendCombatLog(session, "Uso: /give <cantidad> <itemId> [personaje]");
+      return;
+    }
+
+    if (!isKnownItemId(itemId)) {
+      this.world.sendCombatLog(session, `Item desconocido: ${itemId}.`);
+      return;
+    }
+
+    const targetName = args.slice(2).join(" ").trim() || session.name;
+    const target = [...this.world.getPlayers().values()].find(
+      (player) => player.joined && player.name.toLowerCase() === targetName.toLowerCase()
+    );
+    if (!target) {
+      this.world.sendCombatLog(session, `No se encontro al personaje "${targetName}".`);
+      return;
+    }
+
+    const { added, remaining } = addToServerInventory(target.inventorySlots, itemId, amount);
+    if (added <= 0) {
+      this.world.sendCombatLog(session, "No hay espacio en el inventario.");
+      return;
+    }
+
+    this.world.syncInventoryEquippedFlags(target);
+    this.world.sendInventoryUpdated(target);
+    void this.world.persistSession(target).catch((error) => {
+      console.error("[admin_give] persist failed:", error);
+    });
+
+    const item = getItemDefinition(itemId as ItemId);
+    const message = `Recibiste ${item.name} x${added}.${remaining > 0 ? ` (${remaining} no entraron)` : ""}`;
+    this.world.sendCombatLog(target, message);
+    if (target.id !== session.id) {
+      this.world.sendCombatLog(session, `Entregaste ${item.name} x${added} a ${target.name}.`);
+    }
   }
 
   private handleAdminSet(session: PlayerSession, args: string[]) {
@@ -123,5 +235,69 @@ export class ChatSystem {
     session.tileY = y;
     this.world.syncAoiAfterMove(session, prevX, prevY);
     this.world.sendCombatLog(session, `Teletransportado a (${x}, ${y}).`);
+  }
+
+  private handleAdminTeleportMap(session: PlayerSession, args: string[]) {
+    const mapId =
+      args[0]?.toLowerCase() === "mapa" && /^\d+$/.test(args[1] ?? "")
+        ? `mapa${args[1]}`
+        : args[0];
+    const coordArgs =
+      args[0]?.toLowerCase() === "mapa" && /^\d+$/.test(args[1] ?? "")
+        ? args.slice(2)
+        : args.slice(1);
+    if (!mapId) {
+      this.world.sendCombatLog(session, "Uso: /tpmap <mapId> [x] [y]");
+      return;
+    }
+
+    try {
+      getMap(mapId);
+    } catch {
+      this.world.sendCombatLog(session, `Mapa no encontrado: ${mapId}. No fuiste teletransportado.`);
+      return;
+    }
+
+    if (coordArgs.length === 1) {
+      this.world.sendCombatLog(session, "Uso: /tpmap <mapId> [x] [y]");
+      return;
+    }
+
+    const hasExplicitCoords = coordArgs.length >= 2;
+    const spawn = getMapSpawnTile(mapId);
+    const safeSpawn = findNearestWalkableSpawnTile(mapId, spawn, () => false);
+    const x = hasExplicitCoords ? parseInt(coordArgs[0], 10) : safeSpawn.tileX;
+    const y = hasExplicitCoords ? parseInt(coordArgs[1], 10) : safeSpawn.tileY;
+
+    if (isNaN(x) || isNaN(y)) {
+      this.world.sendCombatLog(session, "Uso: /tpmap <mapId> [x] [y] (x e y deben ser números)");
+      return;
+    }
+
+    if (!isMapTileWalkable(mapId, x, y, this.world.getMapTileOverrides(mapId))) {
+      this.world.sendCombatLog(session, `Tile (${x}, ${y}) no es caminable en ${mapId}. No fuiste teletransportado.`);
+      return;
+    }
+
+    const prevX = session.tileX;
+    const prevY = session.tileY;
+    const prevMapId = session.mapId;
+
+    session.mapId = mapId;
+    session.tileX = x;
+    session.tileY = y;
+
+    if (prevMapId !== mapId) {
+      this.world.send(session, {
+        type: "player_moved",
+        player: session.toNetState(),
+      });
+      // Synchronize AOI for the new map immediately.
+      this.world.syncAoiAfterMove(session, session.tileX, session.tileY);
+      this.world.sendCombatLog(session, `Teletransportado al mapa ${mapId} en (${x}, ${y}).`);
+    } else {
+      this.world.syncAoiAfterMove(session, prevX, prevY);
+      this.world.sendCombatLog(session, `Teletransportado en el mapa ${mapId} a (${x}, ${y}).`);
+    }
   }
 }

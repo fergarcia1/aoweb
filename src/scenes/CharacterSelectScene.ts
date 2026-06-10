@@ -10,6 +10,8 @@ import {
   type CharacterSlot,
   type SavedCharacter,
 } from "../data/characters";
+import { clearAuthSession, getAuthAccount } from "../network/authApi";
+import { disconnectActiveMultiplayer } from "../network/multiplayerSession";
 
 const MENU_COLORS = {
   bg: 0x0d1117,
@@ -69,6 +71,15 @@ export class CharacterSelectScene extends Phaser.Scene {
       .text(width / 2, 78, "Elegí un personaje o creá uno nuevo", {
         fontFamily: "Segoe UI, Tahoma, sans-serif",
         fontSize: "14px",
+        color: MENU_COLORS.muted,
+      })
+      .setOrigin(0.5, 0);
+
+    const account = getAuthAccount();
+    this.add
+      .text(width / 2, 104, account ? `Cuenta: ${account.username}` : "Modo dev sin cuenta", {
+        fontFamily: "Segoe UI, Tahoma, sans-serif",
+        fontSize: "12px",
         color: MENU_COLORS.muted,
       })
       .setOrigin(0.5, 0);
@@ -214,8 +225,27 @@ export class CharacterSelectScene extends Phaser.Scene {
   }
 
   private createFooterButtons(width: number, height: number) {
-    const backLabel = this.returnMode === "resume" ? "Volver al juego" : "Salir";
-    this.createButton(width / 2 - 110, height - 42, backLabel, () => this.goBack());
+    const canReturn = this.canReturnToGame();
+    const account = getAuthAccount();
+    if (canReturn) {
+      const backLabel = this.returnMode === "resume" ? "Volver al juego" : "Salir";
+      this.createButton(account ? width / 2 - 110 : width / 2, height - 42, backLabel, () =>
+        this.goBack()
+      );
+    }
+    if (account) {
+      this.createButton(canReturn ? width / 2 + 110 : width / 2, height - 42, "Cerrar sesión", () =>
+        this.logout()
+      );
+    }
+  }
+
+  private canReturnToGame(): boolean {
+    if (this.returnMode === "resume") {
+      return true;
+    }
+    const gameScene = this.scene.get("GameScene");
+    return Boolean(gameScene?.scene.isActive() || gameScene?.scene.isPaused());
   }
 
   private createButton(x: number, y: number, label: string, onClick: () => void) {
@@ -280,6 +310,17 @@ export class CharacterSelectScene extends Phaser.Scene {
       return;
     }
 
-    this.scene.start("GameScene");
+    const gameScene = this.scene.get("GameScene");
+    if (gameScene?.scene.isPaused()) {
+      this.scene.stop();
+      this.scene.resume("GameScene");
+    }
+  }
+
+  private logout() {
+    disconnectActiveMultiplayer();
+    clearAuthSession();
+    this.scene.stop("GameScene");
+    this.scene.start("AuthScene");
   }
 }

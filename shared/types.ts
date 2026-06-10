@@ -44,6 +44,8 @@ export type NetPlayerState = {
   equipment: NetPlayerEquipment;
   /** El servidor acepto que el jugador esta meditando. */
   isMeditating?: boolean;
+  /** El servidor acepto modo navegacion en barca. */
+  isNavigating?: boolean;
   /** Solo en player_updated cuando cambian buffs de atributos (hechizos/pociones). */
   attributeBuffs?: { strength: number; agility: number };
   buffExpiresAtMs?: number;
@@ -197,6 +199,7 @@ export function normalizeNetPlayerState(
     role: raw.role === "admin" ? "admin" : "player",
     equipment: normalizeNetPlayerEquipment(raw.equipment),
     isMeditating: raw.isMeditating === true,
+    isNavigating: raw.isNavigating === true,
     invisibleUntilMs:
       typeof raw.invisibleUntilMs === "number" && Number.isFinite(raw.invisibleUntilMs)
         ? Math.max(0, Math.floor(raw.invisibleUntilMs))
@@ -272,6 +275,24 @@ export type DamageEvent = {
   tileX: number;
   tileY: number;
   critical?: boolean;
+  /** Tile del origen del ruido (jugador atacante o mob). */
+  sourceTileX?: number;
+  sourceTileY?: number;
+  /** Jugador que generó el sonido (golpe/hechizo); ausente si fue un mob. */
+  sourcePlayerId?: string;
+};
+
+export type HealEvent = {
+  kind: "heal";
+  targetKind: "player";
+  targetId: string;
+  amount: number;
+  tileX: number;
+  tileY: number;
+  /** Tile del origen del efecto (hechicero). */
+  sourceTileX?: number;
+  sourceTileY?: number;
+  sourcePlayerId?: string;
 };
 
 export type SpellFxEvent = {
@@ -279,6 +300,9 @@ export type SpellFxEvent = {
   spellId: number;
   tileX: number;
   tileY: number;
+  sourcePlayerId?: string;
+  sourceTileX?: number;
+  sourceTileY?: number;
 };
 
 export type ResurrectChannelEvent = {
@@ -323,6 +347,7 @@ export type MapObjectUpdateEvent = {
 
 export type GameEvent =
   | DamageEvent
+  | HealEvent
   | SpellFxEvent
   | ResurrectChannelEvent
   | ResurrectCompleteEvent

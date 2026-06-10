@@ -1,10 +1,13 @@
 import { normalizeOutfit, type Outfit } from "../../game-data/outfits";
 import type { Facing } from "../../shared/types";
-import type { EquipmentSlot, ItemId } from "../items/itemDefinitions";
+import type { EquipmentSlot, ItemId } from "../../game-data/items/definitions";
 import type { InventorySlot } from "../items/inventoryStack";
 
 import { INVENTORY_COLS, INVENTORY_ROWS, INVENTORY_SLOT_COUNT } from "../../game-data/constants";
 import { normalizeItemId } from "../../game-data/items/definitions";
+import { DEFAULT_MAP_ID } from "../../game-data/constants";
+import { getMapSpawnTile, isMapTileWalkable } from "../../shared/mapWalkability";
+import { getMap } from "../../shared/maps";
 
 export { INVENTORY_COLS, INVENTORY_ROWS, INVENTORY_SLOT_COUNT };
 export const MACRO_SLOT_COUNT = 10;
@@ -56,6 +59,8 @@ export type SavedCharacterProgress = {
   playerProgress: SavedPlayerProgress;
 
   learnedSpellIds: number[];
+  /** Orden personalizado de la lista de hechizos (IDs). */
+  spellListOrder?: number[];
   macroBindings: SavedMacroBinding[];
   killStats: SavedKillStats;
   deathPhase: "alive" | "ghost_offer" | "ghost";
@@ -272,6 +277,12 @@ export function loadCharacterProgress(characterId: string): SavedCharacterProgre
           .map((id) => Math.floor(id))
       : [];
 
+    const spellListOrder = Array.isArray(parsed.spellListOrder)
+      ? parsed.spellListOrder
+          .filter((id): id is number => typeof id === "number" && Number.isFinite(id))
+          .map((id) => Math.floor(id))
+      : [];
+
     const killStats: SavedKillStats = {
       creaturesKilled:
         typeof parsed.killStats?.creaturesKilled === "number"
@@ -289,20 +300,32 @@ export function loadCharacterProgress(characterId: string): SavedCharacterProgre
 
     let mapId = parsed.mapId;
     if (mapId && ["pueblo", "bosque", "montana", "desierto"].includes(mapId)) {
-      mapId = "mapa1";
+      mapId = DEFAULT_MAP_ID;
     }
+    try {
+      getMap(mapId);
+    } catch {
+      mapId = DEFAULT_MAP_ID;
+    }
+    const tileX = Math.max(0, Math.floor(parsed.tileX));
+    const tileY = Math.max(0, Math.floor(parsed.tileY));
+    const spawn = getMapSpawnTile(mapId);
+    const safeTile = isMapTileWalkable(mapId, tileX, tileY)
+      ? { tileX, tileY }
+      : spawn;
 
     return {
       version: 1,
       mapId: mapId,
-      tileX: Math.max(0, Math.floor(parsed.tileX)),
-      tileY: Math.max(0, Math.floor(parsed.tileY)),
+      tileX: safeTile.tileX,
+      tileY: safeTile.tileY,
       facing: normalizeFacing(parsed.facing),
       inventory: normalizeInventory(parsed.inventory),
       equipment: normalizeEquipment(parsed.equipment),
       equippedOutfit: normalizeOutfit(parsed.equippedOutfit),
       playerProgress,
       learnedSpellIds,
+      spellListOrder: spellListOrder.length > 0 ? spellListOrder : undefined,
       macroBindings: normalizeMacroBindings(parsed.macroBindings),
       killStats,
       deathPhase: normalizeDeathPhase(parsed.deathPhase),

@@ -31,7 +31,7 @@ export function getMapIdsWithMobSpawns(): string[] {
 /** Todos los tiles caminables del mapa (opcional: sin el tile de spawn de jugadores). */
 export function collectMobSpawnCandidateTiles(
   mapId: string,
-  options?: { excludePlayerSpawnTile?: boolean }
+  options?: { excludePlayerSpawnTile?: boolean; isAquatic?: boolean }
 ): { x: number; y: number }[] {
   const mapDef = getMap(mapId);
   const spawn = getMapSpawnTile(mapId);
@@ -45,7 +45,7 @@ export function collectMobSpawnCandidateTiles(
 
   for (let y = padding; y < mapDef.height - padding; y += 1) {
     for (let x = padding; x < mapDef.width - padding; x += 1) {
-      if (!isMapTileWalkable(mapId, x, y)) continue;
+      if (!isMapTileWalkable(mapId, x, y, undefined, options?.isAquatic)) continue;
       if (excludeSpawn && x === spawn.tileX && y === spawn.tileY) continue;
       if (npcBlocked.has(tileKey(x, y))) continue;
       candidates.push({ x, y });
@@ -54,6 +54,7 @@ export function collectMobSpawnCandidateTiles(
 
   return candidates;
 }
+
 
 /** Un tile aleatorio libre en todo el mapa. */
 export function pickRandomMobSpawnTile(
@@ -96,19 +97,33 @@ export function buildInitialMobPlacements(mapId: string): MobPlacement[] {
   }
 
   const spawn = getMapSpawnTile(mapId);
-  const candidates = collectMobSpawnCandidateTiles(mapId);
-  shuffleInPlace(candidates);
+  const landCandidates = collectMobSpawnCandidateTiles(mapId, {
+    isAquatic: false,
+  });
+  const waterCandidates = collectMobSpawnCandidateTiles(mapId, {
+    isAquatic: true,
+  });
+  shuffleInPlace(landCandidates);
+  shuffleInPlace(waterCandidates);
 
   const npcBlocked = new Set(
     getNpcOccupiedTiles(mapId).map((tile) => tileKey(tile.x, tile.y))
   );
   const used = new Set<string>();
-  let candidateIndex = 0;
 
-  const takeRandomFreeTile = (): { x: number; y: number } => {
-    while (candidateIndex < candidates.length) {
-      const tile = candidates[candidateIndex];
-      candidateIndex += 1;
+  let landIndex = 0;
+  let waterIndex = 0;
+
+  const takeRandomFreeTile = (isAquatic: boolean): { x: number; y: number } => {
+    const candidates = isAquatic ? waterCandidates : landCandidates;
+    let idx = isAquatic ? waterIndex : landIndex;
+
+    while (idx < candidates.length) {
+      const tile = candidates[idx];
+      idx += 1;
+      if (isAquatic) waterIndex = idx;
+      else landIndex = idx;
+
       const key = tileKey(tile.x, tile.y);
       if (used.has(key) || npcBlocked.has(key)) continue;
       used.add(key);
@@ -125,7 +140,7 @@ export function buildInitialMobPlacements(mapId: string): MobPlacement[] {
       const isExplicitTile = entry.tileX !== undefined && entry.tileY !== undefined;
       const tile = isExplicitTile
         ? { x: entry.tileX!, y: entry.tileY! }
-        : takeRandomFreeTile();
+        : takeRandomFreeTile(!!base.aquatic);
       if (isExplicitTile) {
         used.add(tileKey(tile.x, tile.y));
       }
@@ -156,7 +171,7 @@ export function buildInitialMobPlacements(mapId: string): MobPlacement[] {
       isMapTileWalkable(mapId, preferredTraining.x, preferredTraining.y) &&
       !used.has(trainingKey)
         ? preferredTraining
-        : takeRandomFreeTile();
+        : takeRandomFreeTile(false);
 
     placements.push({
       spawnId: TRAINING_DUMMY_ID,
@@ -176,6 +191,7 @@ export function buildInitialMobPlacements(mapId: string): MobPlacement[] {
 
   return placements;
 }
+
 
 /** Placements iniciales para todos los mapas definidos en `mobs.json`. */
 export function buildAllInitialMobPlacements(): MobPlacement[] {

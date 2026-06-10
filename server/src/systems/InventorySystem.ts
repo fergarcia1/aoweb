@@ -16,7 +16,11 @@ import { addToServerInventory, removeFromServerSlot } from "../../../shared/serv
 import { getConsumableById, tryUseConsumableOnVitals, expireAttributeBuffs } from "../../../game-data/consumables";
 import { isMapTileWalkable } from "../../../shared/mapWalkability";
 import { isWorldItemDropTileAllowed } from "../../../shared/mapEdgeZones";
-import { findNearestWalkableDropTile } from "../../../shared/deathLootPlacement";
+import { getMap } from "../../../shared/maps";
+import { BOAT_ITEM_IDS, canStartNavigationAtTile, isWaterTile } from "../../../shared/navigation";
+import { findNearestWalkableDropTile, findSpreadDropTiles } from "../../../shared/deathLootPlacement";
+import { GOLD_DROP_MAX_AMOUNT } from "../../../game-data/constants";
+import { splitGoldIntoWorldStacks } from "../../../shared/goldDrop";
 import type { ServerMessage } from "../../../shared/protocol";
 
 export class InventorySystem {
@@ -42,6 +46,11 @@ export class InventorySystem {
     }
     if (session.hp <= 0) {
       this.world.sendCombatLog(session, "Estás muerto.");
+      return;
+    }
+
+    if (isKnownItemId(itemId) && BOAT_ITEM_IDS.has(itemId)) {
+      this.handleBoatNavigationUse(session, itemId, inventorySlot);
       return;
     }
 
@@ -133,6 +142,96 @@ export class InventorySystem {
     });
   }
 
+  private findInventorySlot(
+    session: PlayerSession,
+    itemId: string,
+    inventorySlot?: number
+  ) {
+    const preferredSlotIndex =
+      typeof inventorySlot === "number" && Number.isFinite(inventorySlot)
+        ? Math.floor(inventorySlot)
+        : -1;
+    const preferredSlot =
+      preferredSlotIndex >= 0 && preferredSlotIndex < session.inventorySlots.length
+        ? session.inventorySlots[preferredSlotIndex]
+        : undefined;
+    return preferredSlot && preferredSlot.amount > 0 && preferredSlot.itemId === itemId
+      ? preferredSlot
+      : session.inventorySlots.find((entry) => entry.itemId === itemId && entry.amount > 0);
+  }
+
+  private handleBoatNavigationUse(
+    session: PlayerSession,
+    itemId: string,
+    inventorySlot?: number
+  ) {
+    const slot = this.findInventorySlot(session, itemId, inventorySlot);
+    if (!slot) {
+      this.world.sendCombatLog(session, "No tenes una barca en el inventario.");
+      return;
+    }
+
+    const map = getMap(session.mapId);
+    const overrides = this.world.getMapTileOverrides(session.mapId);
+    if (session.isNavigating) {
+      if (!this.canDisembarkAtCurrentTile(session)) {
+        this.world.sendCombatLog(session, "Acercate a una orilla para bajar de la barca.");
+        return;
+      }
+      session.isNavigating = false;
+      this.world.send(session, {
+        type: "use_item_ack",
+        itemId,
+        inventorySlot: slot.slotIndex,
+        navigationMode: null,
+        message: "Bajaste de la barca.",
+      });
+      this.world.sendPlayerState(session);
+      this.world.broadcastPlayerMoved(session);
+      void this.world.persistSession(session).catch((error) => {
+        console.error("[boat_navigation] persist failed:", error);
+      });
+      return;
+    }
+
+    if (!canStartNavigationAtTile(map, session.tileX, session.tileY, overrides)) {
+      this.world.sendCombatLog(session, "Tenes que estar junto al agua para usar la barca.");
+      return;
+    }
+
+    session.isNavigating = true;
+    session.isMeditating = false;
+    this.world.send(session, {
+      type: "use_item_ack",
+      itemId,
+      inventorySlot: slot.slotIndex,
+      navigationMode: "boat",
+      message: "Subiste a la barca.",
+    });
+    this.world.sendPlayerState(session);
+    this.world.broadcastPlayerMoved(session);
+    void this.world.persistSession(session).catch((error) => {
+      console.error("[boat_navigation] persist failed:", error);
+    });
+  }
+
+  private canDisembarkAtCurrentTile(session: PlayerSession): boolean {
+    const map = getMap(session.mapId);
+    const overrides = this.world.getMapTileOverrides(session.mapId);
+    if (!isWaterTile(map, session.tileX, session.tileY, overrides)) {
+      return true;
+    }
+    const offsets = [
+      [0, -1],
+      [1, 0],
+      [0, 1],
+      [-1, 0],
+    ] as const;
+    return offsets.some(([dx, dy]) =>
+      isMapTileWalkable(session.mapId, session.tileX + dx, session.tileY + dy, overrides)
+    );
+  }
+
   public handleEquipItem(
     session: PlayerSession,
     action: "equip" | "unequip",
@@ -185,7 +284,8 @@ export class InventorySystem {
         session.classId as CharacterClassId,
         session.raceId as any,
         session.level,
-        item
+        item,
+        session.isAdmin()
       );
       if (!usability.allowed) {
         this.world.sendCombatLog(session, usability.reason ?? "No podés equipar ese objeto.");
@@ -354,44 +454,80 @@ export class InventorySystem {
       return;
     }
 
-    const maxDrop = Math.min(session.gold, 100_000);
+    const maxDrop = Math.min(session.gold, GOLD_DROP_MAX_AMOUNT);
     const safeAmount = Math.min(Math.max(1, Math.floor(amount)), maxDrop);
     if (safeAmount <= 0) {
       this.world.sendCombatLog(session, "No tenés oro para tirar.");
       return;
     }
 
-    session.gold -= safeAmount;
-    const tileX = session.tileX;
-    const tileY = session.tileY;
+    const stackSizes = splitGoldIntoWorldStacks(safeAmount);
+    const originX = session.tileX;
+    const originY = session.tileY;
+    const canDropGoldStack = (tileX: number, tileY: number) =>
+      isWorldItemDropTileAllowed(session.mapId, tileX, tileY, (x, y) =>
+        isMapTileWalkable(session.mapId, x, y, this.world.getMapTileOverrides(session.mapId))
+      ) && this.world.getWorldItems().canSpawnAt(session.mapId, tileX, tileY);
 
-    let remaining = safeAmount;
-    while (remaining > 0) {
-      const stackSize = Math.min(remaining, 10_000);
-      const before = this.world.getWorldItems().findAtTile(session.mapId, tileX, tileY);
+    const dropTiles = findSpreadDropTiles(
+      originX,
+      originY,
+      stackSizes.length,
+      canDropGoldStack,
+      32
+    );
+    if (dropTiles.length === 0) {
+      this.world.sendCombatLog(session, "No hay espacio para tirar oro.");
+      return;
+    }
+
+    let droppedTotal = 0;
+    for (let index = 0; index < stackSizes.length; index += 1) {
+      const stackSize = stackSizes[index];
+      const dropTile = dropTiles[index];
+      if (!dropTile) {
+        break;
+      }
+
       const record = this.world.getWorldItems().spawn(
         session.mapId,
         "gold",
-        tileX,
-        tileY,
+        dropTile.tileX,
+        dropTile.tileY,
         stackSize
       );
       if (!record) {
-        session.gold += remaining;
-        this.world.sendInventoryUpdated(session);
-        this.world.sendCombatLog(session, "No hay espacio para tirar oro.");
-        return;
+        continue;
       }
-      const kind = before?.id === record.id ? "updated" : "spawned";
-      this.world.broadcastWorldItemState(session.mapId, tileX, tileY, record, kind);
-      remaining -= stackSize;
+
+      this.world.broadcastWorldItemState(
+        session.mapId,
+        dropTile.tileX,
+        dropTile.tileY,
+        record,
+        "spawned"
+      );
+      droppedTotal += stackSize;
     }
 
+    if (droppedTotal <= 0) {
+      this.world.sendCombatLog(session, "No hay espacio para tirar oro.");
+      return;
+    }
+
+    session.gold -= droppedTotal;
     this.world.sendInventoryUpdated(session);
-    this.world.sendCombatLog(
-      session,
-      `Tiraste ${safeAmount.toLocaleString("es-AR")} de oro.`
-    );
+    if (droppedTotal < safeAmount) {
+      this.world.sendCombatLog(
+        session,
+        `Tiraste ${droppedTotal.toLocaleString("es-AR")} de oro (sin espacio para el resto).`
+      );
+    } else {
+      this.world.sendCombatLog(
+        session,
+        `Tiraste ${droppedTotal.toLocaleString("es-AR")} de oro.`
+      );
+    }
     void this.world.persistSession(session);
   }
 

@@ -1,10 +1,12 @@
 import { INVENTORY_SLOT_COUNT } from "../../game/characterProgressStorage";
+import { canUseItem } from "../../game/itemUsability";
 import { OFFLINE_GAMEPLAY_MESSAGE } from "../../game/mmoMode";
+import { GOLD_DROP_MAX_AMOUNT } from "../../../game-data/constants";
 import {
   getItemDefinition,
   type EquipmentSlot,
   type ItemId,
-} from "../../items/itemDefinitions";
+} from "../../../game-data/items/definitions";
 import type { InventorySlot } from "../../items/inventoryStack";
 import type { GameUi } from "../../ui/gameUi";
 import type { ClassId, RaceId } from "./types";
@@ -134,7 +136,7 @@ export class GameSceneInventoryController {
       return;
     }
 
-    const maxDrop = Math.min(gold, 100_000);
+    const maxDrop = Math.min(gold, GOLD_DROP_MAX_AMOUNT);
     if (maxDrop === 1) {
       this.dropGold(1);
       return;
@@ -163,7 +165,7 @@ export class GameSceneInventoryController {
 
   private dropGold(amount: number): void {
     const progress = this.deps.getPlayerProgress();
-    const maxDrop = Math.min(progress.gold, 100_000);
+    const maxDrop = Math.min(progress.gold, GOLD_DROP_MAX_AMOUNT);
     const safeAmount = Math.min(Math.max(1, Math.floor(amount)), maxDrop);
     if (safeAmount <= 0) return;
 
@@ -220,6 +222,18 @@ export class GameSceneInventoryController {
 
     const item = getItemDefinition(stack.itemId);
     if (!item.equipSlot) return;
+
+    const usability = canUseItem(
+      this.deps.getSelectedClass(),
+      this.deps.getSelectedRace(),
+      this.deps.getPlayerProgress().level,
+      item,
+      this.deps.isPlayerAdmin()
+    );
+    if (!usability.allowed) {
+      this.deps.addChatLine(usability.reason ?? "No podés equipar ese objeto.");
+      return;
+    }
 
     if (this.deps.isMultiplayerActive()) {
       this.deps.syncServerInventory();

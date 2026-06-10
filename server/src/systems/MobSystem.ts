@@ -11,7 +11,9 @@ import { isTileBlockedByMapObject } from "../../../shared/mapObjectDefinitions";
 import { getMap } from "../../../shared/maps";
 import { EDGE_TRANSITION_TRIGGER_DISTANCE } from "../../../shared/mapConstants";
 import { rollMobHitDamage, mobCanAttack } from "../../../game-data/mobCombat";
-import { MOB_MELEE_ENGAGE_DELAY_MS } from "../../../shared/constants";
+import { createEmptyPvpSpellHitRecords } from "../../../game-data/antiOneshot";
+import { mitigatePhysicalDamage } from "../../../game-data/physicalDamageMitigation";
+import { MOB_MELEE_ENGAGE_DELAY_MS } from "../../../game-data/constants";
 import { findFirstChaseStep } from "../../../shared/gridPathfinding";
 
 function getMobStepDurationMs(modelId: string): number {
@@ -81,7 +83,9 @@ export class MobSystem {
         respawnMs: spawn.respawnMs,
         goldReward: spawn.gold,
         expReward: spawn.expReward,
+        aquatic: spawn.aquatic,
       });
+
 
       mob.scheduleNextWander();
       mobs.set(mob.id, mob);
@@ -188,9 +192,18 @@ export class MobSystem {
       const nextX = mob.tileX + (dir === "left" ? -1 : dir === "right" ? 1 : 0);
       const nextY = mob.tileY + (dir === "up" ? -1 : dir === "down" ? 1 : 0);
 
-      if (!isMapTileWalkable(mob.mapId, nextX, nextY, this.world.getMapTileOverrides(mob.mapId))) {
+      if (
+        !isMapTileWalkable(
+          mob.mapId,
+          nextX,
+          nextY,
+          this.world.getMapTileOverrides(mob.mapId),
+          mob.aquatic
+        )
+      ) {
         continue;
       }
+
 
       const padding = EDGE_TRANSITION_TRIGGER_DISTANCE;
       const map = getMap(mob.mapId);
@@ -265,11 +278,13 @@ export class MobSystem {
         mob.mapId,
         tileX,
         tileY,
-        this.world.getMapTileOverrides(mob.mapId)
+        this.world.getMapTileOverrides(mob.mapId),
+        mob.aquatic
       )
     ) {
       return false;
     }
+
 
     const map = getMap(mob.mapId);
     const padding = EDGE_TRANSITION_TRIGGER_DISTANCE;
@@ -302,7 +317,12 @@ export class MobSystem {
   private applyMobDamageToPlayer(mob: MobEntity, victim: PlayerSession, rawDamage: number) {
     if (victim.hp <= 0) return;
 
-    const mitigated = Math.max(1, Math.floor(rawDamage * (1 - victim.damageReductionPercent)));
+    const physical = mitigatePhysicalDamage(rawDamage, {
+      damageReductionPercent: victim.damageReductionPercent,
+      shieldBlockChancePercent: victim.shieldBlockChancePercent,
+      shieldBlockReductionPercent: victim.shieldBlockReductionPercent,
+    });
+    const mitigated = physical.damage;
     victim.hp = Math.max(0, victim.hp - mitigated);
 
     this.world.broadcastGameEvent(victim.mapId, victim.tileX, victim.tileY, {
@@ -312,6 +332,8 @@ export class MobSystem {
       amount: mitigated,
       tileX: victim.tileX,
       tileY: victim.tileY,
+      sourceTileX: mob.tileX,
+      sourceTileY: mob.tileY,
     });
 
     this.world.broadcastToAoi(victim.mapId, victim.tileX, victim.tileY, {
@@ -319,7 +341,8 @@ export class MobSystem {
       player: victim.toNetState(),
     });
     this.world.send(victim, { type: "player_updated", player: victim.toNetState() });
-    this.world.sendCombatLog(victim, `${mob.name} te golpea por ${mitigated}.`);
+    const blockNote = physical.blocked ? " (bloqueaste con el escudo)" : "";
+    this.world.sendCombatLog(victim, `${mob.name} te golpea por ${mitigated}${blockNote}.`);
 
     if (victim.hp <= 0) {
       this.handlePlayerKilledByMob(mob, victim);
@@ -332,6 +355,7 @@ export class MobSystem {
     }
     victim.isDead = true;
     victim.hp = 0;
+    victim.recentPvpSpellHits = createEmptyPvpSpellHitRecords();
     this.world.dropPlayerDeathLoot(victim);
     this.world.sendInventoryUpdated(victim);
     this.world.sendPlayerState(victim);
@@ -360,7 +384,11 @@ export class MobSystem {
     for (const mob of this.world.getMobs().values()) {
       if (mob.alive) continue;
       if (now >= mob.respawnAt) {
-        const spawn = this.pickRandomMobSpawnTileForMap(mob.mapId, mob.id);
+        const spawn = this.pickRandomMobSpawnTileForMap(
+          mob.mapId,
+          mob.id,
+          mob.aquatic
+        );
         if (spawn) {
           mob.tileX = spawn.tileX;
           mob.tileY = spawn.tileY;
@@ -379,8 +407,22 @@ export class MobSystem {
     return respawned;
   }
 
-  public isTileBlockedForMobSpawn(mapId: string, tileX: number, tileY: number, excludeMobId?: string): boolean {
-    if (!isMapTileWalkable(mapId, tileX, tileY, this.world.getMapTileOverrides(mapId))) {
+  public isTileBlockedForMobSpawn(
+    mapId: string,
+    tileX: number,
+    tileY: number,
+    excludeMobId?: string,
+    isAquatic?: boolean
+  ): boolean {
+    if (
+      !isMapTileWalkable(
+        mapId,
+        tileX,
+        tileY,
+        this.world.getMapTileOverrides(mapId),
+        isAquatic
+      )
+    ) {
       return true;
     }
 
@@ -390,15 +432,20 @@ export class MobSystem {
     const npcTiles = getNpcOccupiedTiles(mapId);
     if (npcTiles.some((t: any) => t.x === tileX && t.y === tileY)) return true;
 
-    if (this.isTileOccupiedByMobOrPlayer(tileX, tileY, mapId, excludeMobId)) return true;
+    if (this.isTileOccupiedByMobOrPlayer(tileX, tileY, mapId, excludeMobId))
+      return true;
 
     return false;
   }
 
-  private pickRandomMobSpawnTileForMap(mapId: string, excludeMobId?: string): { tileX: number; tileY: number } | null {
+  private pickRandomMobSpawnTileForMap(
+    mapId: string,
+    excludeMobId?: string,
+    isAquatic?: boolean
+  ): { tileX: number; tileY: number } | null {
     const map = getMap(mapId);
     let attempts = 0;
-    
+
     // El mapa tiene bordes que actúan como transiciones (ej. <= 10 o >= mapWidth-10).
     // Evitamos spawnear mobs en esas franjas para que no aparezcan "fuera" del límite de visión o áreas inaccesibles.
     const padding = EDGE_TRANSITION_TRIGGER_DISTANCE;
@@ -409,7 +456,7 @@ export class MobSystem {
       attempts++;
       const tx = padding + Math.floor(Math.random() * spawnWidth);
       const ty = padding + Math.floor(Math.random() * spawnHeight);
-      if (!this.isTileBlockedForMobSpawn(mapId, tx, ty, excludeMobId)) {
+      if (!this.isTileBlockedForMobSpawn(mapId, tx, ty, excludeMobId, isAquatic)) {
         return { tileX: tx, tileY: ty };
       }
     }

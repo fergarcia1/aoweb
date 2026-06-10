@@ -15,12 +15,15 @@ export function namedWavAssetPath(id: NamedWavId): string {
 export function preloadNamedWavs(
   scene: Phaser.Scene,
   ids: readonly NamedWavId[] = Object.keys(NAMED_WAV_FILES) as NamedWavId[]
-): void {
+): number {
+  let queued = 0;
   for (const id of ids) {
     const key = namedWavAudioKey(id);
     if (scene.cache.audio.exists(key)) continue;
     scene.load.audio(key, namedWavAssetPath(id));
+    queued += 1;
   }
+  return queued;
 }
 
 export function playNamedWav(

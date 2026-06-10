@@ -9,7 +9,7 @@ import {
   itemDropsOnDeath,
   type EquipmentSlot,
   type ItemId,
-} from "../items/itemDefinitions";
+} from "../../game-data/items/definitions";
 import { addToInventory, type InventorySlot } from "../items/inventoryStack";
 import { GHOST_RACE_ID } from "../data/characters";
 import { raceBodyTextureKey, type Outfit, type PlayerArmorVisualOptions } from "../player/playerSprites";

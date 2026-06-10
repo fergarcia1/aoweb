@@ -1,4 +1,4 @@
-import { getMap } from "./maps";
+import { findTransition, getMap } from "./maps";
 import { EDGE_TRANSITION_TRIGGER_DISTANCE } from "./mapConstants";
 
 /** Tile dentro de la franja de cambio de mapa por borde (no apto para loot en el suelo). */
@@ -13,22 +13,17 @@ export function isMapEdgeTransitionZoneTile(
     return true;
   }
 
-  const edges = map.edgeTransitions;
-  if (!edges) {
-    return false;
-  }
-
   const margin = EDGE_TRANSITION_TRIGGER_DISTANCE;
-  if (edges.up !== undefined && tileY <= margin) {
+  if (tileY <= margin && findTransition(mapId, tileX, tileY, "up")) {
     return true;
   }
-  if (edges.down !== undefined && tileY >= map.height - 1 - margin) {
+  if (tileY >= map.height - 1 - margin && findTransition(mapId, tileX, tileY, "down")) {
     return true;
   }
-  if (edges.left !== undefined && tileX <= margin) {
+  if (tileX <= margin && findTransition(mapId, tileX, tileY, "left")) {
     return true;
   }
-  if (edges.right !== undefined && tileX >= map.width - 1 - margin) {
+  if (tileX >= map.width - 1 - margin && findTransition(mapId, tileX, tileY, "right")) {
     return true;
   }
 

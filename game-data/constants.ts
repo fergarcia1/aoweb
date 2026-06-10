@@ -31,12 +31,18 @@ export const DEFAULT_MOB_LEASH_RANGE_TILES = 15;
 export const MOB_MELEE_ENGAGE_DELAY_MS = 400;
 
 /** Milisegundos por paso de movimiento (animación cliente; servidor avanza al instante). */
-export const STEP_DURATION_MS = 220;
+export const STEP_DURATION_MS = 200;
 
 /** Intervalo del loop de simulación del servidor (respawns, etc.). */
 export const WORLD_TICK_MS = 100;
 
 export const DEFAULT_MAP_ID = "mapa1";
+
+/** Máximo de oro que se puede tirar en una sola acción. */
+export const GOLD_DROP_MAX_AMOUNT = 100_000;
+
+/** Máximo por pila de oro en el suelo. */
+export const GOLD_WORLD_STACK_MAX = 10_000;
 
 export const SAFE_ZONE_MAP_IDS: ReadonlySet<string> = new Set(["mapa1"]);
 
@@ -54,6 +60,9 @@ export const FULL_SNAPSHOT_ON_JOIN_ONLY = true;
 
 /** Radio AOI en tiles (Chebyshev) para jugadores/mobs y combate. */
 export const AOI_RADIUS_TILES = 24;
+
+/** Radio en tiles para oír combate, hechizos y pasos ajenos (Chebyshev). */
+export const SOUND_HEARING_RADIUS_TILES = 15;
 
 /** Tope de atributos en creación (raza + clase). */
 export const STAT_MIN = 10;

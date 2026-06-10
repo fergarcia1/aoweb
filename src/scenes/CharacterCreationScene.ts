@@ -1,5 +1,5 @@
 import Phaser from "phaser";
-import type { CharacterClassId } from "../data/items";
+import type { CharacterClassId } from "../../game-data/items/catalog";
 import {
   ALL_CLASSES,
   ALL_GENDERS,
@@ -377,7 +377,6 @@ export class CharacterCreationScene extends Phaser.Scene {
       .setOrigin(0, 0);
 
     this.createFactionButton(x + pad, factionY + 16, "ciudadano");
-    this.createFactionButton(x + pad + 58, factionY + 16, "caos");
 
     const btnY = y + h - pad - 32;
     this.createActionButton(x + pad, btnY, 100, 32, "VOLVER", false, () => this.goBack());

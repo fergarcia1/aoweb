@@ -74,6 +74,8 @@ export type ItemCombatModifiers = {
   damageReductionPercent?: number;
   magicResistancePercent?: number;
   magicDamageBonusPercent?: number;
+  shieldBlockChancePercent?: number;
+  shieldBlockReductionPercent?: number;
 };
 
 export type ItemConsumableEffects = {
@@ -224,7 +226,8 @@ function buildShieldItemDefinition(shield: ShieldData): ItemDefinition {
     nivelMinimo: shield.nivelMinimo,
     usableBy: shield.equipablePor,
     combatModifiers: {
-      damageReductionPercent: shield.reduccionDanioPercent,
+      shieldBlockChancePercent: shield.probabilidadBloqueoPercent,
+      shieldBlockReductionPercent: shield.reduccionAlBloquearPercent,
       magicResistancePercent: shield.resistenciaMagicaPercent,
     },
     textureKey,

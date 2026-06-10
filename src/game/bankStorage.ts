@@ -1,5 +1,5 @@
 import { BANK_SLOT_COUNT } from "../../game-data/constants";
-import type { ItemId } from "../items/itemDefinitions";
+import type { ItemId } from "../../game-data/items/definitions";
 import type { InventorySlot } from "../items/inventoryStack";
 
 export { BANK_SLOT_COUNT };

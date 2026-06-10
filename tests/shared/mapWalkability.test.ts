@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { getMapCollisionOverridesFile } from "../../game-data/maps/mapCollision";
-import { MAP_MAPA1 } from "../../src/maps/mapa1";
+import { MAP_MAPA1 } from "../../shared/maps/mapa1";
+import { MAP_MAPA61 } from "../../shared/maps/mapa61";
 import {
   isLegacyInteriorDoorwayTile,
   isLegacyInvisibleObjectBlock,
@@ -11,7 +12,7 @@ import {
   isPlayerUnderLegacyRoof,
   setDoorTileOverride,
 } from "../../shared/mapWalkability";
-import { TILE } from "../../src/maps/tileDefinitions";
+import { TILE } from "../../shared/tileTypes";
 
 describe("mapWalkability", () => {
   it("carga overrides desde mapa1.collision.json", () => {
@@ -98,15 +99,13 @@ describe("mapWalkability", () => {
     expect(isMapTileWalkable("mapa1", 59, 68)).toBe(true);
   });
 
-  it("permite tiles manuales reportados como caminables en mapa1", () => {
+  it("permite overrides de caminabilidad que siguen siendo necesarios en mapa1", () => {
     const allowed = [
       [45, 43],
       [44, 44],
       [45, 37],
       [30, 23],
       [47, 32],
-      [50, 51],
-      [54, 84],
     ] as const;
     for (const [x, y] of allowed) {
       expect(isMapTileWalkable("mapa1", x, y)).toBe(true);
@@ -221,6 +220,42 @@ describe("mapWalkability", () => {
     setDoorTileOverride(overrides, 67, 80, false);
     expect(isMapTileWalkable("mapa1", 67, 80, overrides)).toBe(false);
     expect(MAP_MAPA1.tiles[80][67]).not.toBe(0);
+  });
+
+  it("permite overrides de puerta abierta aunque la fachada tenga L3", () => {
+    const map = MAP_MAPA1;
+    let l3Tile: [number, number] | undefined;
+    for (let y = 0; y < map.height; y++) {
+      for (let x = 0; x < map.width; x++) {
+        if (isLegacyWallLayerTile(map, x, y)) {
+          l3Tile = [x, y];
+          break;
+        }
+      }
+      if (l3Tile) break;
+    }
+    expect(l3Tile).toBeTruthy();
+    const overrides = new Map<string, number>();
+    const [tileX, tileY] = l3Tile!;
+
+    expect(isMapTileWalkable("mapa1", tileX, tileY)).toBe(false);
+    setDoorTileOverride(overrides, tileX, tileY, true);
+    expect(isMapTileWalkable("mapa1", tileX, tileY, overrides)).toBe(true);
+    setDoorTileOverride(overrides, tileX, tileY, false);
+    expect(isMapTileWalkable("mapa1", tileX, tileY, overrides)).toBe(false);
+  });
+
+  it("bloquea agua legacy de Puerto de Banderbille para personajes a pie", () => {
+    expect(MAP_MAPA61.legacyCsmData?.L1[65]?.[39]).toBe(1513);
+    expect(MAP_MAPA61.tiles[65]?.[39]).toBe(TILE.GRASS);
+    expect(isMapTileWalkable("mapa61", 39, 65)).toBe(false);
+  });
+
+  it("permite caminar sobre orilla legacy de Puerto de Banderbille", () => {
+    expect(MAP_MAPA61.legacyCsmData?.L1[43]?.[40]).toBe(1506);
+    expect(MAP_MAPA61.legacyCsmData?.L1[44]?.[40]).toBe(7704);
+    expect(MAP_MAPA61.tiles[43]?.[40]).toBe(TILE.GRASS);
+    expect(isMapTileWalkable("mapa61", 40, 43)).toBe(true);
   });
 });
 

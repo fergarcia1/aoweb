@@ -262,8 +262,10 @@ export type ShieldData = {
   idItem: number;
   nivelMinimo: number;
   nombre: string;
-  /** Reducción de daño físico (0.08 = 8%). */
-  reduccionDanioPercent: number;
+  /** Probabilidad de bloquear daño físico (0.18 = 18%). */
+  probabilidadBloqueoPercent: number;
+  /** Reducción de daño al bloquear (0.38 = 38%). Solo físico, no hechizos. */
+  reduccionAlBloquearPercent: number;
   /** Resistencia a daño mágico (0.04 = 4%). */
   resistenciaMagicaPercent: number;
   valor: number;
@@ -772,7 +774,8 @@ export const SHIELDS: ShieldData[] = [
     idItem: 2101,
     nivelMinimo: 1,
     nombre: "Escudo de plata",
-    reduccionDanioPercent: 0.06,
+    probabilidadBloqueoPercent: 0.08,
+    reduccionAlBloquearPercent: 0.28,
     resistenciaMagicaPercent: 0.03,
     valor: 2800,
     equipablePor: HEAVY_ARMOR_CLASSES,
@@ -790,7 +793,8 @@ export const SHIELDS: ShieldData[] = [
     idItem: 2102,
     nivelMinimo: 8,
     nombre: "Escudo de plata +2",
-    reduccionDanioPercent: 0.09,
+    probabilidadBloqueoPercent: 0.1,
+    reduccionAlBloquearPercent: 0.3,
     resistenciaMagicaPercent: 0.04,
     valor: 4200,
     equipablePor: HEAVY_ARMOR_CLASSES,
@@ -809,7 +813,8 @@ export const SHIELDS: ShieldData[] = [
     idItem: 2103,
     nivelMinimo: 14,
     nombre: "Escudo del león",
-    reduccionDanioPercent: 0.11,
+    probabilidadBloqueoPercent: 0.12,
+    reduccionAlBloquearPercent: 0.32,
     resistenciaMagicaPercent: 0.05,
     valor: 5800,
     equipablePor: HEAVY_ARMOR_CLASSES,
@@ -820,12 +825,70 @@ export const SHIELDS: ShieldData[] = [
     idItem: 2104,
     nivelMinimo: 20,
     nombre: "Escudo torre",
-    reduccionDanioPercent: 0.14,
+    probabilidadBloqueoPercent: 0.14,
+    reduccionAlBloquearPercent: 0.35,
     resistenciaMagicaPercent: 0.06,
     valor: 7500,
     equipablePor: HEAVY_ARMOR_CLASSES,
     iconAssetPath: "/assets/ao/shields/escudoTorre_icon.png",
     equippedAssetPath: "/assets/ao/shields/escudoTorre.png",
+    equippedScale: 1,
+    equippedOffsetByFacing: {
+      down: { x: 5 },
+      right: { x: 2, y: 3 },
+      up: { x: -5 },
+    },
+  },
+  {
+    itemId: "shield_reflex_treinta",
+    idItem: 2105,
+    nivelMinimo: 25,
+    nombre: "Escudo Reflex +30",
+    probabilidadBloqueoPercent: 0.2,
+    reduccionAlBloquearPercent: 0.4,
+    resistenciaMagicaPercent: 0.1,
+    valor: 9500,
+    equipablePor: HEAVY_ARMOR_CLASSES,
+    iconAssetPath: "/assets/ao/shields/escudoReflexTreinta_icon.png",
+    equippedAssetPath: "/assets/ao/shields/escudoReflexTreinta_std.png",
+    equippedScale: 1,
+    equippedOffsetByFacing: {
+      down: { x: 5 },
+      right: { x: 2, y: 3 },
+      up: { x: -5 },
+    },
+  },
+  {
+    itemId: "shield_tortuga_mas_uno",
+    idItem: 2106,
+    nivelMinimo: 18,
+    nombre: "Escudo Tortuga +1",
+    probabilidadBloqueoPercent: 0.2,
+    reduccionAlBloquearPercent: 0.4,
+    resistenciaMagicaPercent: 0.08,
+    valor: 6500,
+    equipablePor: HEAVY_ARMOR_CLASSES,
+    iconAssetPath: "/assets/ao/shields/escudoTortugaMasUno_icon.png",
+    equippedAssetPath: "/assets/ao/shields/escudoTortugaMasUno_std.png",
+    equippedScale: 1,
+    equippedOffsetByFacing: {
+      down: { x: 5 },
+      right: { x: 2, y: 3 },
+      up: { x: -5 },
+    },
+  },
+  {
+    itemId: "shield_tortuga",
+    idItem: 2107,
+    nivelMinimo: 15,
+    nombre: "Escudo Tortuga",
+    probabilidadBloqueoPercent: 0.18,
+    reduccionAlBloquearPercent: 0.38,
+    resistenciaMagicaPercent: 0.06,
+    valor: 5000,
+    equipablePor: HEAVY_ARMOR_CLASSES,
+    iconAssetPath: "/assets/ao/shields/escudoTortuga_icon.png",
+    equippedAssetPath: "/assets/ao/shields/escudoTortuga_std.png",
     equippedScale: 1,
     equippedOffsetByFacing: {
       down: { x: 5 },
@@ -1374,7 +1437,7 @@ export const MISC_ITEMS: MiscItemData[] = [
     idItem: 4001,
     nivelMinimo: 20,
     nombre: "Anillo Espectral",
-    valor: 15000,
+    valor: 8000,
     usableBy: MANA_CLASSES,
     iconAssetPath: "/assets/ao/otherItems/anilloEspectral.png",
     maxStack: 10_000,

@@ -5,7 +5,7 @@ import {
   STAT_MAX,
   STAT_MIN,
 } from "../../game-data/constants";
-import type { CharacterClassId } from "../data/items";
+import type { CharacterClassId } from "../../game-data/items/catalog";
 import type { CharacterRaceId } from "../data/characters";
 
 export type CoreStats = {

@@ -4,7 +4,7 @@ import {
 } from "../../../shared/characterDeathState";
 import { normalizeOutfit } from "../../../game-data/outfits";
 import type { Facing } from "../../player/playerSprites";
-import type { EquipmentSlot, ItemId } from "../../items/itemDefinitions";
+import type { EquipmentSlot, ItemId } from "../../../game-data/items/definitions";
 import type { InventorySlot } from "../../items/inventoryStack";
 import type { SavedCharacterProgress } from "../../game/characterProgressStorage";
 import type { DeathPhase } from "../../systems/DeathSystem";

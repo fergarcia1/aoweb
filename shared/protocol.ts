@@ -211,6 +211,14 @@ export type ClientSyncVitalsMessage = {
   mp?: number;
 };
 
+export type ClientPartyActionMessage = {
+  type: "party_action";
+  action: "invite" | "accept" | "leave" | "dissolve" | "kick";
+  targetName?: string;
+  targetId?: string;
+  leaderId?: string;
+};
+
 export type ClientMessage =
   | ClientJoinMessage
   | ClientMoveMessage
@@ -234,6 +242,7 @@ export type ClientMessage =
   | ClientReviveMessage
   | ClientInteractMapMessage
   | ClientSyncVitalsMessage
+  | ClientPartyActionMessage
   | ClientBecomeRenegadeMessage
   | ClientRequestLogoutMessage;
 
@@ -339,6 +348,7 @@ export type ServerUseItemAckMessage = {
   mp?: number;
   attributeBuffs?: { strength: number; agility: number };
   buffExpiresAtMs?: number;
+  navigationMode?: "boat" | null;
   message: string;
   /** El cliente debe resolver el efecto (p. ej. scrolls). */
   clientOnly?: boolean;
@@ -399,6 +409,19 @@ export type ServerLogoutCompleteMessage = {
   type: "logout_complete";
 };
 
+export type ServerPartyUpdateMessage = {
+  type: "party_update";
+  partyId: string | null;
+  leaderId: string | null;
+  members: Array<{ id: string; name: string; level: number; hp: number; hpMax: number }>;
+};
+
+export type ServerPartyInviteRequestMessage = {
+  type: "party_invite_request";
+  leaderId: string;
+  leaderName: string;
+};
+
 export type ServerMessage =
   | ServerWelcomeMessage
   | ServerWorldSnapshotMessage
@@ -422,6 +445,8 @@ export type ServerMessage =
   | ServerWorldItemRemovedMessage
   | ServerLogoutCountdownMessage
   | ServerLogoutCompleteMessage
+  | ServerPartyUpdateMessage
+  | ServerPartyInviteRequestMessage
   | ServerErrorMessage;
 
 export function parseClientMessage(raw: string): ClientMessage | null {

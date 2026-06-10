@@ -10,7 +10,10 @@ import {
   STAT_MIN,
 } from "./constants";
 
-export { EXP_BASE, EXP_GROWTH } from "../../../game-data/progressFormulas";
+export {
+  EXP_PROGRESSION_MAX_LEVEL,
+  EXP_TO_NEXT_BY_LEVEL,
+} from "../../../game-data/progressFormulas";
 
 export function expRequiredForLevel(level: number): number {
   return sharedExpRequiredForLevel(level);

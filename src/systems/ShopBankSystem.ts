@@ -19,7 +19,7 @@ import type { SpellShopViewState } from "../ui/spellShopOverlay";
 import {
   getItemDefinition,
   type ItemId,
-} from "../items/itemDefinitions";
+} from "../../game-data/items/definitions";
 import {
   addToInventory,
   moveStackAmount,
@@ -27,7 +27,7 @@ import {
 } from "../items/inventoryStack";
 import { saveBankState, type BankState } from "../game/bankStorage";
 import { canUseItem } from "../game/itemUsability";
-import type { CharacterClassId } from "../data/items";
+import type { CharacterClassId } from "../../game-data/items/catalog";
 import type { CharacterRaceId } from "../data/characters";
 
 export type ShopBankCallbacks = {

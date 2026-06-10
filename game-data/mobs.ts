@@ -46,7 +46,19 @@ export type MobModelId =
   | "duende"
   | "dragon_rojo"
   | "cuervo"
-  | "training_dummy";
+  | "training_dummy"
+  | "golem_infernal"
+  | "golem_piedra"
+  | "hormiga"
+  | "huargo"
+  | "leviatan"
+  | "lobo_invernal"
+  | "wisp"
+  | "ogro"
+  | "ogro_esclavo"
+  | "ogro_lider"
+  | "pirata_arquero"
+  | "pirata_guerrero";
 
 export type MobId =
   | "gallina"
@@ -75,7 +87,19 @@ export type MobId =
   | "ent"
   | "duende"
   | "dragon_rojo"
-  | "cuervo";
+  | "cuervo"
+  | "golem_infernal"
+  | "golem_piedra"
+  | "hormiga"
+  | "huargo"
+  | "leviatan"
+  | "lobo_invernal"
+  | "wisp"
+  | "ogro"
+  | "ogro_esclavo"
+  | "ogro_lider"
+  | "pirata_arquero"
+  | "pirata_guerrero";
 
 const MOB_IDS: MobId[] = [
   "gallina",
@@ -105,6 +129,18 @@ const MOB_IDS: MobId[] = [
   "duende",
   "dragon_rojo",
   "cuervo",
+  "golem_infernal",
+  "golem_piedra",
+  "hormiga",
+  "huargo",
+  "leviatan",
+  "lobo_invernal",
+  "wisp",
+  "ogro",
+  "ogro_esclavo",
+  "ogro_lider",
+  "pirata_arquero",
+  "pirata_guerrero",
 ];
 const MOB_MODEL_IDS: MobModelId[] = [
   "gallina",
@@ -135,6 +171,18 @@ const MOB_MODEL_IDS: MobModelId[] = [
   "dragon_rojo",
   "cuervo",
   "training_dummy",
+  "golem_infernal",
+  "golem_piedra",
+  "hormiga",
+  "huargo",
+  "leviatan",
+  "lobo_invernal",
+  "wisp",
+  "ogro",
+  "ogro_esclavo",
+  "ogro_lider",
+  "pirata_arquero",
+  "pirata_guerrero",
 ];
 const GLOBAL_MOB_ATTACK_COOLDOWN_MS = 1000;
 
@@ -170,6 +218,7 @@ export type MobSpawnConfig = {
   tileX?: number;
   tileY?: number;
   drops: MobDropConfig[];
+  aquatic?: boolean;
 };
 
 export type MobDefinitionConfig = {
@@ -192,13 +241,16 @@ export type MobDefinitionConfig = {
   gold: number;
   npcId?: number;
   drops: MobDropConfig[];
+  aquatic?: boolean;
 };
 
 type MobJsonEntry = (typeof mobsRaw.mobs)[number] & {
   minHit?: number;
   maxHit?: number;
   attackDamage?: number;
+  aquatic?: boolean;
 };
+
 
 function parseMobCombatStats(mob: MobJsonEntry) {
   return normalizeMobHitRange(mob.minHit, mob.maxHit, mob.attackDamage);
@@ -312,10 +364,12 @@ export const MOB_DEFINITIONS: Record<MobId, MobDefinitionConfig> = Object.fromEn
         itemId: asItemId(drop.itemId),
         chancePercent: Math.min(100, Math.max(0, drop.chancePercent)),
       })),
+      aquatic: entry.aquatic,
     } satisfies MobDefinitionConfig,
   ];
   })
 ) as Record<MobId, MobDefinitionConfig>;
+
 
 export const MAP_MOB_SPAWNS: MapMobSpawnConfig[] = mobsRaw.mapSpawns.map((entry) => ({
   mapId: entry.mapId,

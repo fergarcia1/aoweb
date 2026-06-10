@@ -6,7 +6,7 @@ import {
   type SavedWorldItem,
 } from "../../game/characterProgressStorage";
 import { isKnownItemId } from "../../../game-data/items/registry";
-import { getItemDefinition, type ItemId } from "../../items/itemDefinitions";
+import { getItemDefinition, type ItemId } from "../../../game-data/items/definitions";
 import type { GameMap } from "../../maps";
 import { tileToFeetWorld } from "../../player/playerSprites";
 import type { NetWorldItemState } from "../../../shared/types";
@@ -234,7 +234,6 @@ export class WorldItemManager {
   }
 
   private upsertNetState(state: NetWorldItemState): void {
-    console.log(`[CLIENT-SYNC] upsertNetState intentando crear id=${state.id}, itemId=${state.itemId} en ${state.tileX},${state.tileY}`);
     const index = this.findIndexByWorldItemId(state.id);
     if (index !== -1) {
       this.entries[index].sprite.destroy();
@@ -254,10 +253,8 @@ export class WorldItemManager {
 
     if (state.itemId === "gold") {
       this.addGoldSprite(state.tileX, state.tileY, state.count, state.id);
-      console.log(`[CLIENT-SYNC] oro creado`);
     } else if (state.itemId !== "gold" && isKnownItemId(state.itemId)) {
       this.addItemSprite(state.itemId as ItemId, state.tileX, state.tileY, state.count, state.id);
-      console.log(`[CLIENT-SYNC] sprite item creado para ${state.itemId}`);
     } else {
       console.warn(`[CLIENT-SYNC] upsertNetState IGNORADO: no es gold ni conocido (${state.itemId})`);
     }

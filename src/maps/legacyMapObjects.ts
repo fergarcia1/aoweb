@@ -1,7 +1,5 @@
 import { IMPORTED_OBJS } from "../../game-data/imported/objs_imported";
 import type { GameMap } from "./types";
-import { getManualSignPlacementsForMap } from "./mapa1SignPlacements";
-import { collectSignGrhFileNums } from "./mapSignRender";
 
 /**
  * En Imperium, objIndex 1 en el .csm = cartel con mensaje en objAmount (Carteles.dat).
@@ -112,13 +110,6 @@ export function collectLegacyObjGrhFileNums(
       continue;
     }
     addDefFileNums(def, placement.objIndex);
-  }
-
-  for (const fileNum of collectSignGrhFileNums(
-    getManualSignPlacementsForMap(map.id),
-    grhIndex
-  )) {
-    nums.add(fileNum);
   }
 
   return [...nums];

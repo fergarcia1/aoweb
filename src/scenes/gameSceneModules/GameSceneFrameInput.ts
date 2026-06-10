@@ -7,9 +7,11 @@ export type GameSceneFrameInputDeps = {
   isConfirmOpen: boolean;
   isMacroEditorOpen: boolean;
   isStatsOverlayOpen: boolean;
+  isPartyOverlayOpen: boolean;
   isBankOpen: boolean;
   isShopOpen: boolean;
   justPressedWorldMapToggle: boolean;
+  justPressedPartyToggle: boolean;
   hasPendingSpellCast: boolean;
   justPressedCancelTargeting: boolean;
   isWorldMapOpen: boolean;
@@ -27,6 +29,7 @@ export type GameSceneFrameInputDeps = {
   setNextImmobilizedFeedbackAt: (at: number) => void;
   isMultiplayerActive: () => boolean;
   toggleWorldMap: () => void;
+  togglePartyOverlay: () => void;
   cancelSpellTargeting: (message: string) => void;
   handleShopEscape: () => void;
   handleBankEscape: () => void;
@@ -52,11 +55,18 @@ export function processGameSceneFrameInput(deps: GameSceneFrameInputDeps): boole
     return true;
   }
 
+  if (deps.isChatFocused || deps.isConfirmOpen || deps.isMacroEditorOpen) {
+    return true;
+  }
+
+  if (deps.justPressedPartyToggle) {
+    deps.togglePartyOverlay();
+    return true;
+  }
+
   if (
-    deps.isChatFocused ||
-    deps.isConfirmOpen ||
-    deps.isMacroEditorOpen ||
     deps.isStatsOverlayOpen ||
+    deps.isPartyOverlayOpen ||
     deps.isBankOpen ||
     deps.isShopOpen
   ) {

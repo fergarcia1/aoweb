@@ -1,6 +1,6 @@
 import type Phaser from "phaser";
 import type { Facing } from "../../player/playerSprites";
-import { MOB_MODELS, type MobModelId } from "../../data/mobs";
+import { MOB_MODELS, type MobModelId } from "../../../game-data/mobs";
 import { getRaceFaceLayout } from "../../player/raceFaceLayout";
 import { faceTextureKey, getFaceFrame } from "../../player/raceFaces";
 import { MOB_VISUAL_CONFIGS } from "./mobVisualConfig";

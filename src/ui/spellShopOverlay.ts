@@ -1,6 +1,6 @@
 import Phaser from "phaser";
 import type { SpellDefinition } from "../data/spells";
-import type { CharacterClassId } from "../data/items";
+import type { CharacterClassId } from "../../game-data/items/catalog";
 import { macroSpellTextureKey } from "../scenes/gameSceneModules/progressFormulas";
 import { GAME_FONT, GAME_TEXT_RESOLUTION } from "./fonts";
 import type { GameViewportRect } from "./deathOverlay";

@@ -22,6 +22,8 @@ export {
   EDGE_TRANSITION_TRIGGER_DISTANCE,
   START_MAP_ID,
   findTransition,
+  getAdjacentMapIds,
   getAllMaps,
   getMap,
+  getScopedPreloadMapIds,
 } from "../../shared/maps";

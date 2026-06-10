@@ -80,6 +80,10 @@ export function syncMapSceneryOcclusion(params: MapSceneryOcclusionParams): void
           building.setAlpha(1);
           return;
         }
+        if (building.getData("isLegacyDoor") === true) {
+          building.setAlpha(1);
+          return;
+        }
         const isCeiling = isLegacyInteriorDoorwayTile(map, tx, ty);
         building.setAlpha(isCeiling ? 0 : 1);
       }

@@ -15,6 +15,11 @@ const FRAME_W = 32;
 const FRAME_H = 48;
 const SHEET_COLS = 6;
 const FRAME_INSET = 0;
+export const BOAT_BODY_TEXTURE_KEY = "barca";
+const BOAT_FRAME_W = 128;
+const BOAT_FRAME_H = 128;
+const BOAT_SHEET_COLS = 4;
+const BOAT_BODY_PATH = "/assets/ao/razes/barca.png";
 
 export function raceBodyTextureKey(
   raceId: CharacterRaceId,
@@ -256,6 +261,8 @@ type BodyAnimLayout = {
   sheetCols: number;
   walkColumns: Record<Facing, number>;
   walkStartCol: Record<Facing, number>;
+  frameWidth?: number;
+  frameHeight?: number;
   /** Duración del paso vs jugador vivo (1.2 = 20 % más rápido). */
   moveSpeedRatio?: number;
 };
@@ -273,6 +280,13 @@ const BODY_ANIM_BY_TEXTURE: Partial<Record<string, BodyAnimLayout>> = {
     walkColumns: { down: 3, up: 3, left: 3, right: 3 },
     walkStartCol: { down: 0, up: 0, left: 0, right: 0 },
     moveSpeedRatio: GHOST_MOVE_SPEED_RATIO,
+  },
+  [BOAT_BODY_TEXTURE_KEY]: {
+    sheetCols: BOAT_SHEET_COLS,
+    walkColumns: { down: 4, up: 4, left: 4, right: 4 },
+    walkStartCol: { down: 0, up: 0, left: 0, right: 0 },
+    frameWidth: BOAT_FRAME_W,
+    frameHeight: BOAT_FRAME_H,
   },
 };
 
@@ -331,6 +345,10 @@ export function registerRaceBodySprites(scene: Phaser.Scene): void {
       frameHeight: FRAME_H,
     });
   }
+  scene.load.spritesheet(BOAT_BODY_TEXTURE_KEY, BOAT_BODY_PATH, {
+    frameWidth: BOAT_FRAME_W,
+    frameHeight: BOAT_FRAME_H,
+  });
 }
 
 function loadArmorSpritesheet(scene: Phaser.Scene, textureKey: string, assetPath: string): void {
@@ -379,6 +397,10 @@ export function setupPlayerTexture(scene: Phaser.Scene): void {
       texture.setFilter(Phaser.Textures.FilterMode.NEAREST);
     }
   }
+  const boatTexture = scene.textures.get(BOAT_BODY_TEXTURE_KEY);
+  if (boatTexture.key !== "__MISSING") {
+    boatTexture.setFilter(Phaser.Textures.FilterMode.NEAREST);
+  }
 
   for (const outfit of Object.keys(PLAYER_TEXTURE_KEYS) as Array<Exclude<Outfit, "base">>) {
     for (const textureKey of [
@@ -408,9 +430,11 @@ function registerInsetFrame(
   texture: Phaser.Textures.Texture,
   textureKey: string,
   frameIdx: number,
-  sheetCols = SHEET_COLS
+  sheetCols = SHEET_COLS,
+  frameWidth = FRAME_W,
+  frameHeight = FRAME_H
 ): string {
-  const aliasKey = `${textureKey}:${sheetCols}:${frameIdx}`;
+  const aliasKey = `${textureKey}:${sheetCols}:${frameWidth}:${frameHeight}:${frameIdx}`;
   const existing = playerInsetAliases.get(aliasKey);
   if (existing) {
     return existing;
@@ -423,10 +447,10 @@ function registerInsetFrame(
   texture.add(
     alias,
     0,
-    col * FRAME_W + FRAME_INSET,
-    row * FRAME_H + FRAME_INSET,
-    FRAME_W - FRAME_INSET * 2,
-    FRAME_H - FRAME_INSET * 2
+    col * frameWidth + FRAME_INSET,
+    row * frameHeight + FRAME_INSET,
+    frameWidth - FRAME_INSET * 2,
+    frameHeight - FRAME_INSET * 2
   );
 
   playerInsetAliases.set(aliasKey, alias);
@@ -450,6 +474,8 @@ function registerAnimationsForTexture(
   const facings: Facing[] = ["down", "up", "right", "left"];
   const texture = scene.textures.get(textureKey);
   const layout = bodyAnimLayout(textureKey);
+  const frameWidth = layout.frameWidth ?? FRAME_W;
+  const frameHeight = layout.frameHeight ?? FRAME_H;
   const stepDurationMs = stepDurationMsForBodyTexture(textureKey);
 
   for (const facing of facings) {
@@ -460,12 +486,26 @@ function registerAnimationsForTexture(
     for (let step = 0; step < walkColumnCount; step += 1) {
       const col = walkStartCol + step;
       const idx = frameIndex(facing, col, layout.sheetCols);
-      const frameName = registerInsetFrame(texture, textureKey, idx, layout.sheetCols);
+      const frameName = registerInsetFrame(
+        texture,
+        textureKey,
+        idx,
+        layout.sheetCols,
+        frameWidth,
+        frameHeight
+      );
       walkFrames.push({ key: textureKey, frame: frameName });
     }
 
     const idleIdx = frameIndex(facing, 0, layout.sheetCols);
-    const idleFrameName = registerInsetFrame(texture, textureKey, idleIdx, layout.sheetCols);
+    const idleFrameName = registerInsetFrame(
+      texture,
+      textureKey,
+      idleIdx,
+      layout.sheetCols,
+      frameWidth,
+      frameHeight
+    );
 
     scene.anims.create({
       key: buildAnimationKey("walk", facing, animOutfitKey),
@@ -493,6 +533,7 @@ export function registerPlayerAnimations(scene: Phaser.Scene): void {
     const bodyKey = raceBodyTextureKey(raceId, genderId);
     registerAnimationsForTexture(scene, bodyKey, `base_${bodyKey}`);
   }
+  registerAnimationsForTexture(scene, BOAT_BODY_TEXTURE_KEY, BOAT_BODY_TEXTURE_KEY);
 
   for (const outfit of Object.keys(PLAYER_TEXTURE_KEYS) as Array<Exclude<Outfit, "base">>) {
     registerAnimationsForTexture(
@@ -673,14 +714,6 @@ export function buildEquippedArmorVisualFromItem(item: {
     spritesheetBajosPath: item.spritesheetBajosPath ?? defaults.spritesheetBajosPath,
     spritesheetPathsByRace: item.spritesheetPathsByRace,
   };
-}
-
-/** @deprecated Usar textureKeyForPlayer(outfit, baseBodyKey) */
-export function textureKeyForOutfit(outfit: Outfit): string {
-  if (outfit === "base") {
-    return raceBodyTextureKey("human", "male");
-  }
-  return PLAYER_TEXTURE_KEYS[outfit];
 }
 
 export function feetOffsetForOutfit(outfit: Outfit): { x: number; y: number } {

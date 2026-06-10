@@ -1,6 +1,6 @@
 import type { DeathPhase } from "../../systems/DeathSystem";
-import type { ItemId } from "../../items/itemDefinitions";
-import { getItemDefinition } from "../../items/itemDefinitions";
+import type { ItemId } from "../../../game-data/items/definitions";
+import { getItemDefinition } from "../../../game-data/items/definitions";
 import { INVENTORY_SLOT_COUNT } from "../../game/characterProgressStorage";
 import type { NetInventorySlotState, ServerWelcomeMessage } from "../../../shared/protocol";
 import { BANK_SLOT_COUNT } from "../../../game-data/constants";
@@ -69,6 +69,7 @@ export type GameSceneLocalPlayerSyncDeps = {
   recordLocalUserKill: () => void;
   setInvisibleUntilMs: (ms: number) => void;
   setPlayerImmobilizedUntilMs: (ms: number) => void;
+  setNavigatingFromServer: (active: boolean) => void;
   setAttributeBuffsFromServer: (buffs: { strength: number; agility: number }) => void;
   setAttributeBuffExpiresAt: (ms: number) => void;
   onPlayerLevelUp?: (previousLevel: number, newLevel: number) => void;
@@ -172,6 +173,13 @@ export class GameSceneLocalPlayerSync {
     const now = Date.now();
     const invisUntil = state.invisibleUntilMs ?? 0;
     this.deps.setInvisibleUntilMs(invisUntil > now ? invisUntil : 0);
+    this.deps.setNavigatingFromServer(state.isNavigating === true);
+
+    const hasBuffPayload =
+      state.attributeBuffs !== undefined || state.buffExpiresAtMs !== undefined;
+    if (!hasBuffPayload) {
+      return;
+    }
 
     const buffExpiresAt = state.buffExpiresAtMs ?? 0;
     if (state.attributeBuffs && buffExpiresAt > now) {
@@ -180,10 +188,11 @@ export class GameSceneLocalPlayerSync {
         agility: Math.max(0, Math.floor(state.attributeBuffs.agility)),
       });
       this.deps.setAttributeBuffExpiresAt(buffExpiresAt);
-    } else {
-      this.deps.setAttributeBuffsFromServer({ strength: 0, agility: 0 });
-      this.deps.setAttributeBuffExpiresAt(0);
+      return;
     }
+
+    this.deps.setAttributeBuffsFromServer({ strength: 0, agility: 0 });
+    this.deps.setAttributeBuffExpiresAt(0);
   }
 
   syncLocalEquipmentFromServer(state: NetPlayerState | null | undefined): void {

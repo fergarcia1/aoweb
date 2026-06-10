@@ -1,19 +1,24 @@
 import type Phaser from "phaser";
 import type { Facing } from "../../player/playerSprites";
-import { MOB_MODELS, type MobModelId } from "../../data/mobs";
+import { MOB_MODELS, type MobModelId } from "../../../game-data/mobs";
 import { MOB_VISUAL_CONFIGS, mobTextureKey } from "./mobVisualConfig";
 import {
   getMobIdleFrameIndex,
   getMobSpriteFlipX,
   getMobWalkFrameIndices,
 } from "./mobFrameIndex";
-import { loadMobVisualAssets } from "./loadMobVisualAssets";
+import { loadMobVisualAssets, loadMobVisualAssetsForModels } from "./loadMobVisualAssets";
 import {
   mobWalkAnimKey,
   registerMobWalkAnimations,
 } from "./registerMobWalkAnimations";
 
-export { loadMobVisualAssets, registerMobWalkAnimations, mobWalkAnimKey };
+export {
+  loadMobVisualAssets,
+  loadMobVisualAssetsForModels,
+  registerMobWalkAnimations,
+  mobWalkAnimKey,
+};
 
 export function getMobVisualConfig(modelId: MobModelId) {
   return MOB_VISUAL_CONFIGS[modelId];

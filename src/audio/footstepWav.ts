@@ -9,6 +9,7 @@ const FOOTSTEP_PATHS = [
 ] as const;
 
 let nextFootstepIndex = 0;
+let lastFootstepTime = 0;
 
 export function preloadFootstepWavs(scene: Phaser.Scene): void {
   for (let i = 0; i < FOOTSTEP_AUDIO_KEYS.length; i += 1) {
@@ -18,8 +19,16 @@ export function preloadFootstepWavs(scene: Phaser.Scene): void {
   }
 }
 
+const MIN_FOOTSTEP_INTERVAL_MS = 120;
+
 /** Alterna step / step2 en cada tile de caminata del jugador local. */
 export function playFootstepWav(scene: Phaser.Scene, volume = 0.38): boolean {
+  const now = scene.time?.now ?? Date.now();
+  if (now - lastFootstepTime < MIN_FOOTSTEP_INTERVAL_MS) {
+    return false;
+  }
+  lastFootstepTime = now;
+
   const key = FOOTSTEP_AUDIO_KEYS[nextFootstepIndex];
   nextFootstepIndex = (nextFootstepIndex + 1) % FOOTSTEP_AUDIO_KEYS.length;
 

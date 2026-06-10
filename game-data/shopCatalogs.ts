@@ -14,6 +14,7 @@ export function getMerchantDisplayTitle(role: MerchantRole): string {
   if (role === "armorer") return "Armero";
   if (role === "tailor") return "Sastre";
   if (role === "mage") return "Vendedor de Magia";
+  if (role === "general") return "Vendedor General";
   return "Alquimista";
 }
 
@@ -34,12 +35,23 @@ const TAILOR_CATALOG: ItemId[] = ARMORS.filter((armor) =>
   /tunica|citizen|atuendo|ropa/i.test(armor.itemId)
 ).map((armor) => armor.itemId);
 
+const GENERAL_CATALOG: ItemId[] = [
+  "anillo_espectral",
+  "barca",
+  "montura_caballo_mago",
+  "montura_caballo_negro",
+  "montura_caballo_nw",
+  "montura_caballo_semielfo",
+  "montura_huargo",
+];
+
 export const SHOP_CATALOGS: Record<MerchantRole, ItemId[]> = {
   blacksmith: BLACKSMITH_CATALOG,
   armorer: ARMORER_CATALOG,
   tailor: TAILOR_CATALOG,
   alchemist: ALCHEMIST_CATALOG,
   mage: [],
+  general: GENERAL_CATALOG,
 };
 
 export function getShopCatalogForRole(role: MerchantRole): ItemId[] {

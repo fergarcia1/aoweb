@@ -9,13 +9,19 @@ import {
 import { deltaFromDirection, facingFromDirection } from "../../../shared/protocol";
 import { isMapTileWalkable } from "../../../shared/mapWalkability";
 import { getMap, findTransition } from "../../../shared/maps";
+import { canNavigateToTile } from "../../../shared/navigation";
+import {
+  canEnterNewbieDungeon,
+  NEWBIE_DUNGEON_ENTRY_DENIED_MESSAGE,
+  NEWBIE_DUNGEON_MAP_ID,
+} from "../../../shared/newbieDungeon";
 import { isTileBlockedByMapObject } from "../../../shared/mapObjectDefinitions";
 import type { PlayerSession } from "../PlayerSession";
 import type { WorldContext } from "./WorldContext";
 import type { ClientMessage } from "../../../shared/protocol";
 import type { MapTransition } from "../../../shared/mapTypes";
 import { isInAoi } from "../../../shared/aoi";
-import { FULL_SNAPSHOT_ON_JOIN_ONLY } from "../../../shared/constants";
+import { FULL_SNAPSHOT_ON_JOIN_ONLY } from "../../../game-data/constants";
 
 export class MovementSystem {
   constructor(private ctx: WorldContext) {}
@@ -51,14 +57,24 @@ export class MovementSystem {
         this.rejectPlayerMove(session, prevX, prevY);
         return;
       }
-      session.nextMoveAt = moveCooldownUntil(now);
+      if (transition.toMapId === NEWBIE_DUNGEON_MAP_ID && !canEnterNewbieDungeon(session.level)) {
+        this.ctx.sendCombatLog(session, NEWBIE_DUNGEON_ENTRY_DENIED_MESSAGE);
+        this.rejectPlayerMove(session, prevX, prevY);
+        return;
+      }
+      session.nextMoveAt = moveCooldownUntil(now, session.speedMultiplier);
       this.changeMap(session, transition);
       return;
     }
 
+    const map = getMap(session.mapId);
+    const tileOverrides = this.ctx.getMapTileOverrides(session.mapId);
+    const mapAllowsMove = session.isNavigating
+      ? canNavigateToTile(map, nextX, nextY, tileOverrides)
+      : isMapTileWalkable(session.mapId, nextX, nextY, tileOverrides);
     const blocked =
-      !isMapTileWalkable(session.mapId, nextX, nextY, this.ctx.getMapTileOverrides(session.mapId)) ||
-      isTileBlockedByMapObject(getMap(session.mapId).objects, nextX, nextY) ||
+      !mapAllowsMove ||
+      isTileBlockedByMapObject(map.objects, nextX, nextY) ||
       (!isGhost &&
         this.ctx.isTileOccupied(nextX, nextY, session.mapId, session.id, { ignoreGhosts: true }));
 
@@ -72,7 +88,7 @@ export class MovementSystem {
       this.rejectPlayerMove(session, prevX, prevY);
       return;
     }
-    session.nextMoveAt = moveCooldownUntil(now);
+    session.nextMoveAt = moveCooldownUntil(now, session.speedMultiplier);
 
     if (
       !isGhost &&
@@ -126,7 +142,7 @@ export class MovementSystem {
     );
   }
 
-  private changeMap(session: PlayerSession, transition: MapTransition) {
+  public changeMap(session: PlayerSession, transition: MapTransition) {
     const prevMapId = session.mapId;
     const prevX = session.tileX;
     const prevY = session.tileY;

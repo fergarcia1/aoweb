@@ -21,8 +21,8 @@ export function validateMoveIntent(now: number, nextMoveAt: number): MoveIntentR
   return { ok: true };
 }
 
-export function moveCooldownUntil(now: number): number {
-  return now + MECHANICS.INTERVAL_MOVE_STEP;
+export function moveCooldownUntil(now: number, speedMultiplier: number = 1): number {
+  return now + Math.max(90, Math.floor(MECHANICS.INTERVAL_MOVE_STEP / speedMultiplier));
 }
 
 export function validateAttackIntent(now: number, nextAttackAt: number): AttackIntentResult {

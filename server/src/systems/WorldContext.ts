@@ -66,6 +66,13 @@ export interface WorldContext {
   cancelResurrectForPlayer(playerId: string): void;
   tryBecomeRenegade(session: PlayerSession): void;
   onUserKill(killer: PlayerSession, victim: PlayerSession): void;
+  handlePartyAction(session: PlayerSession, message: import("../../../shared/protocol").ClientPartyActionMessage): void;
   /** Overrides de tipo de tile (puertas abiertas/cerradas) por mapa. */
   getMapTileOverrides(mapId: string): ReadonlyMap<string, number> | undefined;
+  sendBankUpdated(session: PlayerSession): void;
+  sendSpellsUpdated(session: PlayerSession): void;
+  syncInventoryEquippedFlags(session: PlayerSession): void;
+  getDynamicMapObjs(mapId: string): { tileX: number; tileY: number; objIndex: number; isOpen: boolean }[] | undefined;
+  setDynamicMapObjs(mapId: string, objs: { tileX: number; tileY: number; objIndex: number; isOpen: boolean }[]): void;
+  setDoorTileOverride(mapId: string, tileX: number, tileY: number, isOpen: boolean): void;
 }

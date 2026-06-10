@@ -141,6 +141,12 @@ export class NpcManager {
     }
   }
 
+  forEachInteractiveBody(callback: (body: Phaser.GameObjects.Sprite) => void) {
+    for (const entry of this.entries.values()) {
+      callback(entry.body);
+    }
+  }
+
   findNpcAtWorldPoint(worldX: number, worldY: number): StaticNpcDefinition | undefined {
     for (const entry of this.entries.values()) {
       if (containsWorldPointInHitArea(entry.body, worldX, worldY)) {

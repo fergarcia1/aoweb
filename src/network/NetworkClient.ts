@@ -2,6 +2,8 @@ import type {
   ClientMessage,
   NetInventorySlotState,
   ServerMessage,
+  ServerPartyInviteRequestMessage,
+  ServerPartyUpdateMessage,
   ServerUseItemAckMessage,
   ServerWelcomeMessage,
 } from "../../shared/protocol";
@@ -47,6 +49,8 @@ export type NetworkClientHandlers = {
   ) => void;
   onSpellsUpdated?: (learnedSpellIds: number[]) => void;
   onPlayerProgressUpdated?: (exp: number, expToNext: number, level: number) => void;
+  onPartyUpdate?: (message: ServerPartyUpdateMessage) => void;
+  onPartyInviteRequest?: (message: ServerPartyInviteRequestMessage) => void;
   onWorldItemSpawned?: (mapId: string, item: NetWorldItemState) => void;
   onWorldItemUpdated?: (mapId: string, item: NetWorldItemState) => void;
   onWorldItemRemoved?: (mapId: string, worldItemId: string) => void;
@@ -61,6 +65,7 @@ export type NetworkClientOptions = {
 };
 
 const RECONNECT_DELAYS_MS = [1_000, 2_000, 4_000, 8_000, 15_000];
+const NON_RECONNECT_CLOSE_CODES = new Set([4000, 4001, 4002, 4003, 4004]);
 
 export class NetworkClient {
   private socket: WebSocket | null = null;
@@ -98,7 +103,10 @@ export class NetworkClient {
       this.socket = null;
       this.playerId = null;
       const willReconnect =
-        this.autoReconnect && !this.intentionalClose && this.reconnectAttempt < 12;
+        this.autoReconnect &&
+        !this.intentionalClose &&
+        !NON_RECONNECT_CLOSE_CODES.has(event.code) &&
+        this.reconnectAttempt < 12;
       this.handlers.onDisconnected?.({
         code: event.code,
         reason: event.reason,
@@ -304,6 +312,15 @@ export class NetworkClient {
     this.send({ type: "request_logout" });
   }
 
+  sendPartyAction(
+    action: Extract<ClientMessage, { type: "party_action" }>["action"],
+    targetName?: string,
+    leaderId?: string,
+    targetId?: string
+  ) {
+    this.send({ type: "party_action", action, targetName, leaderId, targetId });
+  }
+
   private send(message: ClientMessage) {
     if (!this.isConnected() || !this.socket) {
       return;
@@ -426,8 +443,17 @@ export class NetworkClient {
       this.handlers.onLogoutComplete?.();
       return;
     }
+    if (message.type === "party_update") {
+      this.handlers.onPartyUpdate?.(message);
+      return;
+    }
+    if (message.type === "party_invite_request") {
+      this.handlers.onPartyInviteRequest?.(message);
+      return;
+    }
     if (message.type === "error") {
       this.handlers.onError?.(message.message, message.code);
     }
   }
 }
+

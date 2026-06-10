@@ -1,6 +1,6 @@
-import { ALL_ITEM_IDS } from "../../items/itemDefinitions";
+import { ALL_ITEM_IDS } from "../../../game-data/items/definitions";
 import { addToInventory, type InventorySlot } from "../../items/inventoryStack";
-import { getItemDefinition } from "../../items/itemDefinitions";
+import { getItemDefinition } from "../../../game-data/items/definitions";
 import type { GameUi } from "../../ui/gameUi";
 import { getAowebSkinThemeLabel, getAowebSkinVariant, parseUiSkinCommandArg } from "../../ui/aowebSkinVariant";
 import { canRenegade } from "../../../shared/faction";
@@ -142,6 +142,9 @@ export class GameSceneChatCommands {
       return true;
     }
     if (normalized.startsWith("/give")) {
+      if (this.deps.isMultiplayerConnected() && this.deps.isPlayerAdmin()) {
+        return this.deps.tryAdminCommand(message.trim());
+      }
       this.deps.handleGiveCommand(message.trim());
       return true;
     }

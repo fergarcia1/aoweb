@@ -5,8 +5,19 @@
 import type Phaser from "phaser";
 import { listReadyImperiumBodyVisuals } from "../../../game-data/imperium/npcBodyVisuals";
 
-export function loadAllImperiumNpcVisualAssets(scene: Phaser.Scene): void {
+export function loadImperiumNpcVisualAssetsForBodyIds(
+  scene: Phaser.Scene,
+  bodyIds: Iterable<number>
+): void {
+  const wanted = new Set(bodyIds);
+  if (wanted.size === 0) {
+    return;
+  }
+
   for (const visual of listReadyImperiumBodyVisuals()) {
+    if (!wanted.has(visual.bodyId)) {
+      continue;
+    }
     if (scene.textures.exists(visual.textureKey)) {
       continue;
     }
@@ -15,4 +26,11 @@ export function loadAllImperiumNpcVisualAssets(scene: Phaser.Scene): void {
       frameHeight: visual.frameHeight,
     });
   }
+}
+
+export function loadAllImperiumNpcVisualAssets(scene: Phaser.Scene): void {
+  loadImperiumNpcVisualAssetsForBodyIds(
+    scene,
+    listReadyImperiumBodyVisuals().map((visual) => visual.bodyId)
+  );
 }

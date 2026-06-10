@@ -11,7 +11,7 @@ import {
 import { OFFLINE_GAMEPLAY_MESSAGE } from "../../game/mmoMode";
 import { CLASS_USES_MANA } from "./constants";
 import { canUseItem } from "../../game/itemUsability";
-import { getItemDefinition, type ItemId } from "../../items/itemDefinitions";
+import { getItemDefinition, type ItemId } from "../../../game-data/items/definitions";
 import type { InventorySlot } from "../../items/inventoryStack";
 import { SPELL_DEFINITIONS } from "../../data/spells";
 import type { ServerUseItemAckMessage } from "../../../shared/protocol";
@@ -37,6 +37,7 @@ export type GameSceneConsumableDeps = {
   learnSpell: (id: number) => void;
   addChatLine: (text: string) => void;
   refreshHud: () => void;
+  setNavigatingFromServer?: (active: boolean) => void;
 
   refreshKnownSpellsUi: () => void;
   getCoreStats: () => ReturnType<typeof resolveCoreStats>;
@@ -92,6 +93,21 @@ export class GameSceneConsumableController {
       this.deps.resetAttributeBuffTimer();
     }
     this.deps.refreshHud();
+
+    if (ack.navigationMode === "boat") {
+      this.deps.setNavigatingFromServer?.(true);
+      this.deps.deferConsumableUiWork(() => {
+        this.deps.addChatLine(ack.message);
+      });
+      return;
+    }
+    if (ack.navigationMode === null) {
+      this.deps.setNavigatingFromServer?.(false);
+      this.deps.deferConsumableUiWork(() => {
+        this.deps.addChatLine(ack.message);
+      });
+      return;
+    }
 
     if (ack.clientOnly && typeof ack.inventorySlot === "number") {
       this.deps.deferConsumableUiWork(() => {

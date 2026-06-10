@@ -1,7 +1,7 @@
 import type Phaser from "phaser";
 import type { Facing } from "../player/playerSprites";
-import type { EquipmentSlot, ItemDefinition, ItemId } from "../items/itemDefinitions";
-import { getItemDefinition } from "../items/itemDefinitions";
+import type { EquipmentSlot, ItemDefinition, ItemId } from "../../game-data/items/definitions";
+import { getItemDefinition } from "../../game-data/items/definitions";
 
 /** Filas SWAD en hojas equipadas 192×192 (6×4 celdas de 32×48). */
 const EQUIP_ROW_BY_FACING: Record<Facing, number> = {
@@ -64,6 +64,7 @@ export type EquippedGearSyncContext = {
   helmetSprite?: Phaser.GameObjects.Sprite;
   walkSwayX?: number;
   walkSwayY?: number;
+  hideEquipmentVisuals?: boolean;
 };
 
 function getEquippedSheetFacing(item: ItemDefinition, facing: Facing): Facing {
@@ -153,7 +154,7 @@ export function syncEquippedWeaponVisual(ctx: EquippedGearSyncContext): void {
   }
 
   const equippedWeaponId = ctx.equipment.weapon;
-  if (!equippedWeaponId || ctx.useGhostAppearance) {
+  if (!equippedWeaponId || ctx.useGhostAppearance || ctx.hideEquipmentVisuals) {
     sprite.setVisible(false);
     return;
   }
@@ -176,7 +177,7 @@ export function syncEquippedShieldVisual(ctx: EquippedGearSyncContext): void {
   }
 
   const equippedShieldId = ctx.equipment.shield;
-  if (!equippedShieldId || ctx.useGhostAppearance) {
+  if (!equippedShieldId || ctx.useGhostAppearance || ctx.hideEquipmentVisuals) {
     sprite.setVisible(false);
     return;
   }
@@ -209,7 +210,7 @@ export function syncEquippedHelmetVisual(ctx: EquippedGearSyncContext): void {
   }
 
   const equippedHelmetId = ctx.equipment.helmet;
-  if (!equippedHelmetId || ctx.useGhostAppearance) {
+  if (!equippedHelmetId || ctx.useGhostAppearance || ctx.hideEquipmentVisuals) {
     sprite.setVisible(false);
     return;
   }

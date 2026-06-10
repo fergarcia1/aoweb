@@ -18,6 +18,7 @@ export { FACTION_LABELS, normalizeFactionId, canFactionsFight } from "../../shar
 export const CHARACTER_SLOT_COUNT = 6;
 const STORAGE_KEY = "aoweb_character_slots_v3";
 const ACTIVE_SLOT_KEY = "aoweb_active_character_slot";
+const AUTH_ACCOUNT_KEY = "aoweb_auth_account";
 
 export type SavedCharacter = {
   id: string;
@@ -34,6 +35,33 @@ export type SavedCharacter = {
 };
 
 export type CharacterSlot = SavedCharacter | null;
+
+function getCurrentAccountStorageSuffix(): string {
+  const raw = localStorage.getItem(AUTH_ACCOUNT_KEY);
+  if (!raw) {
+    return "guest";
+  }
+  try {
+    const account = JSON.parse(raw) as { id?: unknown };
+    return typeof account.id === "string" && account.id.trim()
+      ? `account_${account.id.trim()}`
+      : "guest";
+  } catch {
+    return "guest";
+  }
+}
+
+function getCharacterSlotsStorageKey(): string {
+  return `${STORAGE_KEY}_${getCurrentAccountStorageSuffix()}`;
+}
+
+function getActiveSlotStorageKey(): string {
+  return `${ACTIVE_SLOT_KEY}_${getCurrentAccountStorageSuffix()}`;
+}
+
+function isGuestCharacterStorage(): boolean {
+  return getCurrentAccountStorageSuffix() === "guest";
+}
 
 export const CLASS_LABELS: Record<CharacterClassId, string> = {
   paladin: "Paladín",
@@ -130,8 +158,9 @@ export function formatRaceGenderLabel(
 }
 
 function createDefaultSlots(): CharacterSlot[] {
-  return [
-    {
+  const slots: CharacterSlot[] = Array.from({ length: CHARACTER_SLOT_COUNT }, () => null);
+  if (isGuestCharacterStorage()) {
+    slots[0] = {
       id: "demo-lonler",
       name: "Lonler",
       classId: "paladin",
@@ -141,13 +170,27 @@ function createDefaultSlots(): CharacterSlot[] {
       factionId: "ciudadano",
       level: 50,
       homeMapId: "mapa1",
-    },
-    null,
-    null,
-    null,
-    null,
-    null,
-  ];
+    };
+  }
+  return slots;
+}
+
+function removeDevOnlySlotsForAccount(slots: CharacterSlot[]): CharacterSlot[] {
+  if (isGuestCharacterStorage()) {
+    return slots;
+  }
+  let changed = false;
+  const cleaned = slots.map((slot) => {
+    if (slot?.name.trim().toLowerCase() === "lonler") {
+      changed = true;
+      return null;
+    }
+    return slot;
+  });
+  if (changed) {
+    saveCharacterSlots(cleaned);
+  }
+  return cleaned;
 }
 
 function normalizeRaceId(value: string): CharacterRaceId {
@@ -216,13 +259,13 @@ function normalizeSlots(raw: unknown): CharacterSlot[] {
 
 export function loadCharacterSlots(): CharacterSlot[] {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = localStorage.getItem(getCharacterSlotsStorageKey());
     if (!raw) {
       const defaults = createDefaultSlots();
       saveCharacterSlots(defaults);
       return defaults;
     }
-    return normalizeSlots(JSON.parse(raw));
+    return removeDevOnlySlotsForAccount(normalizeSlots(JSON.parse(raw)));
   } catch {
     const defaults = createDefaultSlots();
     saveCharacterSlots(defaults);
@@ -231,11 +274,14 @@ export function loadCharacterSlots(): CharacterSlot[] {
 }
 
 export function saveCharacterSlots(slots: CharacterSlot[]): void {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(slots.slice(0, CHARACTER_SLOT_COUNT)));
+  localStorage.setItem(
+    getCharacterSlotsStorageKey(),
+    JSON.stringify(slots.slice(0, CHARACTER_SLOT_COUNT))
+  );
 }
 
 export function getActiveCharacterSlotIndex(): number | null {
-  const raw = localStorage.getItem(ACTIVE_SLOT_KEY);
+  const raw = localStorage.getItem(getActiveSlotStorageKey());
   if (raw === null) return null;
   const index = Number.parseInt(raw, 10);
   if (!Number.isInteger(index) || index < 0 || index >= CHARACTER_SLOT_COUNT) {
@@ -245,7 +291,7 @@ export function getActiveCharacterSlotIndex(): number | null {
 }
 
 export function setActiveCharacterSlotIndex(index: number): void {
-  localStorage.setItem(ACTIVE_SLOT_KEY, String(index));
+  localStorage.setItem(getActiveSlotStorageKey(), String(index));
 }
 
 export function getActiveCharacter(): SavedCharacter | null {

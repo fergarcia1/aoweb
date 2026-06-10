@@ -9,6 +9,7 @@ export type NpcRole =
   | "tailor"
   | "alchemist"
   | "mage"
+  | "general"
   | "banker";
 
 export type StaticNpcDefinition = {

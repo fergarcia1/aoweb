@@ -14,6 +14,7 @@ export type GameSceneHudDeps = {
   getPlayerFaction: () => CharacterFactionId;
   getPlayerRole: () => PlayerRole;
   getPlayerProgress: () => PlayerProgressState;
+  getPartyMemberMinimapTiles: () => Array<{ tileX: number; tileY: number }>;
   refreshStatsOverlay: () => void;
 };
 
@@ -28,11 +29,13 @@ export function refreshGameSceneMinimap(deps: GameSceneHudDeps): void {
   const ui = deps.getGameUi();
   if (!ui) return;
   const bounds = deps.getMapController().getMinimapBounds();
+  const partyMembers = deps.getPartyMemberMinimapTiles();
   ui.updateMinimap(
     deps.getCurrentMap(),
     deps.getPlayerTileX(),
     deps.getPlayerTileY(),
-    bounds
+    bounds,
+    partyMembers
   );
 }
 

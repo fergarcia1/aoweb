@@ -1,4 +1,6 @@
 import type { WebSocket } from "ws";
+import type { PvpSpellHitRecord } from "../../game-data/antiOneshot";
+import { createEmptyPvpSpellHitRecords } from "../../game-data/antiOneshot";
 import type { AttributeBuffState } from "../../game-data/consumables";
 import { ADMIN_GM_HP_MAX, ADMIN_GM_MP_MAX, BANK_SLOT_COUNT, INVENTORY_SLOT_COUNT } from "../../game-data/constants";
 import { expRequiredForLevel } from "../../game-data/progressFormulas";
@@ -63,15 +65,21 @@ export class PlayerSession {
   magicDamageBonusPercent = 0;
   damageReductionPercent = 0;
   magicResistancePercent = 0;
+  shieldBlockChancePercent = 0;
+  shieldBlockReductionPercent = 0;
   nextAttackAt = 0;
   nextSpellAt = 0;
   nextMoveAt = 0;
+  speedMultiplier = 1;
   isMeditating = false;
+  isNavigating = false;
   nextMeditationRegenAt = 0;
   /** Hasta cuándo no puede moverse (inmovilizar / paralizar). */
   immobilizedUntil = 0;
   /** Hasta cuándo aplica invisibilidad (hechizo 14). */
   invisibleUntil = 0;
+  /** Hechizos PvP recibidos (anti-oneshot por fuente distinta). */
+  recentPvpSpellHits: PvpSpellHitRecord[] = createEmptyPvpSpellHitRecords();
   attributeBuffs: AttributeBuffState = { strength: 0, agility: 0, expiresAtMs: 0 };
   inventorySlots: ServerInventorySlot[] = Array.from(
     { length: INVENTORY_SLOT_COUNT },
@@ -131,6 +139,8 @@ export class PlayerSession {
     const stats = getDefenseStatsFromEquipment(this.equipment);
     this.damageReductionPercent = stats.damageReductionPercent;
     this.magicResistancePercent = stats.magicResistancePercent;
+    this.shieldBlockChancePercent = stats.shieldBlockChancePercent;
+    this.shieldBlockReductionPercent = stats.shieldBlockReductionPercent;
   }
 
   recalcAttackStats() {
@@ -184,6 +194,7 @@ export class PlayerSession {
       role: this.role,
       equipment: { ...this.equipment },
       isMeditating: this.isMeditating,
+      isNavigating: this.isNavigating,
       invisibleUntilMs: Math.max(0, Math.floor(this.invisibleUntil)),
     };
     if (options?.includeAttributeBuffs) {

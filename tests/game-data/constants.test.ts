@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   AOI_RADIUS_TILES,
+  SOUND_HEARING_RADIUS_TILES,
   ATTRIBUTE_POTION_BUFF_DURATION_MS,
   ATTRIBUTE_POTION_BUFF_MAX,
   INMOVILIZAR_MOB_DURATION_MS,
@@ -33,6 +34,11 @@ describe("game-data/constants", () => {
   it("AOI radius is reasonable for pueblo map", () => {
     expect(AOI_RADIUS_TILES).toBeGreaterThanOrEqual(16);
     expect(AOI_RADIUS_TILES).toBeLessThanOrEqual(48);
+  });
+
+  it("sound hearing radius is smaller than AOI", () => {
+    expect(SOUND_HEARING_RADIUS_TILES).toBe(15);
+    expect(SOUND_HEARING_RADIUS_TILES).toBeLessThan(AOI_RADIUS_TILES);
   });
 
   it("immobilize spell durations match design", () => {
