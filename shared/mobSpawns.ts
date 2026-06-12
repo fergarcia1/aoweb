@@ -195,5 +195,16 @@ export function buildInitialMobPlacements(mapId: string): MobPlacement[] {
 
 /** Placements iniciales para todos los mapas definidos en `mobs.json`. */
 export function buildAllInitialMobPlacements(): MobPlacement[] {
-  return getMapIdsWithMobSpawns().flatMap((mapId) => buildInitialMobPlacements(mapId));
+  const placements: MobPlacement[] = [];
+  for (const mapId of getMapIdsWithMobSpawns()) {
+    try {
+      placements.push(...buildInitialMobPlacements(mapId));
+    } catch (error) {
+      if (error instanceof Error && error.message.includes("Mapa no disponible en Render Free")) {
+        continue;
+      }
+      throw error;
+    }
+  }
+  return placements;
 }

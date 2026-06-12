@@ -4,7 +4,7 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/index.ts",
-    "build": "esbuild src/index.ts --bundle --minify --platform=node --format=esm --target=node22 --packages=external --outfile=dist/index.js",
+    "build": "node scripts/build.mjs",
     "start": "node dist/index.js",
     "db:migrate": "tsx scripts/migrate.ts"
   },
