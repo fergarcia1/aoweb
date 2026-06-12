@@ -7,6 +7,29 @@ Arquitectura recomendada para testing con amigos:
 
 Vercel es ideal para el cliente, pero no para el proceso MMO persistente. El server debe correr como un proceso Node vivo con WebSockets.
 
+## Modo Gratis Para Debug
+
+El `render.yaml` actual esta preparado para probar sin tarjeta y sin cargos:
+
+- crea solo `aoweb-server` como Web Service `free`
+- no crea PostgreSQL
+- usa memoria en el server
+- `AUTH_REQUIRED=false` para que sea facil entrar a probar
+
+Limitaciones de este modo:
+
+- las cuentas/personajes no persisten si Render reinicia, redeploya o duerme el servicio
+- el servicio Free puede dormirse por inactividad y tardar cerca de un minuto en despertar
+- sirve para debug con amigos, no para una version estable
+
+En Vercel, para este modo gratis, usar:
+
+```env
+VITE_AUTH_REQUIRED=false
+VITE_MULTIPLAYER=1
+VITE_WS_URL=wss://URL_DEL_SERVER
+```
+
 ## Frontend: Vercel
 
 1. Subir el repo a GitHub.
@@ -48,24 +71,23 @@ Opciones para probar:
 
 ## Server En Render
 
-El repo incluye `render.yaml` para crear:
+El repo incluye `render.yaml` para crear el deploy gratis:
 
-- `aoweb-server`: Web Service Node persistente.
-- `aoweb-db`: PostgreSQL para cuentas/personajes.
+- `aoweb-server`: Web Service Node Free.
 
 Pasos:
 
 1. Subir el repo a GitHub.
 2. En Render, crear un Blueprint desde ese repo.
-3. Revisar el servicio `aoweb-server`.
+3. Revisar que el estimado sea `0` y que el servicio diga `Free`.
 4. Configurar `CORS_ORIGIN` con la URL de Vercel cuando exista:
 
 ```env
 CORS_ORIGIN=https://tu-aoweb.vercel.app
 ```
 
-5. Render genera `AUTH_TOKEN_SECRET` y `DATABASE_URL`.
-6. El build command instala dependencias del server y corre `npm run db:migrate --prefix server`.
+5. Render genera `AUTH_TOKEN_SECRET`.
+6. El build command instala dependencias del server.
 7. Deployar.
 8. Verificar la URL del server:
 
@@ -89,7 +111,6 @@ Comandos esperados desde `server/`:
 
 ```bash
 npm install
-npm run db:migrate
 npm start
 ```
 
@@ -97,16 +118,29 @@ Variables recomendadas:
 
 ```env
 PORT=3001
-AUTH_REQUIRED=true
+AUTH_REQUIRED=false
 AUTH_TOKEN_SECRET=generar-un-secreto-largo
 CORS_ORIGIN=https://tu-aoweb.vercel.app
-DATABASE_URL=postgres://...
 RATE_LIMIT_MAX_CONNECTIONS_PER_IP=3
 RATE_LIMIT_MAX_ACTIONS_PER_SECOND=20
 RATE_LIMIT_TEMP_BAN_MS=300000
 ```
 
 Si `DATABASE_URL` no existe, el server usa memoria. Sirve para pruebas rapidas, pero al reiniciar se pierden cuentas/personajes.
+
+## Modo Persistente Mas Adelante
+
+Cuando quieras persistencia real de cuentas/personajes:
+
+1. Crear una base PostgreSQL.
+2. Agregar `DATABASE_URL` al server.
+3. Cambiar `AUTH_REQUIRED=true`.
+4. Cambiar en Vercel `VITE_AUTH_REQUIRED=true`.
+5. Restaurar el build command con migraciones:
+
+```bash
+npm install --prefix server && npm run db:migrate --prefix server
+```
 
 ## Orden De Deploy
 
