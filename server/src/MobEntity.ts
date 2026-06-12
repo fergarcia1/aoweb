@@ -6,6 +6,7 @@ const WANDER_MAX_MS = 7000;
 export class MobEntity {
   readonly id: string;
   readonly mobId: string;
+  readonly npcId?: number;
   readonly name: string;
   readonly mapId: string;
   readonly behavior: string;
@@ -14,10 +15,14 @@ export class MobEntity {
   readonly hitboxOffsetTiles: number;
   readonly detectionRangeTiles: number;
   readonly leashRangeTiles: number;
-  readonly attackDamage: number;
+  readonly minHit: number;
+  readonly maxHit: number;
   readonly attackCooldownMs: number;
   readonly aiMoveCooldownMs: number;
   readonly respawnMs: number;
+  readonly goldReward: number;
+  readonly expReward: number;
+  readonly aquatic: boolean;
   tileX: number;
   tileY: number;
   facing: Facing = "down";
@@ -30,6 +35,7 @@ export class MobEntity {
   nextAttackAt = 0;
   nextMoveAt = 0;
   isAggroed = false;
+  wasInMeleeRange = false;
 
   constructor(config: {
     id: string;
@@ -40,18 +46,24 @@ export class MobEntity {
     tileY: number;
     maxHp: number;
     behavior: string;
+    npcId?: number;
     hitboxOffsetY: number;
     hitboxWidthTiles: number;
     hitboxHeightTiles: number;
     detectionRangeTiles?: number;
     leashRangeTiles?: number;
-    attackDamage?: number;
+    minHit?: number;
+    maxHit?: number;
     attackCooldownMs?: number;
     aiMoveCooldownMs?: number;
     respawnMs?: number;
+    goldReward?: number;
+    expReward?: number;
+    aquatic?: boolean;
   }) {
     this.id = config.id;
     this.mobId = config.mobId;
+    this.npcId = config.npcId;
     this.name = config.name;
     this.mapId = config.mapId;
     this.behavior = config.behavior;
@@ -64,12 +76,22 @@ export class MobEntity {
     this.hp = config.maxHp;
     this.detectionRangeTiles = Math.max(0, config.detectionRangeTiles ?? 0);
     this.leashRangeTiles = Math.max(1, config.leashRangeTiles ?? 20);
-    this.attackDamage = Math.max(0, config.attackDamage ?? 0);
+    this.minHit = Math.max(0, config.minHit ?? 0);
+    this.maxHit = Math.max(0, config.maxHit ?? 0);
+    if (this.minHit > this.maxHit) {
+      const swap = this.minHit;
+      this.minHit = this.maxHit;
+      this.maxHit = swap;
+    }
     this.attackCooldownMs = Math.max(200, config.attackCooldownMs ?? 1000);
     this.aiMoveCooldownMs = Math.max(200, config.aiMoveCooldownMs ?? 450);
     this.respawnMs = Math.max(500, config.respawnMs ?? 10_000);
+    this.goldReward = Math.max(0, Math.floor(config.goldReward ?? 0));
+    this.expReward = Math.max(0, Math.floor(config.expReward ?? 0));
+    this.aquatic = !!config.aquatic;
     this.nextWanderAt = Date.now() + randomWanderDelay();
   }
+
 
   isImmobilized(now = Date.now()) {
     return now < this.immobilizedUntil;
@@ -83,6 +105,7 @@ export class MobEntity {
     return {
       id: this.id,
       mobId: this.mobId,
+      npcId: this.npcId,
       name: this.name,
       mapId: this.mapId,
       tileX: this.tileX,
@@ -91,6 +114,7 @@ export class MobEntity {
       hp: this.hp,
       hpMax: this.maxHp,
       alive: this.alive,
+      immobilizedUntilMs: this.immobilizedUntil,
     };
   }
 }

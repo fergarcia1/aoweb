@@ -1,5 +1,5 @@
 import Phaser from "phaser";
-import type { CharacterClassId } from "../data/items";
+import type { CharacterClassId } from "../../game-data/items/catalog";
 import {
   ALL_CLASSES,
   ALL_GENDERS,
@@ -37,6 +37,7 @@ import {
   textureKeyForPlayer,
 } from "../player/playerSprites";
 import { GAME_FONT, GAME_TEXT_RESOLUTION } from "../ui/fonts";
+import { START_MAP_ID } from "../maps";
 
 const UI = {
   bg: 0x0a1218,
@@ -376,7 +377,6 @@ export class CharacterCreationScene extends Phaser.Scene {
       .setOrigin(0, 0);
 
     this.createFactionButton(x + pad, factionY + 16, "ciudadano");
-    this.createFactionButton(x + pad + 58, factionY + 16, "caos");
 
     const btnY = y + h - pad - 32;
     this.createActionButton(x + pad, btnY, 100, 32, "VOLVER", false, () => this.goBack());
@@ -448,6 +448,9 @@ export class CharacterCreationScene extends Phaser.Scene {
     input.style.outline = "none";
     input.addEventListener("input", () => {
       this.name = input.value.trim();
+    });
+    input.addEventListener("keydown", (e) => {
+      e.stopPropagation();
     });
 
     this.nameInputEl = input;
@@ -703,7 +706,7 @@ export class CharacterCreationScene extends Phaser.Scene {
 
   private refreshStats() {
     const stats = resolveCoreStats(this.raceId, this.classId);
-    const vitals = getPreviewVitals(stats, this.classId);
+    const vitals = getPreviewVitals(stats, this.classId, this.raceId);
     const mods = getPreviewModifiers(stats, this.classId);
 
     this.updateBar("hp", vitals.hp, vitals.hp / 120);
@@ -791,7 +794,7 @@ export class CharacterCreationScene extends Phaser.Scene {
       factionId: this.factionId,
       faceIndex: clampFaceIndex(this.faceIndex),
       level: 1,
-      homeMapId: "pueblo",
+      homeMapId: START_MAP_ID,
     };
 
     if (!saveCharacterToSlot(this.slotIndex, character)) {

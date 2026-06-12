@@ -1,6 +1,6 @@
 import type { ClientJoinMessage } from "../../../shared/protocol";
 import type { Facing } from "../../player/playerSprites";
-import type { ItemId } from "../../items/itemDefinitions";
+import type { ItemId } from "../../../game-data/items/definitions";
 import type { NetPlayerEquipment } from "../../../shared/types";
 
 export type MultiplayerJoinPayloadInput = {
@@ -21,6 +21,13 @@ export type MultiplayerJoinPayloadInput = {
   mp: number;
   mpMax: number;
   gold: number;
+  bankGold: number;
+  bankInventory: NonNullable<ClientJoinMessage["bankInventory"]>;
+  learnedSpellIds: number[];
+  exp: number;
+  expToNext: number;
+  usersKilled: number;
+  isNewCharacter: boolean;
   equipment: NetPlayerEquipment;
   inventory: NonNullable<ClientJoinMessage["inventory"]>;
 };
@@ -47,9 +54,26 @@ export function buildMultiplayerJoinPayload(
     mp: input.mp,
     mpMax: input.mpMax,
     gold: input.gold,
+    bankGold: input.bankGold,
+    bankInventory: input.bankInventory,
+    learnedSpellIds: input.learnedSpellIds,
+    exp: input.exp,
+    expToNext: input.expToNext,
+    usersKilled: input.usersKilled,
+    isNewCharacter: input.isNewCharacter,
     equipment: input.equipment,
     inventory: input.inventory,
   };
+}
+
+export function buildJoinBankSlots(
+  bankSlots: Array<{ itemId: string; count: number } | null>
+): NonNullable<ClientJoinMessage["bankInventory"]> {
+  return bankSlots.map((slot, slotIndex) => ({
+    slotIndex,
+    itemId: slot?.itemId ?? null,
+    amount: slot?.count ?? 0,
+  }));
 }
 
 export function buildJoinInventorySlots(

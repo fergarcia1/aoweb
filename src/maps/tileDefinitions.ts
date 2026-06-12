@@ -1,4 +1,9 @@
 /** Color promedio del tile Pasto en 20.png (Grh468: posición 256×0, 32×32). */
+import { TILE, type TileId } from "../../shared/tileTypes";
+
+export { TILE };
+export type { TileId };
+
 const AO20_GRASS_COLOR = 0x2f3918;
 
 /** Variante un poco más oscura para bordes, derivada del mismo pasto. */
@@ -7,20 +12,7 @@ const AO20_GRASS_BORDER_COLOR = 0x252f12;
 /** Color promedio del tile agua en 20.png (columna 2, fila 2 → frame 34). */
 const AO20_WATER_COLOR = 0x1f5b9c;
 
-export const TILE = {
-    GRASS: 0,
-    WATER: 1,
-    WALL: 2,
-    PORTAL: 3,
-    FOREST_GRASS: 4,
-    TREE: 5,
-    GRASS_BLOCKED: 6,
-    FOREST_GRASS_BLOCKED: 7,
-    SAND: 8,
-    SAND_BLOCKED: 9,
-  } as const;
-  
-  export type TileId = (typeof TILE)[keyof typeof TILE];
+    /** Tierra / camino (tiles CSM 6368–6375 en mapas importados). */
   
   export type TileRenderMode = "solid" | "ao_grass" | "ao_water";
 
@@ -95,6 +87,13 @@ export const TILE = {
       color: 0xb99a5a,
       walkable: false,
       renderAs: "solid",
+    },
+
+    [TILE.DIRT]: {
+      name: "Tierra",
+      color: 0x6b5238,
+      walkable: true,
+      renderAs: "ao_grass",
     },
   
     [TILE.TREE]: {

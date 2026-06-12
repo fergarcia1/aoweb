@@ -10,7 +10,6 @@ function cloneSnapshot(snapshot: PersistedCharacterSnapshot): PersistedCharacter
     },
     inventorySlots: snapshot.inventorySlots.map((slot) => ({ ...slot })),
     bankSlots: snapshot.bankSlots.map((slot) => ({ ...slot })),
-    skills: snapshot.skills.map((skill) => ({ ...skill })),
     spells: snapshot.spells.map((spell) => ({ ...spell })),
   };
 }
@@ -29,4 +28,3 @@ export class MemoryCharacterRepository implements CharacterRepository {
     this.byName.set(key, cloneSnapshot(snapshot));
   }
 }
-

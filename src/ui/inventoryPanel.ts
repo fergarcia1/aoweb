@@ -1,6 +1,7 @@
 import Phaser from "phaser";
 import {
-  AOWEB_SKIN_INVENTORY_CELL,
+  getAowebSkinInventoryCell,
+  getAowebSkinLayout,
   scaleSkinX,
   scaleSkinY,
 } from "./aowebSkinLayout";
@@ -250,10 +251,11 @@ export function createInventoryPanel(
     screenW: number,
     screenH: number
   ) => {
-    const slotW = scaleSkinX(AOWEB_SKIN_INVENTORY_CELL.w, screenW);
-    const slotH = scaleSkinY(AOWEB_SKIN_INVENTORY_CELL.h, screenH);
-    const gapX = scaleSkinX(AOWEB_SKIN_INVENTORY_CELL.gapX, screenW);
-    const gapY = scaleSkinY(AOWEB_SKIN_INVENTORY_CELL.gapY, screenH);
+    const cell = getAowebSkinInventoryCell();
+    const slotW = scaleSkinX(cell.w, screenW);
+    const slotH = scaleSkinY(cell.h, screenH);
+    const gapX = scaleSkinX(cell.gapX, screenW);
+    const gapY = scaleSkinY(cell.gapY, screenH);
     const ox = scaleSkinX(origin.x, screenW);
     const oy = scaleSkinY(origin.y, screenH);
     container.setPosition(ox, oy);
@@ -265,18 +267,25 @@ export function createInventoryPanel(
     screenW: number,
     screenH: number
   ) => {
-    const slotW = scaleSkinX(AOWEB_SKIN_INVENTORY_CELL.w, screenW);
-    const slotH = scaleSkinY(AOWEB_SKIN_INVENTORY_CELL.h, screenH);
-    const gapX = scaleSkinX(AOWEB_SKIN_INVENTORY_CELL.gapX, screenW);
-    const gapY = scaleSkinY(AOWEB_SKIN_INVENTORY_CELL.gapY, screenH);
+    const cell = getAowebSkinInventoryCell();
+    const slotW = scaleSkinX(cell.w, screenW);
+    const slotH = scaleSkinY(cell.h, screenH);
+    const gapX = scaleSkinX(cell.gapX, screenW);
+    const gapY = scaleSkinY(cell.gapY, screenH);
     const gridW = cols * slotW + (cols - 1) * gapX;
     const gridH = rows * slotH + (rows - 1) * gapY;
     const px = scaleSkinX(panel.x, screenW);
     const py = scaleSkinY(panel.y, screenH);
     const pw = scaleSkinX(panel.w, screenW);
     const ph = scaleSkinY(panel.h, screenH);
-    const ox = px + Math.max(0, Math.floor((pw - gridW) / 2));
-    const oy = py + Math.max(0, Math.floor((ph - gridH) / 2));
+    const gridPad = getAowebSkinLayout().inventoryGridPad ?? { top: 0, left: 0 };
+    const padTop = scaleSkinY(gridPad.top, screenH);
+    const padLeft = scaleSkinX(gridPad.left, screenW);
+    const ox = px + Math.max(0, Math.floor((pw - gridW) / 2)) + padLeft;
+    const oy =
+      gridPad.top > 0
+        ? py + padTop
+        : py + Math.max(0, Math.floor((ph - gridH) / 2)) + padTop;
     container.setPosition(ox, oy);
     positionSkinGridSlots(slotW, slotH, gapX, gapY);
   };

@@ -1,0 +1,29 @@
+services:
+  - type: web
+    name: aoweb-server
+    runtime: node
+    buildCommand: npm install --prefix server && npm run db:migrate --prefix server
+    startCommand: npm start --prefix server
+    healthCheckPath: /
+    envVars:
+      - key: NODE_VERSION
+        value: 22
+      - key: AUTH_REQUIRED
+        value: true
+      - key: AUTH_TOKEN_SECRET
+        generateValue: true
+      - key: CORS_ORIGIN
+        sync: false
+      - key: DATABASE_URL
+        fromDatabase:
+          name: aoweb-db
+          property: connectionString
+      - key: RATE_LIMIT_MAX_CONNECTIONS_PER_IP
+        value: 3
+      - key: RATE_LIMIT_MAX_ACTIONS_PER_SECOND
+        value: 20
+      - key: RATE_LIMIT_TEMP_BAN_MS
+        value: 300000
+
+databases:
+  - name: aoweb-db

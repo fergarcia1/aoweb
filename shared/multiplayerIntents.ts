@@ -1,4 +1,4 @@
-import { STEP_DURATION_MS } from "../game-data/constants";
+import { MECHANICS } from "./gameMechanics";
 import type { MoveDirectionId } from "./types";
 
 export type MoveIntentResult =
@@ -13,7 +13,7 @@ export function validateMoveDirection(direction: unknown): direction is MoveDire
   return typeof direction === "string" && MOVE_DIRECTIONS.has(direction);
 }
 
-/** El servidor solo acepta un paso cada STEP_DURATION_MS (anti-speedhack). */
+/** El servidor solo acepta un paso cada MECHANICS.INTERVAL_MOVE_STEP (anti-speedhack). */
 export function validateMoveIntent(now: number, nextMoveAt: number): MoveIntentResult {
   if (now < nextMoveAt) {
     return { ok: false, reason: "cooldown" };
@@ -21,8 +21,8 @@ export function validateMoveIntent(now: number, nextMoveAt: number): MoveIntentR
   return { ok: true };
 }
 
-export function moveCooldownUntil(now: number): number {
-  return now + STEP_DURATION_MS;
+export function moveCooldownUntil(now: number, speedMultiplier: number = 1): number {
+  return now + Math.max(90, Math.floor(MECHANICS.INTERVAL_MOVE_STEP / speedMultiplier));
 }
 
 export function validateAttackIntent(now: number, nextAttackAt: number): AttackIntentResult {

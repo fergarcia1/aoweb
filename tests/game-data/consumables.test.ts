@@ -13,6 +13,7 @@ describe("tryUseConsumableOnVitals", () => {
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.hp).toBe(58);
+      expect(result.mp).toBeUndefined();
     }
   });
 

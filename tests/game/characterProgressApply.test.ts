@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { applySavedProgressToSceneState } from "../../src/scenes/gameSceneModules/characterProgressApply";
-import type { SavedCharacterProgress } from "../../src/game/characterProgressStorage";
+import {
+  INVENTORY_SLOT_COUNT,
+  type SavedCharacterProgress,
+} from "../../src/game/characterProgressStorage";
 
 function baseProgress(
   overrides: Partial<SavedCharacterProgress> = {}
@@ -11,7 +14,7 @@ function baseProgress(
     tileX: 3,
     tileY: 4,
     facing: "up",
-    inventory: Array(24).fill(null),
+    inventory: Array(INVENTORY_SLOT_COUNT).fill(null),
     equipment: { weapon: null, shield: null, helmet: null, armor: null },
     equippedOutfit: "base",
     playerProgress: {
@@ -23,14 +26,6 @@ function baseProgress(
       mp: 25,
       mpMax: 50,
       gold: 10,
-    },
-    skillLevels: {
-      magia: 0,
-      armas: 0,
-      escudos: 0,
-      talar: 0,
-      pesca: 0,
-      mineria: 0,
     },
     learnedSpellIds: [1],
     macroBindings: [],
@@ -58,7 +53,6 @@ describe("characterProgressApply", () => {
       setEquippedOutfit: () => undefined,
       clearEquippedArmorVisual: () => undefined,
       setPlayerProgress: () => undefined,
-      setSkillLevels: () => undefined,
       setLearnedSpellIds: () => undefined,
       setMacroBindings: () => undefined,
       setKillStats: () => undefined,
@@ -84,7 +78,6 @@ describe("characterProgressApply", () => {
       setEquippedOutfit: () => undefined,
       clearEquippedArmorVisual: () => undefined,
       setPlayerProgress: () => undefined,
-      setSkillLevels: () => undefined,
       setLearnedSpellIds: () => undefined,
       setMacroBindings: () => undefined,
       setKillStats: () => undefined,

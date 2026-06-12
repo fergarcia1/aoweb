@@ -1,4 +1,9 @@
 import type { CharacterClassId } from "./items";
+import type {
+  CharacterGenderId,
+  CharacterRaceId,
+} from "../../shared/characterTypes";
+import { GHOST_RACE_ID } from "../../shared/characterTypes";
 import {
   FACTION_LABELS,
   normalizeFactionId,
@@ -6,24 +11,15 @@ import {
 } from "../../shared/faction";
 
 export type { CharacterFactionId } from "../../shared/faction";
+export type { CharacterGenderId, CharacterRaceId } from "../../shared/characterTypes";
+export { GHOST_RACE_ID } from "../../shared/characterTypes";
 export { FACTION_LABELS, normalizeFactionId, canFactionsFight } from "../../shared/faction";
 
 export const CHARACTER_SLOT_COUNT = 6;
-const STORAGE_KEY = "aoweb_character_slots_v2";
+const STORAGE_KEY = "aoweb_character_slots_v3";
 const ACTIVE_SLOT_KEY = "aoweb_active_character_slot";
+const AUTH_ACCOUNT_KEY = "aoweb_auth_account";
 
-export type CharacterRaceId =
-  | "human"
-  | "elf"
-  | "drow"
-  | "dwarf"
-  | "gnome"
-  | "orc"
-  | "fantasma";
-
-/** Raza visual al morir (sprites en fantasma_std / fantasma_faces). No es seleccionable. */
-export const GHOST_RACE_ID: CharacterRaceId = "fantasma";
-export type CharacterGenderId = "male" | "female";
 export type SavedCharacter = {
   id: string;
   name: string;
@@ -40,10 +36,40 @@ export type SavedCharacter = {
 
 export type CharacterSlot = SavedCharacter | null;
 
+function getCurrentAccountStorageSuffix(): string {
+  const raw = localStorage.getItem(AUTH_ACCOUNT_KEY);
+  if (!raw) {
+    return "guest";
+  }
+  try {
+    const account = JSON.parse(raw) as { id?: unknown };
+    return typeof account.id === "string" && account.id.trim()
+      ? `account_${account.id.trim()}`
+      : "guest";
+  } catch {
+    return "guest";
+  }
+}
+
+function getCharacterSlotsStorageKey(): string {
+  return `${STORAGE_KEY}_${getCurrentAccountStorageSuffix()}`;
+}
+
+function getActiveSlotStorageKey(): string {
+  return `${ACTIVE_SLOT_KEY}_${getCurrentAccountStorageSuffix()}`;
+}
+
+function isGuestCharacterStorage(): boolean {
+  return getCurrentAccountStorageSuffix() === "guest";
+}
+
 export const CLASS_LABELS: Record<CharacterClassId, string> = {
   paladin: "Paladín",
+  clerigo: "Clérigo",
   mago: "Mago",
+  nigromante: "Nigromante",
   druida: "Druida",
+  bardo: "Bardo",
   guerrero: "Guerrero",
   cazador: "Cazador",
   asesino: "Asesino",
@@ -72,7 +98,9 @@ export const GENDER_UI_LABELS: Record<CharacterGenderId, string> = {
 /** Color del nombre en mundo / HUD / selección de personaje. */
 export const FACTION_NAME_COLORS: Record<CharacterFactionId, { fill: string; stroke: string }> = {
   ciudadano: { fill: "#4da6ff", stroke: "#001a33" },
+  armada: { fill: "#4da6ff", stroke: "#001a33" },
   caos: { fill: "#ff5252", stroke: "#330808" },
+  renegado: { fill: "#b0b0b0", stroke: "#2a2a2a" },
 };
 
 export function getFactionNameColors(factionId: CharacterFactionId) {
@@ -110,8 +138,11 @@ export const ALL_RACES: CharacterRaceId[] = [
 
 export const ALL_CLASSES: CharacterClassId[] = [
   "paladin",
+  "clerigo",
   "mago",
+  "nigromante",
   "druida",
+  "bardo",
   "guerrero",
   "cazador",
   "asesino",
@@ -127,8 +158,9 @@ export function formatRaceGenderLabel(
 }
 
 function createDefaultSlots(): CharacterSlot[] {
-  return [
-    {
+  const slots: CharacterSlot[] = Array.from({ length: CHARACTER_SLOT_COUNT }, () => null);
+  if (isGuestCharacterStorage()) {
+    slots[0] = {
       id: "demo-lonler",
       name: "Lonler",
       classId: "paladin",
@@ -137,32 +169,28 @@ function createDefaultSlots(): CharacterSlot[] {
       faceIndex: 0,
       factionId: "ciudadano",
       level: 50,
-      homeMapId: "pueblo",
-    },
-    {
-      id: "demo-orc-warrior",
-      name: "Grok",
-      classId: "guerrero",
-      raceId: "orc",
-      genderId: "male",
-      faceIndex: 0,
-      factionId: "caos",
-      level: 1,
-    },
-    {
-      id: "demo-gnome-mage",
-      name: "Zyx",
-      classId: "mago",
-      raceId: "gnome",
-      genderId: "male",
-      faceIndex: 0,
-      factionId: "ciudadano",
-      level: 50,
-    },
-    null,
-    null,
-    null,
-  ];
+      homeMapId: "mapa1",
+    };
+  }
+  return slots;
+}
+
+function removeDevOnlySlotsForAccount(slots: CharacterSlot[]): CharacterSlot[] {
+  if (isGuestCharacterStorage()) {
+    return slots;
+  }
+  let changed = false;
+  const cleaned = slots.map((slot) => {
+    if (slot?.name.trim().toLowerCase() === "lonler") {
+      changed = true;
+      return null;
+    }
+    return slot;
+  });
+  if (changed) {
+    saveCharacterSlots(cleaned);
+  }
+  return cleaned;
 }
 
 function normalizeRaceId(value: string): CharacterRaceId {
@@ -206,10 +234,13 @@ function normalizeSlots(raw: unknown): CharacterSlot[] {
     }
     const faceIndex =
       typeof record.faceIndex === "number" ? Math.max(0, Math.floor(record.faceIndex)) : 0;
-    const homeMapId =
+    let homeMapId =
       typeof record.homeMapId === "string" && record.homeMapId.trim().length > 0
         ? record.homeMapId.trim()
         : undefined;
+    if (homeMapId && ["pueblo", "bosque", "montana", "desierto"].includes(homeMapId)) {
+      homeMapId = "mapa1";
+    }
     slots[index] = {
       id: record.id,
       name: record.name,
@@ -228,13 +259,13 @@ function normalizeSlots(raw: unknown): CharacterSlot[] {
 
 export function loadCharacterSlots(): CharacterSlot[] {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = localStorage.getItem(getCharacterSlotsStorageKey());
     if (!raw) {
       const defaults = createDefaultSlots();
       saveCharacterSlots(defaults);
       return defaults;
     }
-    return normalizeSlots(JSON.parse(raw));
+    return removeDevOnlySlotsForAccount(normalizeSlots(JSON.parse(raw)));
   } catch {
     const defaults = createDefaultSlots();
     saveCharacterSlots(defaults);
@@ -243,11 +274,14 @@ export function loadCharacterSlots(): CharacterSlot[] {
 }
 
 export function saveCharacterSlots(slots: CharacterSlot[]): void {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(slots.slice(0, CHARACTER_SLOT_COUNT)));
+  localStorage.setItem(
+    getCharacterSlotsStorageKey(),
+    JSON.stringify(slots.slice(0, CHARACTER_SLOT_COUNT))
+  );
 }
 
 export function getActiveCharacterSlotIndex(): number | null {
-  const raw = localStorage.getItem(ACTIVE_SLOT_KEY);
+  const raw = localStorage.getItem(getActiveSlotStorageKey());
   if (raw === null) return null;
   const index = Number.parseInt(raw, 10);
   if (!Number.isInteger(index) || index < 0 || index >= CHARACTER_SLOT_COUNT) {
@@ -257,7 +291,7 @@ export function getActiveCharacterSlotIndex(): number | null {
 }
 
 export function setActiveCharacterSlotIndex(index: number): void {
-  localStorage.setItem(ACTIVE_SLOT_KEY, String(index));
+  localStorage.setItem(getActiveSlotStorageKey(), String(index));
 }
 
 export function getActiveCharacter(): SavedCharacter | null {
@@ -280,7 +314,7 @@ export function saveCharacterToSlot(slotIndex: number, character: SavedCharacter
 /** Sincroniza nivel (y hogar) del slot con el progreso guardado en partida. */
 export function patchSavedCharacterMeta(
   characterId: string,
-  patch: { level?: number; homeMapId?: string }
+  patch: { level?: number; homeMapId?: string; factionId?: CharacterFactionId }
 ): void {
   const slots = loadCharacterSlots();
   const index = slots.findIndex((slot) => slot?.id === characterId);
@@ -295,6 +329,10 @@ export function patchSavedCharacterMeta(
         ? Math.max(1, Math.floor(patch.level))
         : current.level,
     homeMapId: patch.homeMapId ?? current.homeMapId,
+    factionId:
+      patch.factionId !== undefined
+        ? normalizeFactionId(patch.factionId)
+        : current.factionId,
   };
   saveCharacterSlots(slots);
 }

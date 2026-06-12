@@ -53,6 +53,8 @@ export class DeathOverlay {
   private readonly cancelBtn: DeathButton;
   private visible = false;
   private dragged = false;
+  private viewport: GameViewportRect = { x: 0, y: 0, width: 0, height: 0 };
+  private frameSize = { width: 220, height: 120 };
 
   constructor(
     scene: Phaser.Scene,
@@ -131,13 +133,24 @@ export class DeathOverlay {
 
     this.panelFrame.setInteractive({ draggable: true, useHandCursor: true });
     scene.input.setDraggable(this.panelFrame);
-    this.panelFrame.on("drag", (_pointer: Phaser.Input.Pointer, dragX: number, dragY: number) => {
+    this.panelFrame.on("drag", (pointer: Phaser.Input.Pointer) => {
       this.dragged = true;
-      this.panel.setPosition(
-        this.panel.x + (dragX - this.panelFrame.x),
-        this.panel.y + (dragY - this.panelFrame.y)
-      );
+      const clamped = this.clampPanelPosition(pointer.x, pointer.y);
+      this.panel.setPosition(clamped.x, clamped.y);
     });
+  }
+
+  private clampPanelPosition(x: number, y: number): { x: number; y: number } {
+    const halfW = this.frameSize.width / 2;
+    const halfH = this.frameSize.height / 2;
+    const minX = this.viewport.x + halfW;
+    const maxX = this.viewport.x + Math.max(halfW, this.viewport.width - halfW);
+    const minY = this.viewport.y + halfH;
+    const maxY = this.viewport.y + Math.max(halfH, this.viewport.height - halfH);
+    return {
+      x: Phaser.Math.Clamp(x, minX, maxX),
+      y: Phaser.Math.Clamp(y, minY, maxY),
+    };
   }
 
   private createButton(
@@ -201,6 +214,7 @@ export class DeathOverlay {
 
   layout(viewport: GameViewportRect) {
     if (!this.visible) return;
+    this.viewport = viewport;
 
     this.backdrop.setPosition(viewport.x, viewport.y);
     this.backdrop.setSize(viewport.width, viewport.height);
@@ -220,6 +234,7 @@ export class DeathOverlay {
 
     this.panelFrame.setSize(frameW, frameH);
     this.panelFrame.setPosition(0, 0);
+    this.frameSize = { width: frameW, height: frameH };
 
     const title = this.panel.list[1] as Phaser.GameObjects.Text;
     let y = -frameH / 2 + PANEL_PAD_Y;
@@ -235,6 +250,9 @@ export class DeathOverlay {
 
     if (!this.dragged) {
       this.panel.setPosition(cx, cy);
+    } else {
+      const clamped = this.clampPanelPosition(this.panel.x, this.panel.y);
+      this.panel.setPosition(clamped.x, clamped.y);
     }
     this.container.bringToTop(this.panel);
   }

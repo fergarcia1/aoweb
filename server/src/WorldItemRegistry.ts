@@ -9,7 +9,10 @@ export type WorldItemRecord = {
   tileY: number;
   itemId: string;
   count: number;
+  createdAt: number;
 };
+
+const WORLD_ITEM_TTL_MS = 6 * 60 * 1000; // 6 minutes
 
 export class WorldItemRegistry {
   private readonly byId = new Map<string, WorldItemRecord>();
@@ -21,6 +24,10 @@ export class WorldItemRegistry {
       }
     }
     return null;
+  }
+
+  canSpawnAt(mapId: string, tileX: number, tileY: number): boolean {
+    return this.findAtTile(mapId, tileX, tileY) == null;
   }
 
   findById(id: string): WorldItemRecord | null {
@@ -75,6 +82,7 @@ export class WorldItemRegistry {
       tileY,
       itemId,
       count,
+      createdAt: Date.now(),
     };
     this.byId.set(record.id, record);
     return record;
@@ -96,6 +104,19 @@ export class WorldItemRegistry {
     }
     record.count = count;
     return record;
+  }
+
+  cleanupExpiredItems(now = Date.now()): WorldItemRecord[] {
+    const expired: WorldItemRecord[] = [];
+    for (const item of this.byId.values()) {
+      if (now - item.createdAt > WORLD_ITEM_TTL_MS) {
+        expired.push(item);
+      }
+    }
+    for (const item of expired) {
+      this.byId.delete(item.id);
+    }
+    return expired;
   }
 
   toNetState(record: WorldItemRecord): NetWorldItemState {

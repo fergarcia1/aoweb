@@ -1,0 +1,66 @@
+# AOWEB — Vitales objetivo al NIVEL 50
+#
+# Editá hp_50 y mp_50 (mp = 0 o — si la clase no usa maná: guerrero, cazador).
+# hp_l1 / mp_l1 = 2×CON / 2×INT con stats actuales (characterStats.ts).
+# Filas con ANCLA son referencias de balance acordadas.
+#
+# Regenerar proyección: node scripts/generate-vital-benchmarks-level50.mjs
+# Tras editar hp_50/mp_50: node scripts/build-vital-growth-curves.mjs
+#
+raza_id  | clase_id     | raza           | clase        | CON  | INT  | hp_l1  | mp_l1  | hp_50  | mp_50   | nota
+------------------------------------------------------------------------------------------------------------------------
+human    | paladin      | Humano         | Paladín      | 22   | 13   | 44     | 26     | 452    | 1020    | ANCLA
+human    | clerigo      | Humano         | Clérigo      | 21   | 17   | 42     | 34     | 410    | 1800    | ANCLA
+human    | mago         | Humano         | Mago         | 18   | 19   | 36     | 38     | 340    | 2230    | 
+human    | nigromante   | Humano         | Nigromante   | 18   | 19   | 36     | 38     | 372    | 2291    | 
+human    | druida       | Humano         | Druida       | 18   | 18   | 36     | 36     | 371    | 2090    | 
+human    | bardo        | Humano         | Bardo        | 20   | 17   | 40     | 34     | 385    | 1810    | ANCLA
+human    | guerrero     | Humano         | Guerrero     | 23   | 10   | 46     | —      | 490    | —       | 
+human    | cazador      | Humano         | Cazador      | 22   | 10   | 44     | —      | 454    | —       | ANCLA
+human    | asesino      | Humano         | Asesino      | 21   | 16   | 42     | 32     | 410    | 1280    | 
+elf      | paladin      | Elfo           | Paladín      | 19   | 18   | 38     | 36     | 440    | 1200    | 
+elf      | clerigo      | Elfo           | Clérigo      | 18   | 22   | 36     | 44     | 398    | 1920    | 
+elf      | mago         | Elfo           | Mago         | 15   | 24   | 30     | 48     | 332    | 2598    | 
+elf      | nigromante   | Elfo           | Nigromante   | 15   | 24   | 30     | 48     | 360    | 2410    | 
+elf      | druida       | Elfo           | Druida       | 15   | 23   | 30     | 46     | 365    | 2150    | ANCLA
+elf      | bardo        | Elfo           | Bardo        | 17   | 22   | 34     | 44     | 379    | 1980    | 
+elf      | guerrero     | Elfo           | Guerrero     | 20   | 10   | 40     | —      | 490    | —       | 
+elf      | cazador      | Elfo           | Cazador      | 19   | 10   | 38     | —      | 454    | —       | 
+elf      | asesino      | Elfo           | Asesino      | 18   | 21   | 36     | 42     | 391    | 1400    | 
+drow     | paladin      | Elfo oscuro    | Paladín      | 20   | 17   | 40     | 34     | 446    | 1110    | 
+drow     | clerigo      | Elfo oscuro    | Clérigo      | 19   | 21   | 38     | 42     | 404    | 1890    | 
+drow     | mago         | Elfo oscuro    | Mago         | 16   | 23   | 32     | 46     | 338    | 2480    | 
+drow     | nigromante   | Elfo oscuro    | Nigromante   | 16   | 23   | 32     | 46     | 366    | 2320    | ANCLA
+drow     | druida       | Elfo oscuro    | Druida       | 16   | 22   | 32     | 44     | 372    | 2010    | 
+drow     | bardo        | Elfo oscuro    | Bardo        | 18   | 21   | 36     | 42     | 385    | 1890    | 
+drow     | guerrero     | Elfo oscuro    | Guerrero     | 21   | 10   | 42     | —      | 492    | —       | 
+drow     | cazador      | Elfo oscuro    | Cazador      | 20   | 10   | 40     | —      | 456    | —       | 
+drow     | asesino      | Elfo oscuro    | Asesino      | 19   | 20   | 38     | 40     | 397    | 1340    | 
+dwarf    | paladin      | Enano          | Paladín      | 24   | 13   | 48     | 26     | 462    | 820    | 
+dwarf    | clerigo      | Enano          | Clérigo      | 23   | 17   | 46     | 34     | 416    | 1260    | 
+dwarf    | mago         | Enano          | Mago         | 20   | 19   | 40     | 38     | 360    | 1850    | 
+dwarf    | nigromante   | Enano          | Nigromante   | 20   | 19   | 40     | 38     | 380    | 1660    | 
+dwarf    | druida       | Enano          | Druida       | 20   | 18   | 40     | 36     | 385    | 1490    | 
+dwarf    | bardo        | Enano          | Bardo        | 22   | 17   | 44     | 34     | 395    | 1350    | 
+dwarf    | guerrero     | Enano          | Guerrero     | 25   | 10   | 50     | —      | 502    | —       | ANCLA
+dwarf    | cazador      | Enano          | Cazador      | 24   | 10   | 48     | —      | 466    | —       | 
+dwarf    | asesino      | Enano          | Asesino      | 23   | 16   | 46     | 32     | 412    | 890    | 
+gnome    | paladin      | Gnomo          | Paladín      | 18   | 19   | 36     | 38     | 436    | 1300    | 
+gnome    | clerigo      | Gnomo          | Clérigo      | 17   | 23   | 34     | 46     | 390    | 2010    | 
+gnome    | mago         | Gnomo          | Mago         | 14   | 25   | 28     | 50     | 326    | 2660    | ANCLA
+gnome    | nigromante   | Gnomo          | Nigromante   | 14   | 25   | 28     | 50     | 356    | 2450    | 
+gnome    | druida       | Gnomo          | Druida       | 14   | 24   | 28     | 48     | 358    | 2302    | 
+gnome    | bardo        | Gnomo          | Bardo        | 16   | 23   | 32     | 46     | 370    | 2005    | 
+gnome    | guerrero     | Gnomo          | Guerrero     | 19   | 11   | 38     | —      | 488    | —       | 
+gnome    | cazador      | Gnomo          | Cazador      | 18   | 11   | 36     | —      | 452    | —       | 
+gnome    | asesino      | Gnomo          | Asesino      | 17   | 22   | 34     | 44     | 389    | 1460    | 
+orc      | paladin      | Orco           | Paladín      | 22   | 13   | 44     | 26     | 458    | 820    | 
+orc      | clerigo      | Orco           | Clérigo      | 21   | 17   | 42     | 34     | 416    | 1260    | 
+orc      | mago         | Orco           | Mago         | 18   | 19   | 36     | 38     | 354    | 1850    | 
+orc      | nigromante   | Orco           | Nigromante   | 18   | 19   | 36     | 38     | 380    | 1660    | 
+orc      | druida       | Orco           | Druida       | 18   | 18   | 36     | 36     | 380    | 2090    | 
+orc      | bardo        | Orco           | Bardo        | 20   | 17   | 40     | 34     | 392    | 1850    | 
+orc      | guerrero     | Orco           | Guerrero     | 23   | 10   | 46     | —      | 496    | —       | 
+orc      | cazador      | Orco           | Cazador      | 22   | 10   | 44     | —      | 460    | —       | 
+orc      | asesino      | Orco           | Asesino      | 21   | 16   | 42     | 32     | 406    | 890    | 
+

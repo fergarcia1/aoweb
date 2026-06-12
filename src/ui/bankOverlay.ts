@@ -3,6 +3,7 @@ import { getItemDefinition } from "../items/itemDefinitions";
 import type { InventorySlot } from "../items/inventoryStack";
 import { GAME_FONT, GAME_TEXT_RESOLUTION } from "./fonts";
 import type { GameViewportRect } from "./deathOverlay";
+import { SHOP_SLOT_ICON_SCALE } from "./shopSlotIconScale";
 
 export type BankViewState = {
   inventory: InventorySlot[];
@@ -43,7 +44,7 @@ const SLOT_ROWS = 4;
 const SLOT_COUNT = SLOT_COLS * SLOT_ROWS;
 const SLOT_SIZE = 32;
 const SLOT_GAP = 2;
-const ICON_SCALE = 0.52;
+const ICON_SCALE = SHOP_SLOT_ICON_SCALE;
 
 type SlotUi = {
   bg: Phaser.GameObjects.Rectangle;

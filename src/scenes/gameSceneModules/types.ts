@@ -2,8 +2,9 @@ import type Phaser from "phaser";
 import type { CharacterGenderId, CharacterRaceId } from "../../data/characters";
 import type { MacroActionType } from "../../ui/gameUi";
 import type { Facing } from "../../player/playerSprites";
-import type { ItemId } from "../../items/itemDefinitions";
-import type { MobBehavior, MobDropConfig, MobModelId, MobSpawnConfig } from "../../data/mobs";
+import type { ItemId } from "../../../game-data/items/definitions";
+import type { MobBehavior, MobDropConfig, MobModelId, MobSpawnConfig } from "../../../game-data/mobs";
+import type { ImperiumNpcBodySpriteConfig } from "../../game/npcs/imperiumNpcVisual";
 
 export type MoveDirection = {
   dx: number;
@@ -28,10 +29,12 @@ export type DummyState = {
   maxHp: number;
   detectionRangeTiles: number;
   leashRangeTiles: number;
-  attackDamage: number;
+  minHit: number;
+  maxHit: number;
   attackCooldownMs: number;
   respawnMs: number;
   expReward: number;
+  gold: number;
   drops: MobDropConfig[];
   aiMoveCooldownMs: number;
   nextAiMoveAt: number;
@@ -56,6 +59,10 @@ export type DummyState = {
   /** Exhibición en caja de arena: circuito S→D→W→A sin IA de combate. */
   isShowcase?: boolean;
   showcaseStepIndex?: number;
+  /** ID numérico del catálogo Imperium; presente solo en mobs del catálogo. */
+  npcId?: number;
+  /** Config visual Imperium; sustituye MOB_VISUAL_CONFIGS cuando está presente. */
+  imperiumSpriteConfig?: ImperiumNpcBodySpriteConfig;
 };
 
 export type PlayerProgressState = {
@@ -74,6 +81,8 @@ export type PlayerCombatSnapshot = {
   attackMax: number;
   damageReductionPercent: number;
   magicResistancePercent: number;
+  shieldBlockChancePercent: number;
+  shieldBlockReductionPercent: number;
   magicDamageBonusPercent: number;
   weaponCanCrit: boolean;
   weaponCritChance: number;
@@ -86,6 +95,8 @@ export type MacroBinding = {
   keyCode: string | null;
   action: MacroActionType;
   itemId: ItemId | null;
+  /** Casillero de inventario elegido en el editor (evita equipar siempre el primer stack). */
+  inventorySlotIndex: number | null;
   spellId: number | null;
 };
 
@@ -95,7 +106,7 @@ export type SpellCastRequest = {
   descripcion: string;
   valor: number;
   usableBy: string[];
-  nivelMagiaRequerido: number;
+  nivelRequerido: number;
   manaCost: number;
   danioMin: number;
   danioMax: number;
@@ -108,7 +119,16 @@ export type SpellCastRequest = {
 };
 
 export type RaceId = CharacterRaceId;
-export type ClassId = "paladin" | "mago" | "druida" | "guerrero" | "cazador" | "asesino";
+export type ClassId =
+  | "paladin"
+  | "clerigo"
+  | "mago"
+  | "nigromante"
+  | "druida"
+  | "bardo"
+  | "guerrero"
+  | "cazador"
+  | "asesino";
 export type { CharacterFactionId } from "../../data/characters";
 
 export type GameSceneInitData = {

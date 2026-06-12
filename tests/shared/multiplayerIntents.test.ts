@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { STEP_DURATION_MS } from "../../game-data/constants";
+import { MECHANICS } from "../../shared/gameMechanics";
 import {
   moveCooldownUntil,
   validateMoveDirection,
@@ -16,6 +16,6 @@ describe("multiplayerIntents", () => {
     const now = 1000;
     expect(validateMoveIntent(now, now + 50).ok).toBe(false);
     expect(validateMoveIntent(now, now).ok).toBe(true);
-    expect(moveCooldownUntil(now)).toBe(now + STEP_DURATION_MS);
+    expect(moveCooldownUntil(now)).toBe(now + MECHANICS.INTERVAL_MOVE_STEP);
   });
 });

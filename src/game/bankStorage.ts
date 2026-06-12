@@ -1,7 +1,8 @@
-import type { ItemId } from "../items/itemDefinitions";
+import { BANK_SLOT_COUNT } from "../../game-data/constants";
+import type { ItemId } from "../../game-data/items/definitions";
 import type { InventorySlot } from "../items/inventoryStack";
 
-export const BANK_SLOT_COUNT = 20;
+export { BANK_SLOT_COUNT };
 
 export type BankState = {
   slots: InventorySlot[];

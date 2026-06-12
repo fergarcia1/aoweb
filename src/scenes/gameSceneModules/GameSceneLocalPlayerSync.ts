@@ -1,10 +1,14 @@
 import type { DeathPhase } from "../../systems/DeathSystem";
-import type { ItemId } from "../../items/itemDefinitions";
-import { getItemDefinition } from "../../items/itemDefinitions";
+import type { ItemId } from "../../../game-data/items/definitions";
+import { getItemDefinition } from "../../../game-data/items/definitions";
 import { INVENTORY_SLOT_COUNT } from "../../game/characterProgressStorage";
-import type { NetInventorySlotState } from "../../../shared/protocol";
+import type { NetInventorySlotState, ServerWelcomeMessage } from "../../../shared/protocol";
+import { BANK_SLOT_COUNT } from "../../../game-data/constants";
+import type { BankState } from "../../game/bankStorage";
+import { normalizeFactionId, type CharacterFactionId } from "../../../shared/faction";
 import type { NetPlayerState, NetWorldItemState } from "../../../shared/types";
 import type { WorldItemManager } from "./WorldItemManager";
+import { isMultiplayerEnabled } from "../../network/multiplayerConfig";
 
 export type GameSceneLocalPlayerSyncDeps = {
   getDeathPhase: () => DeathPhase;
@@ -31,6 +35,7 @@ export type GameSceneLocalPlayerSyncDeps = {
   setGoldFromServer: (gold: number) => void;
   refreshHud: () => void;
   refreshInventoryUi: () => void;
+  refreshInventorySlotsUi: () => void;
   syncEquippedArmorOutfit: () => void;
   syncEquippedHeldItemVisuals: () => void;
   setEquippedItemIdsOnUi: (ids: ItemId[]) => void;
@@ -49,31 +54,70 @@ export type GameSceneLocalPlayerSyncDeps = {
   setRemotePlayerGhost: (playerId: string) => void;
   updateRemotePlayer: (state: NetPlayerState, mapId: string) => void;
   getLocalPlayerId: () => string | null;
+  getPlayerName: () => string;
   clearServerReviveSyncPending: () => void;
   isServerReviveSyncPending: () => boolean;
   setServerReviveSyncPending: (value: boolean) => void;
+  setPlayerExpFromServer: (exp: number, expToNext?: number) => void;
+  setLearnedSpellIdsFromServer: (spellIds: number[]) => void;
+  setBankStateFromServer: (
+    bankGold: number | undefined,
+    bankInventory: ServerWelcomeMessage["bankInventory"]
+  ) => void;
+  refreshKnownSpellsUi: () => void;
+  applyLocalFaction: (factionId: CharacterFactionId) => void;
+  recordLocalUserKill: () => void;
+  setInvisibleUntilMs: (ms: number) => void;
+  setPlayerImmobilizedUntilMs: (ms: number) => void;
+  setNavigatingFromServer: (active: boolean) => void;
+  setAttributeBuffsFromServer: (buffs: { strength: number; agility: number }) => void;
+  setAttributeBuffExpiresAt: (ms: number) => void;
+  onPlayerLevelUp?: (previousLevel: number, newLevel: number) => void;
 };
 
 /**
- * Aplica estado autoritativo del servidor al jugador local (vitales, oro, inventario, ítems en el suelo).
+ * Aplica estado autoritativo del servidor al jugador local (vitales, oro, inventario, ├¡tems en el suelo).
  */
 export class GameSceneLocalPlayerSync {
   constructor(private readonly deps: GameSceneLocalPlayerSyncDeps) {}
 
   handleServerPlayerUpdated(state: NetPlayerState): void {
     const localId = this.deps.getLocalPlayerId();
-    if (!localId) return;
-    if (state.id === localId) {
-      this.syncLocalVitalsFromServer(state);
-      this.syncLocalEquipmentFromServer(state);
+    const isLocalPlayer =
+      (localId !== null && state.id === localId) ||
+      (localId === null && state.name === this.deps.getPlayerName());
+    if (!isLocalPlayer && localId !== null) {
+      this.deps.updateRemotePlayer(state, this.deps.getCurrentMapId());
       return;
     }
-    this.deps.updateRemotePlayer(state, this.deps.getCurrentMapId());
+    if (!isLocalPlayer) {
+      return;
+    }
+    if (isLocalPlayer) {
+      this.syncLocalVitalsFromServer(state);
+      this.syncLocalEphemeralStateFromServer(state);
+      this.syncLocalEquipmentFromServer(state);
+      const faction = normalizeFactionId(state.factionId);
+      this.deps.applyLocalFaction(faction);
+    }
   }
 
-  handleServerPlayerDied(playerId: string, killerName: string): void {
-    if (playerId === this.deps.getLocalPlayerId()) {
+  handleServerPlayerDied(playerId: string, killerId: string, killerName: string): void {
+    const localId = this.deps.getLocalPlayerId();
+    if (localId && killerId === localId && playerId !== localId) {
+      this.deps.recordLocalUserKill();
+    }
+    if (playerId === localId) {
       this.deps.setPlayerHp(0);
+      this.deps.setEquipmentFromServer({
+        weaponId: null,
+        shieldId: null,
+        helmetId: null,
+        armorId: null,
+        equippedOutfit: "base",
+      });
+      this.deps.syncEquippedArmorOutfit();
+      this.deps.syncEquippedHeldItemVisuals();
       this.deps.onLocalPlayerDeath();
       this.deps.addCombatLine(`Has sido asesinado por ${killerName}.`);
       return;
@@ -89,10 +133,18 @@ export class GameSceneLocalPlayerSync {
     const serverThinksDead = state.hp <= 0;
     const clientIsAlive = this.deps.getDeathPhase() === "alive" && progress.hp > 0;
     if (serverThinksDead && clientIsAlive) {
-      this.ensureServerReviveSynced();
+      if (this.deps.isServerReviveSyncPending()) {
+        this.ensureServerReviveSynced();
+        return;
+      }
+      // En multijugador el overlay de muerte lo dispara player_died (después de inventory_updated).
+      if (!isMultiplayerEnabled()) {
+        this.deps.setPlayerHp(0);
+        this.deps.onLocalPlayerDeath();
+      }
       this.deps.setPlayerProgressFromServer({
-        hp: progress.hp,
-        hpMax: progress.hpMax,
+        hp: 0,
+        hpMax: state.hpMax,
         mp: state.mp,
         mpMax: state.mpMax,
         level: state.level,
@@ -111,6 +163,36 @@ export class GameSceneLocalPlayerSync {
       level: state.level,
     });
     this.deps.refreshHud();
+  }
+
+  /** Buffs de combate efímeros (invisibilidad, stats temporales) — autoritativo del servidor. */
+  syncLocalEphemeralStateFromServer(state: NetPlayerState | null | undefined): void {
+    if (!state) {
+      return;
+    }
+    const now = Date.now();
+    const invisUntil = state.invisibleUntilMs ?? 0;
+    this.deps.setInvisibleUntilMs(invisUntil > now ? invisUntil : 0);
+    this.deps.setNavigatingFromServer(state.isNavigating === true);
+
+    const hasBuffPayload =
+      state.attributeBuffs !== undefined || state.buffExpiresAtMs !== undefined;
+    if (!hasBuffPayload) {
+      return;
+    }
+
+    const buffExpiresAt = state.buffExpiresAtMs ?? 0;
+    if (state.attributeBuffs && buffExpiresAt > now) {
+      this.deps.setAttributeBuffsFromServer({
+        strength: Math.max(0, Math.floor(state.attributeBuffs.strength)),
+        agility: Math.max(0, Math.floor(state.attributeBuffs.agility)),
+      });
+      this.deps.setAttributeBuffExpiresAt(buffExpiresAt);
+      return;
+    }
+
+    this.deps.setAttributeBuffsFromServer({ strength: 0, agility: 0 });
+    this.deps.setAttributeBuffExpiresAt(0);
   }
 
   syncLocalEquipmentFromServer(state: NetPlayerState | null | undefined): void {
@@ -135,7 +217,52 @@ export class GameSceneLocalPlayerSync {
     this.deps.refreshHud();
   }
 
-  syncLocalInventoryFromServer(slots: NetInventorySlotState[] | undefined): void {
+  syncLocalProgressFromServer(exp: number, expToNext: number, level: number): void {
+    this.deps.setPlayerExpFromServer(
+      Math.max(0, Math.floor(exp)),
+      Math.max(1, Math.floor(expToNext))
+    );
+    const nextLevel = Math.max(1, Math.floor(level));
+    const prevLevel = this.deps.getPlayerProgress().level;
+    if (nextLevel > prevLevel) {
+      this.deps.onPlayerLevelUp?.(prevLevel, nextLevel);
+    }
+    if (prevLevel !== nextLevel) {
+      this.deps.getPlayerProgress().level = nextLevel;
+    }
+    this.deps.refreshHud();
+  }
+
+  /** Banco, hechizos aprendidos y EXP desde welcome (PostgreSQL). */
+  syncLocalWelcomeExtras(welcome: Partial<ServerWelcomeMessage>): void {
+    if (typeof welcome.exp === "number" && Number.isFinite(welcome.exp)) {
+      this.deps.setPlayerExpFromServer(
+        Math.max(0, Math.floor(welcome.exp)),
+        typeof welcome.expToNext === "number" && Number.isFinite(welcome.expToNext)
+          ? Math.max(1, Math.floor(welcome.expToNext))
+          : undefined
+      );
+    }
+    if (typeof welcome.level === "number" && Number.isFinite(welcome.level)) {
+      this.deps.getPlayerProgress().level = Math.max(1, Math.floor(welcome.level));
+    }
+    if (Array.isArray(welcome.learnedSpellIds)) {
+      this.deps.setLearnedSpellIdsFromServer(welcome.learnedSpellIds);
+    }
+    if (
+      typeof welcome.bankGold === "number" ||
+      Array.isArray(welcome.bankInventory)
+    ) {
+      this.deps.setBankStateFromServer(welcome.bankGold, welcome.bankInventory);
+    }
+    this.deps.refreshHud();
+    this.deps.refreshKnownSpellsUi();
+  }
+
+  syncLocalInventoryFromServer(
+    slots: NetInventorySlotState[] | undefined,
+    options?: { slotUiOnly?: boolean }
+  ): void {
     if (!Array.isArray(slots)) {
       return;
     }
@@ -170,6 +297,10 @@ export class GameSceneLocalPlayerSync {
     this.deps.setEquippedItemIdsOnUi(
       Object.values(equipment).filter((id): id is ItemId => id != null)
     );
+    if (options?.slotUiOnly) {
+      this.deps.refreshInventorySlotsUi();
+      return;
+    }
     this.deps.refreshInventoryUi();
   }
 

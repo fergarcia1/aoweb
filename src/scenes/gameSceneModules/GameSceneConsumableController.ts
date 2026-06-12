@@ -8,9 +8,10 @@ import {
   resolveCoreStats,
   STAT_MAX,
 } from "../../game/characterStats";
+import { OFFLINE_GAMEPLAY_MESSAGE } from "../../game/mmoMode";
 import { CLASS_USES_MANA } from "./constants";
 import { canUseItem } from "../../game/itemUsability";
-import { getItemDefinition, type ItemId } from "../../items/itemDefinitions";
+import { getItemDefinition, type ItemId } from "../../../game-data/items/definitions";
 import type { InventorySlot } from "../../items/inventoryStack";
 import { SPELL_DEFINITIONS } from "../../data/spells";
 import type { ServerUseItemAckMessage } from "../../../shared/protocol";
@@ -31,12 +32,13 @@ export type GameSceneConsumableDeps = {
   setAttributeBuffs: (buffs: { strength: number; agility: number }) => void;
   getAttributeBuffExpiresAt: () => number;
   setAttributeBuffExpiresAt: (ms: number) => void;
-  getMagicSkillLevel: () => number;
+
   hasLearnedSpell: (id: number) => boolean;
   learnSpell: (id: number) => void;
   addChatLine: (text: string) => void;
   refreshHud: () => void;
-  refreshSkillsUi: () => void;
+  setNavigatingFromServer?: (active: boolean) => void;
+
   refreshKnownSpellsUi: () => void;
   getCoreStats: () => ReturnType<typeof resolveCoreStats>;
   clearInventorySlotUi: (slotIndex: number) => void;
@@ -49,19 +51,30 @@ export type GameSceneConsumableDeps = {
   isMultiplayerActive: () => boolean;
   isMultiplayerConnected: () => boolean;
   isSpawnSynced: () => boolean;
+  isPlayerAdmin: () => boolean;
   sendUseItemToServer: (itemId: ItemId, slotIndex: number) => void;
-  persistProgress: () => void;
+  schedulePersistProgress: () => void;
   cancelScheduledPersist: () => void;
+  deferConsumableUiWork: (work: () => void) => void;
   resetAttributeBuffTimer: () => void;
   getTimeNow: () => number;
+  playPotionUseSound?: () => void;
 };
+
+function isHpOrMpPotion(item: ReturnType<typeof getItemDefinition>): boolean {
+  const fx = item.consumableEffects;
+  return Boolean(
+    (fx?.healHpPercent && fx.healHpPercent > 0) ||
+      (fx?.restoreMpPercent && fx.restoreMpPercent > 0)
+  );
+}
 
 export class GameSceneConsumableController {
   constructor(private readonly deps: GameSceneConsumableDeps) {}
 
   private persistInventoryAfterConsume(): void {
     this.deps.cancelScheduledPersist();
-    this.deps.persistProgress();
+    this.deps.schedulePersistProgress();
   }
 
   handleServerUseItemAck(ack: ServerUseItemAckMessage): void {
@@ -77,24 +90,47 @@ export class GameSceneConsumableController {
         strength: ack.attributeBuffs.strength,
         agility: ack.attributeBuffs.agility,
       });
-      this.deps.setAttributeBuffExpiresAt(ack.buffExpiresAtMs ?? 0);
-      this.deps.refreshSkillsUi();
+      this.deps.resetAttributeBuffTimer();
     }
     this.deps.refreshHud();
-    this.deps.addChatLine(ack.message);
 
-    if (ack.clientOnly && typeof ack.inventorySlot === "number") {
-      this.useConsumableFromSlot(ack.inventorySlot, { skipMultiplayer: true });
-      this.persistInventoryAfterConsume();
+    if (ack.navigationMode === "boat") {
+      this.deps.setNavigatingFromServer?.(true);
+      this.deps.deferConsumableUiWork(() => {
+        this.deps.addChatLine(ack.message);
+      });
+      return;
+    }
+    if (ack.navigationMode === null) {
+      this.deps.setNavigatingFromServer?.(false);
+      this.deps.deferConsumableUiWork(() => {
+        this.deps.addChatLine(ack.message);
+      });
       return;
     }
 
-    const slotIndex = this.resolveInventorySlotForItemAck(ack);
-    if (slotIndex >= 0) {
-      const item = getItemDefinition(ack.itemId as ItemId);
-      this.consumeOneFromSlot(slotIndex, item.textureKey);
+    if (ack.clientOnly && typeof ack.inventorySlot === "number") {
+      this.deps.deferConsumableUiWork(() => {
+        this.useConsumableFromSlot(ack.inventorySlot!, { skipMultiplayer: true });
+        this.persistInventoryAfterConsume();
+      });
+      return;
     }
-    this.persistInventoryAfterConsume();
+
+    this.deps.deferConsumableUiWork(() => {
+      const ackItem = getItemDefinition(ack.itemId as ItemId);
+      if (isHpOrMpPotion(ackItem)) {
+        this.deps.playPotionUseSound?.();
+      }
+      this.deps.addChatLine(ack.message);
+
+      const slotIndex = this.resolveInventorySlotForItemAck(ack);
+      if (slotIndex >= 0) {
+        const item = getItemDefinition(ack.itemId as ItemId);
+        this.consumeOneFromSlot(slotIndex, item.textureKey);
+      }
+      this.persistInventoryAfterConsume();
+    });
   }
 
   useConsumableFromSlot(
@@ -113,7 +149,8 @@ export class GameSceneConsumableController {
       this.deps.getSelectedClass(),
       this.deps.getSelectedRace(),
       progress.level,
-      item
+      item,
+      this.deps.isPlayerAdmin()
     );
     if (!usability.allowed) {
       this.deps.addChatLine(usability.reason ?? "No podés usar ese objeto.");
@@ -157,6 +194,13 @@ export class GameSceneConsumableController {
       return;
     }
 
+    if (healHpPercent || restoreMpPercent || attributeBuff) {
+      if (!this.deps.isMultiplayerActive()) {
+        this.deps.addChatLine(OFFLINE_GAMEPLAY_MESSAGE);
+        return;
+      }
+    }
+
     if (attributeBuff === "strength" || attributeBuff === "agility") {
       this.expireAttributePotionBuffsIfNeeded(this.deps.getTimeNow());
       const statLabel = attributeBuff === "strength" ? "Fuerza" : "Agilidad";
@@ -164,7 +208,7 @@ export class GameSceneConsumableController {
       this.deps.resetAttributeBuffTimer();
 
       this.consumeOneFromSlot(slotIndex, item.textureKey);
-      this.deps.refreshSkillsUi();
+
       this.deps.refreshHud();
 
       if (result.atCap && result.gained <= 0) {
@@ -200,6 +244,7 @@ export class GameSceneConsumableController {
 
       this.consumeOneFromSlot(slotIndex, item.textureKey);
       this.deps.refreshHud();
+      this.deps.playPotionUseSound?.();
       this.deps.addChatLine(
         `Usaste ${item.name} y recuperaste ${restored} MP (${Math.round(restoreMpPercent * 100)}%).`
       );
@@ -224,6 +269,7 @@ export class GameSceneConsumableController {
 
     this.consumeOneFromSlot(slotIndex, item.textureKey);
     this.deps.refreshHud();
+    this.deps.playPotionUseSound?.();
     this.deps.addChatLine(
       `Usaste ${item.name} y recuperaste ${restoredHp} HP (${Math.round(healHpPercent * 100)}%).`
     );
@@ -238,7 +284,7 @@ export class GameSceneConsumableController {
     this.deps.setAttributeBuffExpiresAt(0);
     if (notify && hadBuff) {
       this.deps.addChatLine("El efecto de las pociones de fuerza y agilidad terminó.");
-      this.deps.refreshSkillsUi();
+
     }
   }
 
@@ -287,9 +333,9 @@ export class GameSceneConsumableController {
       this.deps.addChatLine(`Tu clase no puede aprender ${spell.nombre}.`);
       return false;
     }
-    if (spell.nivelMagiaRequerido > this.deps.getMagicSkillLevel()) {
+    if (spell.nivelRequerido > this.deps.getPlayerProgress().level) {
       this.deps.addChatLine(
-        `Necesitás ${spell.nivelMagiaRequerido} puntos de Magia para aprender ${spell.nombre}.`
+        `Necesitás ser nivel ${spell.nivelRequerido} para aprender ${spell.nombre}.`
       );
       return false;
     }

@@ -5,12 +5,14 @@ import type { ItemId } from "../items/itemDefinitions";
 import type { InventorySlot } from "../items/inventoryStack";
 import { GAME_FONT, GAME_TEXT_RESOLUTION } from "./fonts";
 import type { GameViewportRect } from "./deathOverlay";
+import { SHOP_SLOT_ICON_SCALE } from "./shopSlotIconScale";
 
 export type ShopViewState = {
   title: string;
   catalog: ItemId[];
   inventory: InventorySlot[];
   playerGold: number;
+  unusableCatalogIds?: Set<string>;
 };
 
 type ShopOverlayHandlers = {
@@ -42,7 +44,7 @@ const INV_SLOT_COUNT = INV_COLS * INV_ROWS;
 const CATALOG_COLS = 5;
 const SLOT_SIZE = 32;
 const SLOT_GAP = 2;
-const ICON_SCALE = 0.52;
+const ICON_SCALE = SHOP_SLOT_ICON_SCALE;
 
 type SlotUi = {
   bg: Phaser.GameObjects.Rectangle;
@@ -306,6 +308,13 @@ export class ShopOverlay {
       const slot = this.createSlotUi(scene, () => this.selectCatalogItem(index));
       this.catalogSlots.push(slot);
       this.setSlotIcon(scene, slot.icon, itemId);
+      
+      if (this.lastState?.unusableCatalogIds?.has(itemId)) {
+        slot.icon.setTint(0xff6666);
+      } else {
+        slot.icon.clearTint();
+      }
+
       slot.countLabel.setText("");
       this.catalogGroup.add([slot.bg, slot.icon, slot.countLabel]);
     });
@@ -421,8 +430,11 @@ export class ShopOverlay {
     return this.open;
   }
 
+  private lastState?: ShopViewState;
+
   show(viewport: GameViewportRect, state: ShopViewState) {
     this.open = true;
+    this.lastState = state;
     this.catalog = state.catalog.filter((itemId) => Boolean(getItemDefinition(itemId)));
     this.selectedCatalogIndex = this.catalog.length > 0 ? 0 : null;
     this.selectedInventorySlot = null;
@@ -443,6 +455,7 @@ export class ShopOverlay {
   }
 
   refresh(state: ShopViewState) {
+    this.lastState = state;
     this.catalog = state.catalog.filter((itemId) => Boolean(getItemDefinition(itemId)));
     this.lastInventory = state.inventory;
     this.titleText.setText(state.title);

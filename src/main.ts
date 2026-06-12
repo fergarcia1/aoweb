@@ -1,7 +1,9 @@
 import Phaser from "phaser";
+import { AuthScene } from "./scenes/AuthScene";
 import { CharacterCreationScene } from "./scenes/CharacterCreationScene";
 import { CharacterSelectScene } from "./scenes/CharacterSelectScene";
 import { GameScene } from "./scenes/GameScene";
+import { flushProgressOnPageHide } from "./game/emergencyProgressFlush";
 import { disconnectActiveMultiplayer } from "./network/multiplayerSession";
 import { setupAppNavbar } from "./ui/appNavbar";
 import { reportStartupError, setupErrorDiagnostics } from "./debug/errorDiagnostics";
@@ -12,7 +14,7 @@ const config: Phaser.Types.Core.GameConfig = {
   width: 800,
   height: 600,
   // Fondo fuera de los tiles del mapa (cuando la cámara sale del borde).
-  backgroundColor: "#2f3918",
+  backgroundColor: "#0d1117",
   antialias: false,
   pixelArt: true,
   autoRound: true,
@@ -24,13 +26,18 @@ const config: Phaser.Types.Core.GameConfig = {
     mode: Phaser.Scale.FIT,
     autoCenter: Phaser.Scale.CENTER_BOTH,
   },
-  scene: [GameScene, CharacterSelectScene, CharacterCreationScene],
+  // CharacterSelect primero: GameScene precarga miles de PNG (items, mapas, mobs).
+  // Si arranca al abrir la página, la pantalla queda en verde hasta terminar.
+  scene: [AuthScene, CharacterSelectScene, CharacterCreationScene, GameScene],
 };
 
 setupErrorDiagnostics();
 
 if (typeof window !== "undefined") {
-  window.addEventListener("pagehide", () => disconnectActiveMultiplayer());
+  window.addEventListener("pagehide", () => {
+    flushProgressOnPageHide();
+    disconnectActiveMultiplayer();
+  });
 }
 
 try {

@@ -27,6 +27,33 @@
       "referenceId": "player_base"
     },
     {
+      "id": "player_armaduraAse",
+      "path": "public/assets/ao/armors/armaduraAse_std.png",
+      "frameWidth": 32,
+      "frameHeight": 48,
+      "frames": 24,
+      "anchor": "feet",
+      "referenceId": "player_base"
+    },
+    {
+      "id": "player_dragonBlancoFem",
+      "path": "public/assets/ao/armors/dragonBlancoFem_std.png",
+      "frameWidth": 32,
+      "frameHeight": 48,
+      "frames": 24,
+      "anchor": "feet",
+      "referenceId": "player_base"
+    },
+    {
+      "id": "player_placasDoradas",
+      "path": "public/assets/ao/armors/placasDoradas_std.png",
+      "frameWidth": 32,
+      "frameHeight": 48,
+      "frames": 24,
+      "anchor": "feet",
+      "referenceId": "player_base"
+    },
+    {
       "id": "meditation_low_lvl",
       "path": "public/assets/ao/meditations/lowLvlMed.png",
       "frameWidth": 30,
@@ -56,6 +83,38 @@
       "frameWidth": 128,
       "frameHeight": 128,
       "frames": 12,
+      "anchor": "feet"
+    },
+    {
+      "id": "mob_goblin",
+      "path": "public/assets/ao/imperium/mobs/npc_bodies/goblin.png",
+      "frameWidth": 128,
+      "frameHeight": 128,
+      "frames": 16,
+      "anchor": "feet"
+    },
+    {
+      "id": "mob_goblin_mago",
+      "path": "public/assets/ao/imperium/mobs/npc_bodies/goblinMago.png",
+      "frameWidth": 42,
+      "frameHeight": 64,
+      "frames": 24,
+      "anchor": "feet"
+    },
+    {
+      "id": "mob_golem_bronce",
+      "path": "public/assets/ao/imperium/mobs/npc_bodies/golemBronceS.png",
+      "frameWidth": 170,
+      "frameHeight": 170,
+      "frames": 9,
+      "anchor": "feet"
+    },
+    {
+      "id": "mob_golem_hielo",
+      "path": "public/assets/ao/imperium/mobs/npc_bodies/golemHieloS.png",
+      "frameWidth": 170,
+      "frameHeight": 256,
+      "frames": 6,
       "anchor": "feet"
     }
   ]

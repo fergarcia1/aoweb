@@ -1,11 +1,10 @@
-import type { CharacterRaceId } from "../data/characters";
+import {
+  canRaceEquipArmor,
+  isShortRace,
+  SHORT_RACES,
+} from "../../game-data/armorRules";
 
-/** Enanos y gnomos usan armaduras con spritesheet *Bajos_std. */
-export const SHORT_RACES: readonly CharacterRaceId[] = ["dwarf", "gnome"];
-
-export function isShortRace(raceId: CharacterRaceId): boolean {
-  return SHORT_RACES.includes(raceId);
-}
+export { canRaceEquipArmor, isShortRace, SHORT_RACES };
 
 /**
  * Detecta armadura para razas bajas por convención de nombre:
@@ -35,22 +34,3 @@ export function inferBajosSpritesheetPath(stdAssetPath: string): string {
   return stdAssetPath.replace(/_std(\.[^./]+)$/i, "Bajos_std$1");
 }
 
-export function canRaceEquipArmor(
-  raceId: CharacterRaceId,
-  clasesBajas: boolean
-): { allowed: boolean; reason?: string } {
-  const shortRace = isShortRace(raceId);
-  if (shortRace && !clasesBajas) {
-    return {
-      allowed: false,
-      reason: "Los enanos y gnomos solo pueden equipar armaduras para razas bajas.",
-    };
-  }
-  if (!shortRace && clasesBajas) {
-    return {
-      allowed: false,
-      reason: "Tu raza no puede equipar armaduras exclusivas de enanos o gnomos.",
-    };
-  }
-  return { allowed: true };
-}

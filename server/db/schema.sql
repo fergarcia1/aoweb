@@ -1,7 +1,8 @@
 -- AOWEB normalized persistence schema (PostgreSQL-friendly SQL).
 -- Notes:
 -- - Uses text item ids to match current game-data catalog (e.g. "armor_dragon_negro").
--- - Keeps one row per slot/spell/skill for easier queries and updates.
+-- - Keeps one row per slot/spell for easier queries and updates.
+-- - Sin tabla de skills (el juego usa solo nivel mínimo por hechizo).
 -- - `accounts` is optional in local/dev mode.
 
 BEGIN;
@@ -36,6 +37,9 @@ CREATE TABLE IF NOT EXISTS characters (
   mp INTEGER NOT NULL DEFAULT 50,
   mp_max INTEGER NOT NULL DEFAULT 50,
   gold INTEGER NOT NULL DEFAULT 0,
+  bank_gold INTEGER NOT NULL DEFAULT 0,
+  exp BIGINT NOT NULL DEFAULT 0,
+  exp_to_next INTEGER NOT NULL DEFAULT 100,
   weapon_item_id TEXT,
   shield_item_id TEXT,
   helmet_item_id TEXT,
@@ -74,14 +78,6 @@ CREATE TABLE IF NOT EXISTS character_bank_slots (
   PRIMARY KEY (character_id, slot_index)
 );
 
-CREATE TABLE IF NOT EXISTS character_skills (
-  character_id TEXT NOT NULL REFERENCES characters(id) ON DELETE CASCADE,
-  skill_id TEXT NOT NULL,
-  level INTEGER NOT NULL DEFAULT 0,
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  PRIMARY KEY (character_id, skill_id)
-);
-
 CREATE TABLE IF NOT EXISTS character_spells (
   character_id TEXT NOT NULL REFERENCES characters(id) ON DELETE CASCADE,
   spell_id INTEGER NOT NULL,
@@ -106,5 +102,10 @@ CREATE INDEX IF NOT EXISTS idx_world_items_map_tile
 
 -- Patches for databases created before newer columns (idempotent).
 ALTER TABLE characters ADD COLUMN IF NOT EXISTS gold INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE characters ADD COLUMN IF NOT EXISTS bank_gold INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE characters ADD COLUMN IF NOT EXISTS exp BIGINT NOT NULL DEFAULT 0;
+ALTER TABLE characters ADD COLUMN IF NOT EXISTS exp_to_next INTEGER NOT NULL DEFAULT 100;
+
+DROP TABLE IF EXISTS character_skills;
 
 COMMIT;

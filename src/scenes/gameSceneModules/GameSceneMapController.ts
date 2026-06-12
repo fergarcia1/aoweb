@@ -1,7 +1,6 @@
 import Phaser from "phaser";
 import { TILE_SIZE } from "../../config";
 import {
-  EDGE_TRANSITION_TRIGGER_DISTANCE,
   getMap,
   getWorldMapBiomeColor,
   getWorldMapGridBounds,
@@ -9,8 +8,17 @@ import {
   WORLD_MAP_CELLS,
   type GameMap,
 } from "../../maps";
+import { isPlayerUnderLegacyRoof } from "../../../shared/mapWalkability";
+import { syncMapSceneryOcclusion } from "./mapSceneryOcclusion";
 import { getTileDefinition, TILE } from "../../maps/tileDefinitions";
 import { spawnMapObjectImage } from "../../maps/mapObjects";
+import {
+  collectLegacyObjGrhFileNums,
+  getLegacyObjGrhId,
+  resolveImportedObjDef,
+  shouldSpawnLegacyCsmObj,
+  type GrhIndexEntry,
+} from "../../maps/legacyMapObjects";
 import {
   createGrassTile,
   createTerrainTile,
@@ -26,6 +34,7 @@ import {
   TREE_SCALE,
   TREE_TEXTURE_KEY,
 } from "./constants";
+import { spawnMapPortalSprites } from "../../maps/portalVisuals";
 
 export type GameSceneMapDeps = {
   scene: Phaser.Scene;
@@ -42,6 +51,8 @@ export type GameSceneMapDeps = {
   getPlayerTile: () => { x: number; y: number };
   refreshMinimap: () => void;
   onViewportLayout: () => void;
+  setDoorTileOverride: (tileX: number, tileY: number, isOpen: boolean) => void;
+  isMapTileWalkable: (tileX: number, tileY: number) => boolean;
 };
 
 /**
@@ -54,9 +65,20 @@ export class GameSceneMapController {
   private uiCamera?: Phaser.Cameras.Scene2D.Camera;
   private readonly mapTrees: Phaser.GameObjects.Image[] = [];
   private readonly mapBuildings: Phaser.GameObjects.Image[] = [];
+  private readonly mapRoofs: Phaser.GameObjects.Image[] = [];
+  private readonly dynamicObjs = new Map<string, Phaser.GameObjects.Image>();
+  private readonly mapPortalSprites: Phaser.GameObjects.Sprite[] = [];
+  private lastRoofTileKey = "";
+  private lastRoofHidden = false;
   private worldMapOverlay?: Phaser.GameObjects.Container;
   private worldMapCurrentMarker?: Phaser.GameObjects.Arc;
   private worldMapPanelGeom = { x: 0, y: 0, w: 0, h: 0 };
+  private worldMapGridParams: {
+    gridStartX: number;
+    gridStartY: number;
+    cellSize: number;
+    bounds: ReturnType<typeof getWorldMapGridBounds>;
+  } | null = null;
   private worldMapOpen = false;
 
   constructor(private readonly deps: GameSceneMapDeps) {
@@ -73,6 +95,10 @@ export class GameSceneMapController {
     return this.mapBuildings;
   }
 
+  getMapRoofs(): readonly Phaser.GameObjects.Image[] {
+    return this.mapRoofs;
+  }
+
   getUiCamera(): Phaser.Cameras.Scene2D.Camera | undefined {
     return this.uiCamera;
   }
@@ -85,6 +111,76 @@ export class GameSceneMapController {
     return this.worldMapOverlay;
   }
 
+  getLegacyDoorTileAtWorldPoint(
+    worldX: number,
+    worldY: number
+  ): { tileX: number; tileY: number } | null {
+    const doors = Array.from(this.dynamicObjs.values()).filter(
+      (obj) => obj.getData("isLegacyDoor") === true
+    );
+    for (let i = doors.length - 1; i >= 0; i -= 1) {
+      const door = doors[i];
+      if (!door.visible || door.alpha <= 0) {
+        continue;
+      }
+      if (!Phaser.Geom.Rectangle.Contains(door.getBounds(), worldX, worldY)) {
+        continue;
+      }
+      const tileX = door.getData("mapTileX") as number | undefined;
+      const tileY = door.getData("mapTileY") as number | undefined;
+      if (tileX !== undefined && tileY !== undefined) {
+        return { tileX, tileY };
+      }
+    }
+    return null;
+  }
+
+  ensureMapVisualAssetsLoaded(map: GameMap): Promise<void> {
+    const { scene } = this.deps;
+    const grhIndex = scene.cache.json.get("grh_index") as
+      | Record<string, GrhIndexEntry>
+      | undefined;
+    let queued = 0;
+
+    const queueImage = (key: string, path: string) => {
+      if (scene.textures.exists(key)) {
+        return;
+      }
+      scene.load.image(key, path);
+      queued += 1;
+    };
+
+    for (const overlay of map.groundOverlays ?? []) {
+      queueImage(overlay.textureKey, overlay.texturePath);
+    }
+
+    if (grhIndex) {
+      const legacyFileNums = new Set<number>();
+      if (map.legacyCsmData?.fileNums) {
+        for (const fileNum of map.legacyCsmData.fileNums) {
+          legacyFileNums.add(fileNum);
+        }
+      }
+      for (const fileNum of collectLegacyObjGrhFileNums(map, grhIndex)) {
+        legacyFileNums.add(fileNum);
+      }
+      for (const fileNum of legacyFileNums) {
+        queueImage(`grh_file_${fileNum}`, `assets/ao/graficos/${fileNum}.png`);
+      }
+    }
+
+    if (queued === 0) {
+      return Promise.resolve();
+    }
+
+    return new Promise((resolve) => {
+      scene.load.once(Phaser.Loader.Events.COMPLETE, () => resolve());
+      if (!scene.load.isLoading()) {
+        scene.load.start();
+      }
+    });
+  }
+
   drawMap(map: GameMap): void {
     const { scene } = this.deps;
     this.mapTiles.removeAll(true);
@@ -93,25 +189,37 @@ export class GameSceneMapController {
     this.mapTrees.length = 0;
     this.mapBuildings.forEach((building) => building.destroy());
     this.mapBuildings.length = 0;
+    this.mapRoofs.forEach((roof) => roof.destroy());
+    this.mapRoofs.length = 0;
+    this.dynamicObjs.forEach((obj) => obj.destroy());
+    this.dynamicObjs.clear();
+    this.mapPortalSprites.forEach((sprite) => sprite.destroy());
+    this.mapPortalSprites.length = 0;
+    this.lastRoofTileKey = "";
+    this.lastRoofHidden = false;
 
-    for (let y = 0; y < map.height; y += 1) {
-      for (let x = 0; x < map.width; x += 1) {
-        const tile = map.tiles[y][x];
-        const tileDefinition = getTileDefinition(tile);
-        const px = x * TILE_SIZE;
-        const py = y * TILE_SIZE;
+    if (map.legacyCsmData) {
+      this.drawLegacyMap(map);
+    } else {
+      for (let y = 0; y < map.height; y += 1) {
+        for (let x = 0; x < map.width; x += 1) {
+          const tile = map.tiles[y][x];
+          const tileDefinition = getTileDefinition(tile);
+          const px = x * TILE_SIZE;
+          const py = y * TILE_SIZE;
 
-        if (tileDefinition.renderAs === "ao_grass") {
-          this.mapTiles.add(createGrassTile(scene, px, py, x, y));
-        } else if (tileDefinition.renderAs === "ao_water") {
-          this.mapTiles.add(createTerrainTile(scene, px, py, pickWaterFrame(x, y)));
-        } else {
-          this.mapOverlay.fillStyle(tileDefinition.color, 1);
-          this.mapOverlay.fillRect(px, py, TILE_SIZE, TILE_SIZE);
-        }
+          if (tileDefinition.renderAs === "ao_grass") {
+            this.mapTiles.add(createGrassTile(scene, px, py, x, y));
+          } else if (tileDefinition.renderAs === "ao_water") {
+            this.mapTiles.add(createTerrainTile(scene, px, py, pickWaterFrame(x, y)));
+          } else {
+            this.mapOverlay.fillStyle(tileDefinition.color, 1);
+            this.mapOverlay.fillRect(px, py, TILE_SIZE, TILE_SIZE);
+          }
 
-        if (tileDefinition.decoration === "tree") {
-          this.drawTreeTile(px, py);
+          if (tileDefinition.decoration === "tree") {
+            this.drawTreeTile(px, py);
+          }
         }
       }
     }
@@ -134,9 +242,200 @@ export class GameSceneMapController {
       this.mapBuildings.push(building);
     }
 
-    const scenery = [...this.mapTrees, ...this.mapBuildings];
-    if (this.uiCamera && scenery.length > 0) {
+    const grhIndex = scene.cache.json.get("grh_index") as
+      | Record<string, GrhIndexEntry>
+      | undefined;
+    if (grhIndex) {
+      if (map.legacyObjs) {
+        for (const obj of map.legacyObjs) {
+          if (!shouldSpawnLegacyCsmObj(obj)) {
+            continue;
+          }
+          const img = this.spawnLegacyObj(obj.objIndex, obj.tileX, obj.tileY, grhIndex);
+          if (img) {
+            this.dynamicObjs.set(`${obj.tileX},${obj.tileY}`, img);
+          }
+        }
+      }
+    }
+
+    this.mapPortalSprites.push(
+      ...spawnMapPortalSprites(scene, map.id, (feetY) => this.deps.depthFromFeetY(feetY))
+    );
+
+    this.refreshSceneryUiCameraIgnore();
+  }
+
+  /** Mantiene árboles/edificios en la cámara del mundo (no en la UI). */
+  refreshSceneryUiCameraIgnore(): void {
+    if (!this.uiCamera) {
+      return;
+    }
+    const scenery = [
+      ...this.mapTrees,
+      ...this.mapBuildings,
+      ...this.mapRoofs,
+      ...Array.from(this.dynamicObjs.values()),
+      ...this.mapPortalSprites,
+    ];
+    if (scenery.length > 0) {
       this.uiCamera.ignore(scenery);
+    }
+  }
+
+  private drawLegacyMap(map: GameMap) {
+    const { scene } = this.deps;
+    const legacy = map.legacyCsmData!;
+    const grhIndex = scene.cache.json.get("grh_index");
+
+    if (!grhIndex) {
+      console.warn("grh_index.json no cargado.");
+      return;
+    }
+
+    const drawGrh = (
+      grhId: number,
+      px: number,
+      py: number,
+      tileX: number,
+      tileY: number,
+      layer: "ground" | "above",
+      options?: { asRoofLayer?: boolean }
+    ) => {
+      if (grhId <= 0) return null;
+      let grh = grhIndex[grhId];
+      if (!grh) return null;
+      // Resolve animation to first frame for maps (usually trees/water are animated, we just use frame 1 for now)
+      if (grh.numFrames > 1 && grh.frames) {
+        grh = grhIndex[grh.frames[0]];
+      }
+      if (!grh || !grh.fileNum) return null;
+
+      const textureKey = `grh_file_${grh.fileNum}`;
+      if (!scene.textures.exists(textureKey)) return null;
+
+      const img = scene.add
+        .image(
+          px + TILE_SIZE / 2 - grh.pixelWidth / 2 - grh.sX,
+          py + TILE_SIZE - grh.pixelHeight - grh.sY,
+          textureKey
+        )
+        .setOrigin(0, 0)
+        .setCrop(grh.sX, grh.sY, grh.pixelWidth, grh.pixelHeight);
+
+      if (layer === "ground") {
+        this.mapTiles.add(img);
+      } else if (options?.asRoofLayer) {
+        img.setDepth(100000);
+        this.mapRoofs.push(img);
+      } else {
+        const tileFeetY = py + TILE_SIZE;
+        img.setDepth(this.deps.depthFromFeetY(tileFeetY));
+        img.setData("grhPixelHeight", grh.pixelHeight);
+        img.setData("mapTileX", tileX);
+        img.setData("mapTileY", tileY);
+        this.mapBuildings.push(img);
+      }
+      return img;
+    };
+
+    for (let x = 0; x < map.width; x += 1) {
+      for (let y = 0; y < map.height; y += 1) {
+        const px = x * TILE_SIZE;
+        const py = y * TILE_SIZE;
+        drawGrh(legacy.L1[y][x], px, py, x, y, "ground");
+        drawGrh(legacy.L2[y][x], px, py, x, y, "ground");
+        drawGrh(legacy.L3[y][x], px, py, x, y, "above");
+        const l4Grh = legacy.L4[y][x];
+        if (l4Grh > 0) {
+          drawGrh(l4Grh, px, py, x, y, "above", { asRoofLayer: true });
+        }
+      }
+    }
+  }
+
+  private spawnLegacyObj(
+    objIndex: number,
+    tileX: number,
+    tileY: number,
+    grhIndex: Record<string, GrhIndexEntry>
+  ): Phaser.GameObjects.Image | null {
+    const { scene } = this.deps;
+    const def = resolveImportedObjDef(objIndex);
+    if (!def) {
+      return null;
+    }
+
+    const grhId = getLegacyObjGrhId(def, objIndex);
+    let grh = grhIndex[grhId];
+    if (grh?.numFrames && grh.numFrames > 1 && grh.frames?.[0]) {
+      grh = grhIndex[grh.frames[0]];
+    }
+    if (
+      !grh?.fileNum ||
+      grh.pixelWidth === undefined ||
+      grh.pixelHeight === undefined ||
+      grh.sX === undefined ||
+      grh.sY === undefined
+    ) {
+      return null;
+    }
+
+    const textureKey = `grh_file_${grh.fileNum}`;
+    if (!scene.textures.exists(textureKey)) {
+      return null;
+    }
+
+    const px = tileX * TILE_SIZE;
+    const py = tileY * TILE_SIZE;
+    const tileFeetY = py + TILE_SIZE;
+
+    const img = scene.add
+      .image(
+        px + TILE_SIZE / 2 - grh.pixelWidth / 2 - grh.sX,
+        py + TILE_SIZE - grh.pixelHeight - grh.sY,
+        textureKey
+      )
+      .setOrigin(0, 0)
+      .setCrop(grh.sX, grh.sY, grh.pixelWidth, grh.pixelHeight);
+
+    img.setDepth(this.deps.depthFromFeetY(tileFeetY));
+    img.setData("grhPixelHeight", grh.pixelHeight);
+    img.setData("mapTileX", tileX);
+    img.setData("mapTileY", tileY);
+    if (def.objType === 6 && (def.indexAbierta > 0 || def.indexCerrada > 0)) {
+      const isOpen = objIndex === def.indexAbierta;
+      img.setData("isLegacyDoor", true);
+      img.setData("isLegacyDoorOpen", isOpen);
+      this.deps.setDoorTileOverride(tileX, tileY, isOpen);
+    }
+    this.mapBuildings.push(img);
+    return img;
+  }
+
+  updateDynamicObject(tileX: number, tileY: number, newObjIndex: number): void {
+    const key = `${tileX},${tileY}`;
+    const img = this.dynamicObjs.get(key);
+    if (img) {
+      img.destroy();
+      this.dynamicObjs.delete(key);
+      const index = this.mapBuildings.indexOf(img);
+      if (index !== -1) {
+        this.mapBuildings.splice(index, 1);
+      }
+    }
+    const grhIndex = this.deps.scene.cache.json.get("grh_index");
+    if (grhIndex) {
+      const newImg = this.spawnLegacyObj(newObjIndex, tileX, tileY, grhIndex);
+      if (newImg) {
+        this.dynamicObjs.set(key, newImg);
+
+        const def = resolveImportedObjDef(newObjIndex);
+        if (def && (def.indexAbierta > 0 || def.indexCerrada > 0)) {
+          const isOpen = newObjIndex === def.indexAbierta;
+          this.deps.setDoorTileOverride(tileX, tileY, isOpen);
+        }
+      }
     }
   }
 
@@ -155,6 +454,10 @@ export class GameSceneMapController {
 
   updateWorldBackgroundColor(): void {
     const map = this.deps.getCurrentMap();
+    if (map.backgroundColor) {
+      this.deps.scene.cameras.main.setBackgroundColor(map.backgroundColor);
+      return;
+    }
     const outsideTile = map.outsideTile ?? TILE.GRASS;
     const outsideColor = getTileDefinition(outsideTile).color;
     this.deps.scene.cameras.main.setBackgroundColor(outsideColor);
@@ -186,6 +489,7 @@ export class GameSceneMapController {
       this.mapOverlay,
       ...this.mapTrees,
       ...this.mapBuildings,
+      ...this.mapRoofs,
       this.deps.getPlayer(),
       this.deps.getPlayerFace(),
       this.deps.getPlayerNameLabel(),
@@ -195,6 +499,7 @@ export class GameSceneMapController {
     ]);
 
     this.applyCameraLayout();
+    this.refreshSceneryUiCameraIgnore();
   }
 
   applyCameraLayout(): void {
@@ -227,28 +532,15 @@ export class GameSceneMapController {
     return getGameViewport(scene.scale.width, scene.scale.height);
   }
 
+  /** Área completa del mapa; no recortar por zonas de transición de borde. */
   getMinimapBounds() {
     const map = this.deps.getCurrentMap();
-    let minTileX = 0;
-    let minTileY = 0;
-    let maxTileX = map.width - 1;
-    let maxTileY = map.height - 1;
-    const edgeTransitions = map.edgeTransitions;
-
-    if (edgeTransitions?.left) {
-      minTileX = Math.min(maxTileX, EDGE_TRANSITION_TRIGGER_DISTANCE + 1);
-    }
-    if (edgeTransitions?.right) {
-      maxTileX = Math.max(minTileX, map.width - 2 - EDGE_TRANSITION_TRIGGER_DISTANCE);
-    }
-    if (edgeTransitions?.up) {
-      minTileY = Math.min(maxTileY, EDGE_TRANSITION_TRIGGER_DISTANCE + 1);
-    }
-    if (edgeTransitions?.down) {
-      maxTileY = Math.max(minTileY, map.height - 2 - EDGE_TRANSITION_TRIGGER_DISTANCE);
-    }
-
-    return { minTileX, minTileY, maxTileX, maxTileY };
+    return {
+      minTileX: 0,
+      minTileY: 0,
+      maxTileX: Math.max(0, map.width - 1),
+      maxTileY: Math.max(0, map.height - 1),
+    };
   }
 
   createWorldMapOverlay(): void {
@@ -277,6 +569,63 @@ export class GameSceneMapController {
     const marker = this.getWorldMapMarkerScreenPosition();
     if (!marker) return;
     this.worldMapCurrentMarker.setPosition(marker.x, marker.y);
+  }
+
+  getDrawPosition(tileX: number, tileY: number): { x: number; y: number } {
+    return {
+      x: tileX * TILE_SIZE,
+      y: tileY * TILE_SIZE,
+    };
+  }
+
+  isPlayerUnderRoof(tileX: number, tileY: number): boolean {
+    return isPlayerUnderLegacyRoof(this.deps.getCurrentMap(), tileX, tileY);
+  }
+
+  /** Paredes al sur del jugador (tileY mayor) dibujan por encima; al norte, detrás. */
+  syncBuildingDepths(playerTileX: number, playerTileY: number, playerDepth: number): void {
+    for (const building of this.mapBuildings) {
+      const ty = building.getData("mapTileY") as number | undefined;
+      if (ty === undefined) {
+        continue;
+      }
+      if (ty > playerTileY) {
+        building.setDepth(playerDepth + 0.2);
+      } else if (ty < playerTileY) {
+        building.setDepth(playerDepth - 0.2);
+      } else {
+        building.setDepth(playerDepth + 0.15);
+      }
+    }
+  }
+
+  updateRoofTransparency(tileX: number, tileY: number): void {
+    const isUnderRoof = this.isPlayerUnderRoof(tileX, tileY);
+
+    const targetAlpha = isUnderRoof ? 0.0 : 1.0;
+    for (const roof of this.mapRoofs) {
+      // Opt: Solo si cambió
+      if (roof.alpha !== targetAlpha) {
+        roof.setAlpha(targetAlpha);
+        roof.setVisible(targetAlpha > 0);
+      }
+    }
+  }
+
+  syncSceneryOcclusion(playerTileX: number, playerTileY: number): void {
+    const player = this.deps.getPlayer();
+    syncMapSceneryOcclusion({
+      map: this.deps.getCurrentMap(),
+      playerTileX,
+      playerTileY,
+      playerX: player.x,
+      playerY: player.y,
+      isMapTileWalkable: this.deps.isMapTileWalkable,
+      trees: this.mapTrees,
+      buildings: this.mapBuildings,
+      onUpdateRoofTransparency: (tx, ty) => this.updateRoofTransparency(tx, ty),
+      isPlayerUnderRoof: (tx, ty) => this.isPlayerUnderRoof(tx, ty),
+    });
   }
 
   private drawTreeTile(px: number, py: number): void {
@@ -354,51 +703,138 @@ export class GameSceneMapController {
 
     const topPadding = 44;
     const sidePadding = 20;
-    const mapAreaX = panelX + sidePadding;
+    
+    const sidebarW = 200;
+    const mapAreaX = panelX + sidePadding + sidebarW;
     const mapAreaY = panelY + topPadding;
-    const mapAreaW = panelW - sidePadding * 2;
+    const mapAreaW = panelW - sidePadding * 2 - sidebarW;
     const mapAreaH = panelH - topPadding - 16;
 
+    // Sidebar panel for descriptions
+    const sidebar = scene.add
+      .rectangle(panelX + sidePadding, mapAreaY, sidebarW - 10, mapAreaH, 0x16223d, 0.5)
+      .setOrigin(0, 0)
+      .setStrokeStyle(1, 0x3d5a80, 0.8)
+      .setScrollFactor(0);
+    
+    const descTitle = scene.add
+      .text(panelX + sidePadding + 10, mapAreaY + 10, "Información", {
+        fontFamily: GAME_FONT,
+        fontSize: "14px",
+        color: "#7ba7d9",
+        fontStyle: "bold",
+        resolution: GAME_TEXT_RESOLUTION,
+      })
+      .setScrollFactor(0);
+    
+    const descSeparator = scene.add
+      .rectangle(panelX + sidePadding + 10, mapAreaY + 30, sidebarW - 30, 1, 0x3d5a80, 1)
+      .setOrigin(0, 0)
+      .setScrollFactor(0);
+
+    const descName = scene.add
+      .text(panelX + sidePadding + 10, mapAreaY + 40, "Selecciona un mapa", {
+        fontFamily: GAME_FONT,
+        fontSize: "12px",
+        color: "#ffffff",
+        fontStyle: "bold",
+        wordWrap: { width: sidebarW - 30 },
+        resolution: GAME_TEXT_RESOLUTION,
+      })
+      .setScrollFactor(0);
+
+    const descText = scene.add
+      .text(panelX + sidePadding + 10, mapAreaY + 65, "", {
+        fontFamily: GAME_FONT,
+        fontSize: "11px",
+        color: "#dbe9ff",
+        wordWrap: { width: sidebarW - 30 },
+        resolution: GAME_TEXT_RESOLUTION,
+      })
+      .setScrollFactor(0);
+
+    this.worldMapOverlay.add([sidebar, descTitle, descSeparator, descName, descText]);
+
     const bounds = getWorldMapGridBounds();
-    const cellW = mapAreaW / bounds.width;
-    const cellH = mapAreaH / bounds.height;
+    // Use the same size for width and height so every cell is a square.
+    const rawCellW = mapAreaW / bounds.width;
+    const rawCellH = mapAreaH / bounds.height;
+    // Boost cellSize a bit for better readability of names, but clamp to fit
+    const cellSize = Math.min(28, rawCellW, rawCellH);
+
+    // Center the square grid inside the available panel area.
+    const gridW = cellSize * bounds.width;
+    const gridH = cellSize * bounds.height;
+    const gridOffsetX = Math.floor((mapAreaW - gridW) / 2);
+    const gridOffsetY = Math.floor((mapAreaH - gridH) / 2);
+    const gridStartX = mapAreaX + gridOffsetX;
+    const gridStartY = mapAreaY + gridOffsetY;
+
+    // Store for dynamic highlight updates when the map changes.
+    this.worldMapGridParams = { gridStartX, gridStartY, cellSize, bounds };
 
     const ocean = scene.add
-      .rectangle(mapAreaX, mapAreaY, mapAreaW, mapAreaH, getWorldMapBiomeColor("water"), 1)
+      .rectangle(gridStartX, gridStartY, gridW, gridH, getWorldMapBiomeColor("water"), 1)
       .setOrigin(0, 0)
       .setScrollFactor(0);
     this.worldMapOverlay.add(ocean);
 
     if (scene.textures.exists("world_map_art")) {
       const art = scene.add
-        .image(mapAreaX + mapAreaW / 2, mapAreaY + mapAreaH / 2, "world_map_art")
+        .image(gridStartX + gridW / 2, gridStartY + gridH / 2, "world_map_art")
         .setScrollFactor(0);
-      art.setDisplaySize(mapAreaW, mapAreaH);
+      art.setDisplaySize(gridW, gridH);
       this.worldMapOverlay.add(art);
     }
+
+    // Only render labels when cells are large enough to be readable.
+    const showLabels = cellSize >= 20;
 
     for (const cell of WORLD_MAP_CELLS) {
       const col = cell.gridX - bounds.minX;
       const row = cell.gridY - bounds.minY;
-      const x = mapAreaX + col * cellW;
-      const y = mapAreaY + row * cellH;
+      const x = gridStartX + col * cellSize;
+      const y = gridStartY + row * cellSize;
+      
+      const isCity = cell.biome === "city";
+
       const land = scene.add
-        .rectangle(x + 1, y + 1, cellW - 2, cellH - 2, getWorldMapBiomeColor(cell.biome), 1)
+        .rectangle(x + 1, y + 1, cellSize - 2, cellSize - 2, getWorldMapBiomeColor(cell.biome), 1)
         .setOrigin(0, 0)
         .setStrokeStyle(1, 0x9fc4ef, 0.55)
-        .setScrollFactor(0);
-      const label = cell.label ?? cell.mapId;
-      const mapName = scene.add
-        .text(x + cellW / 2, y + cellH - 10, label, {
-          fontFamily: GAME_FONT,
-          fontSize: "11px",
-          color: "#e8f4ff",
-          align: "center",
-          resolution: GAME_TEXT_RESOLUTION,
-        })
-        .setOrigin(0.5, 1)
-        .setScrollFactor(0);
-      this.worldMapOverlay.add([land, mapName]);
+        .setScrollFactor(0)
+        .setInteractive({ useHandCursor: true });
+      
+      land.on("pointerdown", () => {
+        const name = cell.label ?? cell.mapId;
+        const id = cell.mapId.replace("mapa", "");
+        descName.setText(`${name} (${id})`);
+        descText.setText(cell.description ?? "");
+      });
+
+      this.worldMapOverlay.add(land);
+
+      if (showLabels) {
+        const label = cell.label ?? cell.mapId;
+        const fontSize = isCity ? "10px" : "9px";
+        const fontColor = isCity ? "#ffffff" : "#e8f4ff";
+        const fontStyle = isCity ? "bold" : "normal";
+
+        const mapName = scene.add
+          .text(x + cellSize / 2, y + cellSize / 2, label, {
+            fontFamily: GAME_FONT,
+            fontSize: fontSize,
+            color: fontColor,
+            fontStyle: fontStyle,
+            align: "center",
+            resolution: GAME_TEXT_RESOLUTION,
+            stroke: "#000000",
+            strokeThickness: 1.5,
+          })
+          .setOrigin(0.5, 0.5)
+          .setScrollFactor(0);
+        this.worldMapOverlay.add(mapName);
+      }
     }
 
     const markerPos = this.getWorldMapMarkerScreenPosition();
@@ -433,6 +869,7 @@ export class GameSceneMapController {
       panelH: h,
       topPadding: 44,
       sidePadding: 20,
+      sidebarW: 200,
     });
   }
 }

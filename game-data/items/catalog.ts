@@ -1,32 +1,87 @@
 import type { Facing } from "../../shared/types";
+import type { ItemSpecialUse } from "./itemSpecialUse";
+import { OTHER_MISC_ITEMS, type OtherMiscItemId } from "./otherItemsCatalog";
 
 export type CharacterClassId =
   | "paladin"
+  | "clerigo"
   | "mago"
+  | "nigromante"
   | "druida"
+  | "bardo"
   | "guerrero"
   | "cazador"
   | "asesino";
 
 const ALL_CLASSES: CharacterClassId[] = [
   "paladin",
+  "clerigo",
   "mago",
+  "nigromante",
   "druida",
+  "bardo",
   "guerrero",
   "cazador",
   "asesino",
 ];
-const MANA_CLASSES: CharacterClassId[] = ["paladin", "mago", "druida", "asesino"];
-const MARTIAL_CLASSES: CharacterClassId[] = ["guerrero", "paladin", "cazador", "asesino"];
-const ROBES_CLASSES: CharacterClassId[] = ["mago", "druida", "paladin", "asesino"];
-const HEAVY_ARMOR_CLASSES: CharacterClassId[] = ["guerrero", "paladin", "cazador", "asesino"];
+const MANA_CLASSES: CharacterClassId[] = [
+  "paladin",
+  "clerigo",
+  "mago",
+  "nigromante",
+  "druida",
+  "bardo",
+  "asesino",
+];
+/** Solo bardo para nudillos. */
+const BARD_CLASSES: CharacterClassId[] = ["bardo"];
+const MARTIAL_CLASSES: CharacterClassId[] = [
+  "guerrero",
+  "paladin",
+  "clerigo",
+  "cazador",
+  "asesino",
+];
+const ROBES_CLASSES: CharacterClassId[] = [
+  "mago",
+  "nigromante",
+  "druida",
+  "paladin",
+  "clerigo",
+  "asesino",
+];
+const HEAVY_ARMOR_CLASSES: CharacterClassId[] = [
+  "guerrero",
+  "paladin",
+  "clerigo",
+  "cazador",
+  "asesino",
+];
 
 export type WeaponItemId =
   | "weapon_saramiana"
   | "weapon_espada_plata_mas_uno"
   | "weapon_daga_mas_dos"
   | "weapon_baculo_lazull"
-  | "weapon_baston_esmeralda";
+  | "weapon_baculo_aqualin"
+  | "weapon_baculo_lazurt"
+  | "weapon_baston_esmeralda"
+  | "weapon_baston"
+  | "weapon_espada_plata"
+  | "weapon_espada_viento"
+  | "weapon_espada_larga"
+  | "weapon_hacha_plata"
+  | "weapon_hacha_guerra"
+  | "weapon_arco_cazador"
+  | "weapon_arco_largo"
+  | "weapon_sable"
+  | "weapon_cuchilla_esmeralda"
+  | "weapon_mata_dragones"
+  | "weapon_varita_dm_cuatro"
+  | "weapon_nudillos"
+  | "weapon_nudillos_bronce"
+  | "weapon_nudillos_plata"
+  | "weapon_nudillos_oro";
 
 export type WeaponData = {
   itemId: WeaponItemId;
@@ -62,7 +117,10 @@ export type ShieldItemId =
   | "shield_plata"
   | "shield_plata_dos"
   | "shield_leon"
-  | "shield_torre";
+  | "shield_torre"
+  | "shield_reflex_treinta"
+  | "shield_tortuga_mas_uno"
+  | "shield_tortuga";
 
 export type HelmetItemId =
   | "helmet_celada"
@@ -204,8 +262,10 @@ export type ShieldData = {
   idItem: number;
   nivelMinimo: number;
   nombre: string;
-  /** Reducción de daño físico (0.08 = 8%). */
-  reduccionDanioPercent: number;
+  /** Probabilidad de bloquear daño físico (0.18 = 18%). */
+  probabilidadBloqueoPercent: number;
+  /** Reducción de daño al bloquear (0.38 = 38%). Solo físico, no hechizos. */
+  reduccionAlBloquearPercent: number;
   /** Resistencia a daño mágico (0.04 = 4%). */
   resistenciaMagicaPercent: number;
   valor: number;
@@ -231,13 +291,25 @@ export type ArmorData = {
     | "armor_tunica_nigro"
     | "armor_tunica_azul"
     | "armor_tunica_cruz"
-    | "armor_citizen_bajos"
+    | "armor_citizen"
     | "armor_dragon_negro"
     | "armor_dragon_negro_bajos"
     | "armor_dragon_blanco"
     | "armor_dragon_blanco_bajos"
     | "armor_dragon_rojo"
-    | "armor_dragon_rojo_bajos";
+    | "armor_dragon_rojo_bajos"
+    | "armor_asesino"
+    | "armor_dragon_blanco_fem"
+    | "armor_placas_doradas"
+    | "armor_atuendo_banquero"
+    | "armor_ropa_elegante_bajos"
+    | "armor_tunica_clerigo"
+    | "armor_tunica_druida_bajos"
+    | "armor_tunica_rm_quince"
+    | "armor_placas_rojas_bajos"
+    | "armor_caballero_muerte"
+    | "armor_caballero_muerte_bajos"
+    | "armor_caballero_oscuro";
   idItem: number;
   nivelMinimo: number;
   nombre: string;
@@ -253,6 +325,10 @@ export type ArmorData = {
   spritesheetStdPath?: string;
   /** Spritesheet para enanos/gnomos; si omitido se infiere de *_Bajos_std. */
   spritesheetBajosPath?: string;
+  /** Spritesheet por raza (p. ej. orc → citizenClothesOrc_std). */
+  spritesheetPathsByRace?: Partial<
+    Record<"human" | "elf" | "drow" | "dwarf" | "gnome" | "orc" | "fantasma", string>
+  >;
   outfitOverride:
     | "citizen"
     | "cuero"
@@ -267,13 +343,27 @@ export type ArmorData = {
     | "dragonBlanco"
     | "dragonBlancoBajos"
     | "dragonRojo"
-    | "dragonRojoBajos";
+    | "dragonRojoBajos"
+    | "armaduraAse"
+    | "dragonBlancoFem"
+    | "placasDoradas"
+    | "atuendoBanquero"
+    | "ropaEleganteBajos"
+    | "tunicaClerigo"
+    | "tunicaDruidaBajos"
+    | "tunicaRmQuince"
+    | "placasRojasBajos"
+    | "caballeroDeMuerte"
+    | "caballeroDeMuerteBajos"
+    | "caballeroOscuro";
   /** Si true, no se dropea al morir. */
   noDropeaAlMorir?: boolean;
 };
 
+export type MiscItemId = "anillo_espectral" | OtherMiscItemId;
+
 export type MiscItemData = {
-  itemId: "anillo_espectral";
+  itemId: MiscItemId;
   idItem: number;
   nivelMinimo: number;
   nombre: string;
@@ -283,6 +373,9 @@ export type MiscItemData = {
   maxStack?: number;
   /** Si true, no se dropea al morir (ej. barca). */
   noDropeaAlMorir?: boolean;
+  /** Doble click en inventario dispara el uso especial. */
+  usableFromInventory?: boolean;
+  specialUse?: ItemSpecialUse;
 };
 
 export type ConsumableData = {
@@ -368,15 +461,32 @@ export const WEAPONS: WeaponData[] = [
     itemId: "weapon_baculo_lazull",
     idItem: 1004,
     nivelMinimo: 1,
-    nombre: "Báculo lazul",
+    nombre: "Báculo lazurt",
     danioMin: 80,
     danioMax: 100,
     aumentoDanioMagicoPercent: 0.12,
     velocidadAtaqueMs: 900,
     valor: 8500,
     equipablePor: MANA_CLASSES,
-    iconAssetPath: "/assets/ao/weapons/baculoLazull_icon.png",
-    equippedAssetPath: "/assets/ao/weapons/baculoLazull.png",
+    iconAssetPath: "/assets/ao/weapons/baculoLazurt_icon.png",
+    equippedAssetPath: "/assets/ao/weapons/baculoLazurt.png",
+    equippedFrameWidth: 32,
+    equippedFrameHeight: 48,
+    equippedScale: 1,
+  },
+  {
+    itemId: "weapon_baculo_aqualin",
+    idItem: 1006,
+    nivelMinimo: 1,
+    nombre: "Báculo Aqualin",
+    danioMin: 85,
+    danioMax: 105,
+    aumentoDanioMagicoPercent: 0.12,
+    velocidadAtaqueMs: 900,
+    valor: 8600,
+    equipablePor: MANA_CLASSES,
+    iconAssetPath: "/assets/ao/weapons/baculoAqualin_icon.png",
+    equippedAssetPath: "/assets/ao/weapons/baculoAqualin.png",
     equippedFrameWidth: 32,
     equippedFrameHeight: 48,
     equippedScale: 1,
@@ -398,6 +508,264 @@ export const WEAPONS: WeaponData[] = [
     equippedFrameHeight: 48,
     equippedScale: 1,
   },
+  {
+    itemId: "weapon_baston",
+    idItem: 1008,
+    nivelMinimo: 1,
+    nombre: "Bastón",
+    danioMin: 85,
+    danioMax: 105,
+    aumentoDanioMagicoPercent: 0.08,
+    velocidadAtaqueMs: 900,
+    valor: 6800,
+    equipablePor: MANA_CLASSES,
+    iconAssetPath: "/assets/ao/weapons/baston_icon.png",
+    equippedAssetPath: "/assets/ao/weapons/baston.png",
+    equippedFrameWidth: 32,
+    equippedFrameHeight: 48,
+    equippedScale: 1,
+  },
+  {
+    itemId: "weapon_espada_plata",
+    idItem: 1009,
+    nivelMinimo: 1,
+    nombre: "Espada de plata",
+    danioMin: 185,
+    danioMax: 205,
+    velocidadAtaqueMs: 800,
+    valor: 7000,
+    equipablePor: MARTIAL_CLASSES,
+    iconAssetPath: "/assets/ao/weapons/espadaPlata_icon.png",
+    equippedAssetPath: "/assets/ao/weapons/espadaPlata.png",
+    equippedFrameWidth: 32,
+    equippedFrameHeight: 48,
+    equippedScale: 1,
+  },
+  {
+    itemId: "weapon_espada_larga",
+    idItem: 1010,
+    nivelMinimo: 1,
+    nombre: "Espada larga",
+    danioMin: 175,
+    danioMax: 195,
+    velocidadAtaqueMs: 780,
+    valor: 6400,
+    equipablePor: MARTIAL_CLASSES,
+    iconAssetPath: "/assets/ao/weapons/espadaLarga_icon.png",
+    equippedAssetPath: "/assets/ao/weapons/espadaLarga.png",
+    equippedFrameWidth: 32,
+    equippedFrameHeight: 48,
+    equippedScale: 1,
+  },
+  {
+    itemId: "weapon_espada_viento",
+    idItem: 1011,
+    nivelMinimo: 8,
+    nombre: "Espada de viento",
+    danioMin: 195,
+    danioMax: 220,
+    velocidadAtaqueMs: 760,
+    valor: 8400,
+    equipablePor: MARTIAL_CLASSES,
+    iconAssetPath: "/assets/ao/weapons/espadaViento_icon.png",
+    equippedAssetPath: "/assets/ao/weapons/espadaViento.png",
+    equippedFrameWidth: 32,
+    equippedFrameHeight: 48,
+    equippedScale: 1,
+  },
+  {
+    itemId: "weapon_hacha_plata",
+    idItem: 1012,
+    nivelMinimo: 1,
+    nombre: "Hacha de plata",
+    danioMin: 190,
+    danioMax: 215,
+    velocidadAtaqueMs: 900,
+    valor: 7600,
+    equipablePor: MARTIAL_CLASSES,
+    iconAssetPath: "/assets/ao/weapons/hachaPlata_icon.png",
+    equippedAssetPath: "/assets/ao/weapons/hachaPlata.png",
+    equippedFrameWidth: 32,
+    equippedFrameHeight: 48,
+    equippedScale: 1,
+  },
+  {
+    itemId: "weapon_hacha_guerra",
+    idItem: 1013,
+    nivelMinimo: 12,
+    nombre: "Hacha de guerra",
+    danioMin: 210,
+    danioMax: 235,
+    velocidadAtaqueMs: 930,
+    valor: 9800,
+    equipablePor: MARTIAL_CLASSES,
+    iconAssetPath: "/assets/ao/weapons/hachaGuerra_icon.png",
+    equippedAssetPath: "/assets/ao/weapons/hachaGuerra.png",
+    equippedFrameWidth: 32,
+    equippedFrameHeight: 48,
+    equippedScale: 1,
+  },
+  {
+    itemId: "weapon_arco_cazador",
+    idItem: 1014,
+    nivelMinimo: 1,
+    nombre: "Arco cazador",
+    danioMin: 170,
+    danioMax: 195,
+    velocidadAtaqueMs: 760,
+    valor: 6200,
+    equipablePor: ["cazador"],
+    iconAssetPath: "/assets/ao/weapons/arcoCazador_icon.png",
+    equippedAssetPath: "/assets/ao/weapons/arcoCazador.png",
+    equippedFrameWidth: 32,
+    equippedFrameHeight: 48,
+    equippedScale: 1,
+  },
+  {
+    itemId: "weapon_arco_largo",
+    idItem: 1015,
+    nivelMinimo: 10,
+    nombre: "Arco largo",
+    danioMin: 190,
+    danioMax: 220,
+    velocidadAtaqueMs: 740,
+    valor: 8400,
+    equipablePor: ["cazador"],
+    iconAssetPath: "/assets/ao/weapons/arcoLargo_icon.png",
+    equippedAssetPath: "/assets/ao/weapons/arcoLargo.png",
+    equippedFrameWidth: 32,
+    equippedFrameHeight: 48,
+    equippedScale: 1,
+  },
+  {
+    itemId: "weapon_sable",
+    idItem: 1016,
+    nivelMinimo: 6,
+    nombre: "Sable",
+    danioMin: 185,
+    danioMax: 210,
+    velocidadAtaqueMs: 740,
+    valor: 7600,
+    equipablePor: MARTIAL_CLASSES,
+    iconAssetPath: "/assets/ao/weapons/sable_icon.png",
+    equippedAssetPath: "/assets/ao/weapons/sable.png",
+    equippedFrameWidth: 32,
+    equippedFrameHeight: 48,
+    equippedScale: 1,
+  },
+  {
+    itemId: "weapon_cuchilla_esmeralda",
+    idItem: 1017,
+    nivelMinimo: 12,
+    nombre: "Cuchilla esmeralda",
+    danioMin: 200,
+    danioMax: 225,
+    velocidadAtaqueMs: 700,
+    valor: 9800,
+    equipablePor: MARTIAL_CLASSES,
+    iconAssetPath: "/assets/ao/weapons/cuchillaEsmeralda_icon.png",
+    equippedAssetPath: "/assets/ao/weapons/cuchillaEsmeralda.png",
+    equippedFrameWidth: 32,
+    equippedFrameHeight: 48,
+    equippedScale: 1,
+  },
+  {
+    itemId: "weapon_mata_dragones",
+    idItem: 1018,
+    nivelMinimo: 20,
+    nombre: "Mata dragones",
+    danioMin: 235,
+    danioMax: 265,
+    velocidadAtaqueMs: 920,
+    valor: 15000,
+    equipablePor: MARTIAL_CLASSES,
+    iconAssetPath: "/assets/ao/weapons/mataDragones_icon.png",
+    equippedAssetPath: "/assets/ao/weapons/mataDragones.png",
+    equippedFrameWidth: 32,
+    equippedFrameHeight: 48,
+    equippedScale: 1,
+  },
+  {
+    itemId: "weapon_varita_dm_cuatro",
+    idItem: 1019,
+    nivelMinimo: 1,
+    nombre: "Varita DM IV",
+    danioMin: 70,
+    danioMax: 90,
+    aumentoDanioMagicoPercent: 0.1,
+    velocidadAtaqueMs: 700,
+    valor: 7000,
+    equipablePor: MANA_CLASSES,
+    iconAssetPath: "/assets/ao/weapons/varitaDMCuatro_icon.png",
+    equippedAssetPath: "/assets/ao/weapons/varitaDMCuatro.png",
+    equippedFrameWidth: 32,
+    equippedFrameHeight: 48,
+    equippedScale: 1,
+  },
+  {
+    itemId: "weapon_nudillos",
+    idItem: 1007,
+    nivelMinimo: 1,
+    nombre: "Nudillos",
+    danioMin: 120,
+    danioMax: 140,
+    velocidadAtaqueMs: 700,
+    valor: 0,
+    equipablePor: BARD_CLASSES,
+    iconAssetPath: "/assets/ao/weapons/nudillosBronce_icon.png",
+    equippedAssetPath: "/assets/ao/weapons/nudillosBronce.png",
+    equippedFrameWidth: 32,
+    equippedFrameHeight: 48,
+    equippedScale: 1,
+  },
+  {
+    itemId: "weapon_nudillos_bronce",
+    idItem: 1020,
+    nivelMinimo: 1,
+    nombre: "Nudillos de bronce",
+    danioMin: 120,
+    danioMax: 140,
+    velocidadAtaqueMs: 700,
+    valor: 2600,
+    equipablePor: BARD_CLASSES,
+    iconAssetPath: "/assets/ao/weapons/nudillosBronce_icon.png",
+    equippedAssetPath: "/assets/ao/weapons/nudillosBronce.png",
+    equippedFrameWidth: 32,
+    equippedFrameHeight: 48,
+    equippedScale: 1,
+  },
+  {
+    itemId: "weapon_nudillos_plata",
+    idItem: 1021,
+    nivelMinimo: 8,
+    nombre: "Nudillos de plata",
+    danioMin: 140,
+    danioMax: 165,
+    velocidadAtaqueMs: 690,
+    valor: 4600,
+    equipablePor: BARD_CLASSES,
+    iconAssetPath: "/assets/ao/weapons/nudillosPlata_icon.png",
+    equippedAssetPath: "/assets/ao/weapons/nudillosPlata.png",
+    equippedFrameWidth: 32,
+    equippedFrameHeight: 48,
+    equippedScale: 1,
+  },
+  {
+    itemId: "weapon_nudillos_oro",
+    idItem: 1022,
+    nivelMinimo: 14,
+    nombre: "Nudillos de oro",
+    danioMin: 160,
+    danioMax: 185,
+    velocidadAtaqueMs: 680,
+    valor: 7200,
+    equipablePor: BARD_CLASSES,
+    iconAssetPath: "/assets/ao/weapons/nudillosOro_icon.png",
+    equippedAssetPath: "/assets/ao/weapons/nudillosOro.png",
+    equippedFrameWidth: 32,
+    equippedFrameHeight: 48,
+    equippedScale: 1,
+  },
 ];
 
 export const SHIELDS: ShieldData[] = [
@@ -406,7 +774,8 @@ export const SHIELDS: ShieldData[] = [
     idItem: 2101,
     nivelMinimo: 1,
     nombre: "Escudo de plata",
-    reduccionDanioPercent: 0.06,
+    probabilidadBloqueoPercent: 0.08,
+    reduccionAlBloquearPercent: 0.28,
     resistenciaMagicaPercent: 0.03,
     valor: 2800,
     equipablePor: HEAVY_ARMOR_CLASSES,
@@ -424,7 +793,8 @@ export const SHIELDS: ShieldData[] = [
     idItem: 2102,
     nivelMinimo: 8,
     nombre: "Escudo de plata +2",
-    reduccionDanioPercent: 0.09,
+    probabilidadBloqueoPercent: 0.1,
+    reduccionAlBloquearPercent: 0.3,
     resistenciaMagicaPercent: 0.04,
     valor: 4200,
     equipablePor: HEAVY_ARMOR_CLASSES,
@@ -443,7 +813,8 @@ export const SHIELDS: ShieldData[] = [
     idItem: 2103,
     nivelMinimo: 14,
     nombre: "Escudo del león",
-    reduccionDanioPercent: 0.11,
+    probabilidadBloqueoPercent: 0.12,
+    reduccionAlBloquearPercent: 0.32,
     resistenciaMagicaPercent: 0.05,
     valor: 5800,
     equipablePor: HEAVY_ARMOR_CLASSES,
@@ -454,12 +825,70 @@ export const SHIELDS: ShieldData[] = [
     idItem: 2104,
     nivelMinimo: 20,
     nombre: "Escudo torre",
-    reduccionDanioPercent: 0.14,
+    probabilidadBloqueoPercent: 0.14,
+    reduccionAlBloquearPercent: 0.35,
     resistenciaMagicaPercent: 0.06,
     valor: 7500,
     equipablePor: HEAVY_ARMOR_CLASSES,
     iconAssetPath: "/assets/ao/shields/escudoTorre_icon.png",
     equippedAssetPath: "/assets/ao/shields/escudoTorre.png",
+    equippedScale: 1,
+    equippedOffsetByFacing: {
+      down: { x: 5 },
+      right: { x: 2, y: 3 },
+      up: { x: -5 },
+    },
+  },
+  {
+    itemId: "shield_reflex_treinta",
+    idItem: 2105,
+    nivelMinimo: 25,
+    nombre: "Escudo Reflex +30",
+    probabilidadBloqueoPercent: 0.2,
+    reduccionAlBloquearPercent: 0.4,
+    resistenciaMagicaPercent: 0.1,
+    valor: 9500,
+    equipablePor: HEAVY_ARMOR_CLASSES,
+    iconAssetPath: "/assets/ao/shields/escudoReflexTreinta_icon.png",
+    equippedAssetPath: "/assets/ao/shields/escudoReflexTreinta_std.png",
+    equippedScale: 1,
+    equippedOffsetByFacing: {
+      down: { x: 5 },
+      right: { x: 2, y: 3 },
+      up: { x: -5 },
+    },
+  },
+  {
+    itemId: "shield_tortuga_mas_uno",
+    idItem: 2106,
+    nivelMinimo: 18,
+    nombre: "Escudo Tortuga +1",
+    probabilidadBloqueoPercent: 0.2,
+    reduccionAlBloquearPercent: 0.4,
+    resistenciaMagicaPercent: 0.08,
+    valor: 6500,
+    equipablePor: HEAVY_ARMOR_CLASSES,
+    iconAssetPath: "/assets/ao/shields/escudoTortugaMasUno_icon.png",
+    equippedAssetPath: "/assets/ao/shields/escudoTortugaMasUno_std.png",
+    equippedScale: 1,
+    equippedOffsetByFacing: {
+      down: { x: 5 },
+      right: { x: 2, y: 3 },
+      up: { x: -5 },
+    },
+  },
+  {
+    itemId: "shield_tortuga",
+    idItem: 2107,
+    nivelMinimo: 15,
+    nombre: "Escudo Tortuga",
+    probabilidadBloqueoPercent: 0.18,
+    reduccionAlBloquearPercent: 0.38,
+    resistenciaMagicaPercent: 0.06,
+    valor: 5000,
+    equipablePor: HEAVY_ARMOR_CLASSES,
+    iconAssetPath: "/assets/ao/shields/escudoTortuga_icon.png",
+    equippedAssetPath: "/assets/ao/shields/escudoTortuga_std.png",
     equippedScale: 1,
     equippedOffsetByFacing: {
       down: { x: 5 },
@@ -731,17 +1160,21 @@ export const ARMORS: ArmorData[] = [
     outfitOverride: "tunicaCruz",
   },
   {
-    itemId: "armor_citizen_bajos",
+    itemId: "armor_citizen",
     idItem: 2007,
     nivelMinimo: 1,
-    nombre: "Ropa de ciudadano (bajos)",
+    nombre: "Ropa de ciudadano",
     reduccionDanioPercent: 0.04,
     resistenciaMagicaPercent: 0.02,
     valor: 1200,
     equipablePor: ALL_CLASSES,
-    iconAssetPath: "/assets/ao/armors/citizenClothesBajos_icon.png",
-    clasesBajas: true,
+    iconAssetPath: "/assets/ao/armors/citizenClothes_icon.png",
+    clasesBajas: false,
+    spritesheetStdPath: "/assets/ao/armors/citizenClothes_std.png",
     spritesheetBajosPath: "/assets/ao/armors/citizenClothesBajos_std.png",
+    spritesheetPathsByRace: {
+      orc: "/assets/ao/armors/citizenClothesOrc_std.png",
+    },
     outfitOverride: "citizen",
   },
   {
@@ -828,6 +1261,174 @@ export const ARMORS: ArmorData[] = [
     spritesheetBajosPath: "/assets/ao/armors/dragonRojoBajos_std.png",
     outfitOverride: "dragonRojoBajos",
   },
+  {
+    itemId: "armor_atuendo_banquero",
+    idItem: 2013,
+    nivelMinimo: 1,
+    nombre: "Atuendo de Banquero",
+    reduccionDanioPercent: 0.05,
+    resistenciaMagicaPercent: 0.05,
+    valor: 1500,
+    equipablePor: ALL_CLASSES,
+    iconAssetPath: "/assets/ao/armors/atuendoBanquero_icon.png",
+    clasesBajas: false,
+    spritesheetStdPath: "/assets/ao/armors/atuendoBanquero_std.png",
+    outfitOverride: "atuendoBanquero",
+  },
+  {
+    itemId: "armor_ropa_elegante_bajos",
+    idItem: 2014,
+    nivelMinimo: 1,
+    nombre: "Ropa Elegante (bajos)",
+    reduccionDanioPercent: 0.05,
+    resistenciaMagicaPercent: 0.05,
+    valor: 1500,
+    equipablePor: ALL_CLASSES,
+    iconAssetPath: "/assets/ao/armors/ropaElegenateBajos_icon.png",
+    clasesBajas: true,
+    spritesheetBajosPath: "/assets/ao/armors/ropaEleganteBajos_std.png",
+    outfitOverride: "ropaEleganteBajos",
+  },
+  {
+    itemId: "armor_tunica_clerigo",
+    idItem: 2015,
+    nivelMinimo: 20,
+    nombre: "Túnica de Clérigo",
+    reduccionDanioPercent: 0.15,
+    resistenciaMagicaPercent: 0.18,
+    valor: 7500,
+    equipablePor: ROBES_CLASSES,
+    iconAssetPath: "/assets/ao/armors/tunicaClerigo_icon.png",
+    clasesBajas: false,
+    spritesheetStdPath: "/assets/ao/armors/tunicaClerigo_std.png",
+    outfitOverride: "tunicaClerigo",
+  },
+  {
+    itemId: "armor_tunica_druida_bajos",
+    idItem: 2016,
+    nivelMinimo: 20,
+    nombre: "Túnica de Druida (bajos)",
+    reduccionDanioPercent: 0.15,
+    resistenciaMagicaPercent: 0.18,
+    valor: 7500,
+    equipablePor: ROBES_CLASSES,
+    iconAssetPath: "/assets/ao/armors/tunicaDruidaBajos_icon.png",
+    clasesBajas: true,
+    spritesheetBajosPath: "/assets/ao/armors/tunicaDruidaBajos.png",
+    outfitOverride: "tunicaDruidaBajos",
+  },
+  {
+    itemId: "armor_tunica_rm_quince",
+    idItem: 2017,
+    nivelMinimo: 25,
+    nombre: "Túnica RM Quince",
+    reduccionDanioPercent: 0.16,
+    resistenciaMagicaPercent: 0.20,
+    valor: 9000,
+    equipablePor: ROBES_CLASSES,
+    iconAssetPath: "/assets/ao/armors/tunicaRmQuince_icon.png",
+    clasesBajas: true,
+    spritesheetBajosPath: "/assets/ao/armors/tunicaRmQuinceBajos.png",
+    outfitOverride: "tunicaRmQuince",
+  },
+  {
+    itemId: "armor_placas_rojas_bajos",
+    idItem: 2018,
+    nivelMinimo: 18,
+    nombre: "Armadura de Placas Rojas (bajos)",
+    reduccionDanioPercent: 0.2,
+    resistenciaMagicaPercent: 0.05,
+    valor: 6200,
+    equipablePor: HEAVY_ARMOR_CLASSES,
+    iconAssetPath: "/assets/ao/armors/placasRojasBajos_icon.png",
+    clasesBajas: true,
+    spritesheetBajosPath: "/assets/ao/armors/placasRojasBajos_std.png",
+    outfitOverride: "placasRojasBajos",
+  },
+  {
+    itemId: "armor_caballero_muerte",
+    idItem: 2019,
+    nivelMinimo: 30,
+    nombre: "Armadura Caballero de la Muerte",
+    reduccionDanioPercent: 0.25,
+    resistenciaMagicaPercent: 0.1,
+    valor: 15000,
+    equipablePor: HEAVY_ARMOR_CLASSES,
+    iconAssetPath: "/assets/ao/armors/caballeroDeMuerte_icon.png",
+    clasesBajas: false,
+    spritesheetStdPath: "/assets/ao/armors/caballeroDeMuerte_std.png",
+    outfitOverride: "caballeroDeMuerte",
+  },
+  {
+    itemId: "armor_caballero_muerte_bajos",
+    idItem: 2020,
+    nivelMinimo: 30,
+    nombre: "Armadura Caballero de la Muerte (bajos)",
+    reduccionDanioPercent: 0.25,
+    resistenciaMagicaPercent: 0.1,
+    valor: 15000,
+    equipablePor: HEAVY_ARMOR_CLASSES,
+    iconAssetPath: "/assets/ao/armors/caballeroDeMuerteBajos_icon.png",
+    clasesBajas: true,
+    spritesheetBajosPath: "/assets/ao/armors/caballeroDeMuerteBajos_std.png",
+    outfitOverride: "caballeroDeMuerteBajos",
+  },
+  {
+    itemId: "armor_caballero_oscuro",
+    idItem: 2021,
+    nivelMinimo: 30,
+    nombre: "Armadura Caballero Oscuro",
+    reduccionDanioPercent: 0.25,
+    resistenciaMagicaPercent: 0.1,
+    valor: 15000,
+    equipablePor: HEAVY_ARMOR_CLASSES,
+    iconAssetPath: "/assets/ao/armors/caballeroOscuro_icon.png",
+    clasesBajas: false,
+    spritesheetStdPath: "/assets/ao/armors/caballeroOscuro_std.png",
+    outfitOverride: "caballeroOscuro",
+  },
+  {
+    itemId: "armor_asesino",
+    idItem: 2015,
+    nivelMinimo: 1,
+    nombre: "Armadura Asesino",
+    reduccionDanioPercent: 0.16,
+    resistenciaMagicaPercent: 0.1,
+    valor: 5200,
+    equipablePor: ["asesino"],
+    iconAssetPath: "/assets/ao/armors/armaduraAse_icon.png",
+    clasesBajas: false,
+    spritesheetStdPath: "/assets/ao/armors/armaduraAse_std.png",
+    outfitOverride: "armaduraAse",
+  },
+  {
+    itemId: "armor_dragon_blanco_fem",
+    idItem: 2016,
+    nivelMinimo: 40,
+    nombre: "Armadura Dragón Blanco Fem",
+    reduccionDanioPercent: 0.16,
+    resistenciaMagicaPercent: 0.1,
+    valor: 5200,
+    equipablePor: HEAVY_ARMOR_CLASSES,
+    iconAssetPath: "/assets/ao/armors/dragonBlancoFem_icon.png",
+    clasesBajas: false,
+    spritesheetStdPath: "/assets/ao/armors/dragonBlancoFem_std.png",
+    outfitOverride: "dragonBlancoFem",
+  },
+  {
+    itemId: "armor_placas_doradas",
+    idItem: 2017,
+    nivelMinimo: 1,
+    nombre: "Armadura Placas Doradas",
+    reduccionDanioPercent: 0.16,
+    resistenciaMagicaPercent: 0.1,
+    valor: 5200,
+    equipablePor: HEAVY_ARMOR_CLASSES,
+    iconAssetPath: "/assets/ao/armors/placasDoradas_icon.png",
+    clasesBajas: false,
+    spritesheetStdPath: "/assets/ao/armors/placasDoradas_std.png",
+    outfitOverride: "placasDoradas",
+  }
 ];
 
 export const MISC_ITEMS: MiscItemData[] = [
@@ -836,11 +1437,14 @@ export const MISC_ITEMS: MiscItemData[] = [
     idItem: 4001,
     nivelMinimo: 20,
     nombre: "Anillo Espectral",
-    valor: 15000,
+    valor: 8000,
     usableBy: MANA_CLASSES,
     iconAssetPath: "/assets/ao/otherItems/anilloEspectral.png",
     maxStack: 10_000,
+    specialUse: { kind: "future", note: "Hechizos sin anillo equipado (pendiente)." },
+    usableFromInventory: true,
   },
+  ...OTHER_MISC_ITEMS,
 ];
 
 export const CONSUMABLES: ConsumableData[] = [

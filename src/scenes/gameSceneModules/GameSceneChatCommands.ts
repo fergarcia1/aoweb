@@ -1,7 +1,36 @@
-import { ALL_ITEM_IDS } from "../../items/itemDefinitions";
+import { ALL_ITEM_IDS } from "../../../game-data/items/definitions";
 import { addToInventory, type InventorySlot } from "../../items/inventoryStack";
-import { getItemDefinition } from "../../items/itemDefinitions";
+import { getItemDefinition } from "../../../game-data/items/definitions";
 import type { GameUi } from "../../ui/gameUi";
+import { getAowebSkinThemeLabel, getAowebSkinVariant, parseUiSkinCommandArg } from "../../ui/aowebSkinVariant";
+import { canRenegade } from "../../../shared/faction";
+import type { CharacterFactionId } from "../../data/characters";
+
+function parseUiOffsetArg(raw: string | undefined): number | null {
+  if (raw === undefined || raw.length === 0) {
+    return null;
+  }
+  if (!/^[+-]?\d+$/.test(raw)) {
+    return null;
+  }
+  return parseInt(raw, 10);
+}
+
+function resolveUiOffsetPair(
+  current: { x: number; y: number },
+  rawX: string | undefined,
+  rawY: string | undefined
+): { x: number; y: number } | null {
+  const xParsed = parseUiOffsetArg(rawX);
+  const yParsed = parseUiOffsetArg(rawY);
+  if (xParsed === null || yParsed === null || rawX === undefined || rawY === undefined) {
+    return null;
+  }
+  if (rawX.startsWith("+") || rawX.startsWith("-")) {
+    return { x: current.x + xParsed, y: current.y + yParsed };
+  }
+  return { x: xParsed, y: yParsed };
+}
 
 export type GameSceneChatDeps = {
   gameUi: GameUi;
@@ -26,6 +55,9 @@ export type GameSceneChatDeps = {
   getPlayerName: () => string;
   getInventory: () => InventorySlot[];
   refreshInventoryUi: () => void;
+  getSelectedFaction: () => CharacterFactionId;
+  tryBecomeRenegade: () => void;
+  requestLogout: () => void;
 };
 
 /**
@@ -69,6 +101,21 @@ export class GameSceneChatCommands {
       }
       return true;
     }
+    if (normalized === "/renegar") {
+      if (!canRenegade(this.deps.getSelectedFaction())) {
+        this.deps.addChatLine("Solo un ciudadano imperial puede renegar.");
+        return true;
+      }
+      this.deps.gameUi.showConfirm(
+        "¿Renegarás tu juramento imperial? Pasarás a ser Renegado y podrás atacar a cualquiera.",
+        () => this.deps.tryBecomeRenegade()
+      );
+      return true;
+    }
+    if (normalized === "/salir") {
+      this.deps.requestLogout();
+      return true;
+    }
     if (normalized === "/reset") {
       this.deps.resetProgress();
       return true;
@@ -95,6 +142,9 @@ export class GameSceneChatCommands {
       return true;
     }
     if (normalized.startsWith("/give")) {
+      if (this.deps.isMultiplayerConnected() && this.deps.isPlayerAdmin()) {
+        return this.deps.tryAdminCommand(message.trim());
+      }
       this.deps.handleGiveCommand(message.trim());
       return true;
     }
@@ -108,11 +158,96 @@ export class GameSceneChatCommands {
   handleUiCommand(normalized: string): boolean {
     const args = normalized.slice("/ui ".length).trim().split(/\s+/).filter(Boolean);
     if (args.length === 0) {
-      this.deps.addChatLine("Uso: /ui mapname <dx> <dy> | reset | info");
+      this.deps.addChatLine(
+        `UI activa: ${getAowebSkinThemeLabel(getAowebSkinVariant())}. Uso: /ui ajuste | minimap | mapname ...`
+      );
       return true;
     }
 
     const sub = args[0];
+    const skinTheme = parseUiSkinCommandArg(sub);
+    if (skinTheme) {
+      if (this.deps.gameUi.switchAowebSkinVariant(skinTheme)) {
+        this.deps.addChatLine(`Marco UI: ${getAowebSkinThemeLabel(skinTheme)}.`);
+      } else {
+        this.deps.addChatLine(
+          `No se pudo cargar la skin "${skinTheme}". ¿Está el PNG en public/assets/ao/uiGrafica/?`
+        );
+      }
+      return true;
+    }
+
+    if (sub === "ajuste" || sub === "tune") {
+      const action = args[1];
+      if (action === "off" || action === "0") {
+        this.deps.gameUi.setMinimapLayoutTuneActive(false);
+        this.deps.addChatLine("Ajuste UI desactivado.");
+        return true;
+      }
+      if (action === "info") {
+        this.deps.addChatLine(this.deps.gameUi.getMinimapLayoutTuneSummary());
+        return true;
+      }
+      if (action === "on" || action === "1" || action === undefined) {
+        this.deps.gameUi.setMinimapLayoutTuneActive(true);
+        this.deps.addChatLine(
+          "Ajuste UI activado. Flechas mover · +/- tamaño · Tab cambiar · Shift=5px · R reset · I info · Esc salir"
+        );
+        this.deps.addChatLine(this.deps.gameUi.getMinimapLayoutTuneSummary());
+        return true;
+      }
+      this.deps.addChatLine("Uso: /ui ajuste on|off|info");
+      return true;
+    }
+
+    if (sub === "minimap" || sub === "minimapa") {
+      if (args[1] === "reset") {
+        this.deps.gameUi.resetMinimapLayout();
+        this.deps.addChatLine("minimap reseteado (posición y escala).");
+        return true;
+      }
+      if (args[1] === "scale" || args[1] === "escala" || args[1] === "zoom") {
+        const rawScale = args[2];
+        if (rawScale === undefined) {
+          this.deps.addChatLine(
+            `minimap scale=${this.deps.gameUi.getMinimapSlotScale().toFixed(2)}. Uso: /ui minimap scale 1.1`
+          );
+          return true;
+        }
+        const parsedScale = parseFloat(rawScale.replace(",", "."));
+        if (!Number.isFinite(parsedScale) || parsedScale <= 0) {
+          this.deps.addChatLine("Uso: /ui minimap scale 1.1");
+          return true;
+        }
+        this.deps.gameUi.setMinimapSlotScale(parsedScale);
+        this.deps.addChatLine(
+          `minimap scale=${this.deps.gameUi.getMinimapSlotScale().toFixed(2)}`
+        );
+        return true;
+      }
+      if (args[1] === "info" || args[1] === undefined) {
+        const o = this.deps.gameUi.getMinimapOffset();
+        const scale = this.deps.gameUi.getMinimapSlotScale();
+        this.deps.addChatLine(`minimapOffset: x=${o.x} y=${o.y} scale=${scale.toFixed(2)}`);
+        if (args[1] === undefined) {
+          this.deps.addChatLine(
+            "Uso: /ui minimap <dx> <dy> | scale 1.1 | +dx +dy | reset | info"
+          );
+        }
+        return true;
+      }
+
+      const current = this.deps.gameUi.getMinimapOffset();
+      const next = resolveUiOffsetPair(current, args[1], args[2]);
+      if (next === null) {
+        this.deps.addChatLine("Uso: /ui minimap <dx> <dy>  (ej: /ui minimap +2 -1)");
+        return true;
+      }
+      this.deps.gameUi.setMinimapOffset(next.x, next.y);
+      this.deps.addChatLine(`minimapOffset actualizado: x=${next.x} y=${next.y}`);
+      return true;
+    }
+
     if (sub === "mapname" || sub === "mapa" || sub === "mapaNombre") {
       if (args[1] === "reset") {
         this.deps.gameUi.resetMapNameOffset();
@@ -123,23 +258,23 @@ export class GameSceneChatCommands {
         const o = this.deps.gameUi.getMapNameOffset();
         this.deps.addChatLine(`mapNameOffset: x=${o.x} y=${o.y}`);
         if (args[1] === undefined) {
-          this.deps.addChatLine("Uso: /ui mapname <dx> <dy> | reset | info");
+          this.deps.addChatLine("Uso: /ui mapname <dx> <dy> | +dx +dy | reset | info");
         }
         return true;
       }
 
-      const dx = parseInt(args[1], 10);
-      const dy = parseInt(args[2], 10);
-      if (isNaN(dx) || isNaN(dy)) {
-        this.deps.addChatLine("Uso: /ui mapname <dx> <dy>");
+      const current = this.deps.gameUi.getMapNameOffset();
+      const next = resolveUiOffsetPair(current, args[1], args[2]);
+      if (next === null) {
+        this.deps.addChatLine("Uso: /ui mapname <dx> <dy>  (ej: /ui mapname +2 -1)");
         return true;
       }
-      this.deps.gameUi.setMapNameOffset(dx, dy);
-      this.deps.addChatLine(`mapNameOffset actualizado: x=${dx} y=${dy}`);
+      this.deps.gameUi.setMapNameOffset(next.x, next.y);
+      this.deps.addChatLine(`mapNameOffset actualizado: x=${next.x} y=${next.y}`);
       return true;
     }
 
-    this.deps.addChatLine("Comando UI desconocido. Probá: /ui mapname ...");
+    this.deps.addChatLine("Comando UI desconocido. Probá: /ui ajuste | minimap | mapname ...");
     return true;
   }
 
@@ -189,11 +324,18 @@ export class GameSceneChatCommands {
     this.deps.addChatLine("/hogar — ir al sacerdote de tu ciudad");
     this.deps.addChatLine("/marcarhogar — marcar ciudad actual como hogar");
     this.deps.addChatLine("/morir — morir al instante");
+    this.deps.addChatLine("/renegar — abandonar el imperio (solo ciudadano)");
+    this.deps.addChatLine("/salir — volver a selección de personajes");
     this.deps.addChatLine("/reset — reiniciar progreso del personaje");
     this.deps.addChatLine("/gold <cantidad> — sumar oro");
     this.deps.addChatLine("/give <cantidad> <itemId> [personaje] — dar ítems");
+    this.deps.addChatLine("/ui clear — marco claro (UIAOWEBWhite)");
+    this.deps.addChatLine("/ui dark — marco oscuro (UIAOWEBDark)");
+    this.deps.addChatLine("/ui red — marco rojo (UIAOWEBRed)");
+    this.deps.addChatLine("/ui ajuste — mover minimapa y nombre con flechas");
+    this.deps.addChatLine("/ui minimap <dx> <dy> — mover minimapa (+2 -1 relativo)");
+    this.deps.addChatLine("/ui minimap scale 1.1 — escala del minimapa");
     this.deps.addChatLine("/ui mapname <dx> <dy> — mover nombre del mapa");
-    this.deps.addChatLine("/ui mapname reset | info — resetear o ver offset");
 
     if (this.deps.isPlayerAdmin()) {
       this.deps.addChatLine("--- Admin ---");

@@ -9,10 +9,25 @@ export const FONDO_BOTONES_TEXTURE_KEY = "fondo_botones";
 const LVL_NAME_EXP_FILE = "lvlNameExp.png";
 const VENTANA_CHAT_FILE = "ventanaChat.png";
 const FONDO_BOTONES_FILE = "fondoBotones.png";
-const AOWEB_SKIN_FILE = "aoweb_skin.png";
 
-export const AOWEB_SKIN_TEXTURE_KEY = "aoweb_skin";
-export const AOWEB_SKIN_FALLBACK_SIZE = { w: 1024, h: 768 };
+import {
+  AOWEB_SKIN_FILES,
+  AOWEB_UI_SKIN_VARIANTS,
+  getAowebSkinTextureKey,
+} from "./aowebSkinVariant";
+
+export {
+  AOWEB_SKIN_FILES,
+  AOWEB_UI_SKIN_VARIANTS,
+  getAowebSkinTextureKey,
+  getAowebSkinThemeLabel,
+  getAowebSkinVariant,
+  parseUiSkinCommandArg,
+  setAowebSkinVariant,
+  type AowebUiSkinVariant,
+} from "./aowebSkinVariant";
+
+export const AOWEB_SKIN_FALLBACK_SIZE = { w: 1449, h: 1085 };
 
 /** Regiones del PNG 128×32 (medidas sobre lvlNameExp.png). */
 export const LVL_NAME_EXP_LAYOUT = {
@@ -55,18 +70,23 @@ export function registerPlayerHudAssets(scene: Phaser.Scene): void {
   scene.load.image(LVL_NAME_EXP_TEXTURE_KEY, UI_PATH + LVL_NAME_EXP_FILE);
   scene.load.image(VENTANA_CHAT_TEXTURE_KEY, UI_PATH + VENTANA_CHAT_FILE);
   scene.load.image(FONDO_BOTONES_TEXTURE_KEY, UI_PATH + FONDO_BOTONES_FILE);
-  scene.load.image(AOWEB_SKIN_TEXTURE_KEY, UI_PATH + AOWEB_SKIN_FILE);
+  for (const variant of AOWEB_UI_SKIN_VARIANTS) {
+    scene.load.image(getAowebSkinTextureKey(variant), UI_PATH + AOWEB_SKIN_FILES[variant]);
+  }
 }
 
-const UI_GRAFICA_TEXTURE_KEYS = [
-  LVL_NAME_EXP_TEXTURE_KEY,
-  VENTANA_CHAT_TEXTURE_KEY,
-  FONDO_BOTONES_TEXTURE_KEY,
-  AOWEB_SKIN_TEXTURE_KEY,
-] as const;
+function collectUiGraficaTextureKeys(): string[] {
+  const skinKeys = AOWEB_UI_SKIN_VARIANTS.map((variant) => getAowebSkinTextureKey(variant));
+  return [
+    LVL_NAME_EXP_TEXTURE_KEY,
+    VENTANA_CHAT_TEXTURE_KEY,
+    FONDO_BOTONES_TEXTURE_KEY,
+    ...skinKeys,
+  ];
+}
 
 export function setupPlayerHudTextures(scene: Phaser.Scene): void {
-  for (const key of UI_GRAFICA_TEXTURE_KEYS) {
+  for (const key of collectUiGraficaTextureKeys()) {
     const texture = scene.textures.get(key);
     if (!texture || texture.key === "__MISSING") {
       continue;

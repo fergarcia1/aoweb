@@ -1,19 +1,24 @@
 import type Phaser from "phaser";
 import type { Facing } from "../../player/playerSprites";
-import { MOB_MODELS, type MobModelId } from "../../data/mobs";
+import { MOB_MODELS, type MobModelId } from "../../../game-data/mobs";
 import { MOB_VISUAL_CONFIGS, mobTextureKey } from "./mobVisualConfig";
 import {
   getMobIdleFrameIndex,
   getMobSpriteFlipX,
   getMobWalkFrameIndices,
 } from "./mobFrameIndex";
-import { loadMobVisualAssets } from "./loadMobVisualAssets";
+import { loadMobVisualAssets, loadMobVisualAssetsForModels } from "./loadMobVisualAssets";
 import {
   mobWalkAnimKey,
   registerMobWalkAnimations,
 } from "./registerMobWalkAnimations";
 
-export { loadMobVisualAssets, registerMobWalkAnimations, mobWalkAnimKey };
+export {
+  loadMobVisualAssets,
+  loadMobVisualAssetsForModels,
+  registerMobWalkAnimations,
+  mobWalkAnimKey,
+};
 
 export function getMobVisualConfig(modelId: MobModelId) {
   return MOB_VISUAL_CONFIGS[modelId];
@@ -56,8 +61,11 @@ export function playMobWalkAnimation(
 
   const key = mobWalkAnimKey(modelId, facing);
   if (sprite.scene.anims.exists(key)) {
-    if (sprite.anims.currentAnim?.key !== key) {
-      sprite.play(key, true);
+    // Un ciclo de caminata por tile: reiniciar aunque siga la misma dirección.
+    if (sprite.anims.currentAnim?.key === key) {
+      sprite.anims.restart();
+    } else {
+      sprite.play(key);
     }
     return;
   }

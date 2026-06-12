@@ -1,26 +1,25 @@
 import Phaser from "phaser";
 import type { CoreStats } from "../../game/characterStats";
+import { expRequiredForLevel as sharedExpRequiredForLevel } from "../../../game-data/progressFormulas";
 import {
   BASELINE_STRENGTH,
   BASE_MISS_CHANCE,
-  EXP_BASE,
-  EXP_GROWTH,
   MAX_MISS_CHANCE,
   MIN_MISS_CHANCE,
   MISS_REDUCTION_PER_AGILITY,
   STAT_MIN,
 } from "./constants";
 
+export {
+  EXP_PROGRESSION_MAX_LEVEL,
+  EXP_TO_NEXT_BY_LEVEL,
+} from "../../../game-data/progressFormulas";
+
 export function expRequiredForLevel(level: number): number {
-  return Math.max(1, Math.floor(EXP_BASE * Math.pow(EXP_GROWTH, level - 1)));
+  return sharedExpRequiredForLevel(level);
 }
 
-export function getBaseVitalsFromStats(stats: CoreStats): { hpMax: number; mpMax: number } {
-  return {
-    hpMax: 62 + stats.constitution * 2,
-    mpMax: 12 + stats.intelligence * 2,
-  };
-}
+export { getBaseVitalsFromStats } from "../../game/characterStats";
 
 export function getLevelUpBonusesFromStats(stats: CoreStats): { hpBonus: number; mpBonus: number } {
   return {

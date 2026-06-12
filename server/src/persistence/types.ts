@@ -29,11 +29,14 @@ export type CharacterSnapshot = {
   factionId: string;
   faceIndex: number;
   level: number;
+  exp: number;
+  expToNext: number;
   hp: number;
   hpMax: number;
   mp: number;
   mpMax: number;
   gold: number;
+  bankGold: number;
   equipment: EquipmentSnapshot;
   attributeBuffs: AttributeBuffSnapshot;
 };
@@ -51,11 +54,6 @@ export type BankSlotSnapshot = {
   amount: number;
 };
 
-export type SkillSnapshot = {
-  skillId: string;
-  level: number;
-};
-
 export type SpellSnapshot = {
   spellId: number;
 };
@@ -64,7 +62,6 @@ export type PersistedCharacterSnapshot = {
   character: CharacterSnapshot;
   inventorySlots: InventorySlotSnapshot[];
   bankSlots: BankSlotSnapshot[];
-  skills: SkillSnapshot[];
   spells: SpellSnapshot[];
 };
 
@@ -83,11 +80,14 @@ export type CharacterRow = {
   faction_id: string;
   face_index: number;
   level: number;
+  exp: number;
+  exp_to_next: number;
   hp: number;
   hp_max: number;
   mp: number;
   mp_max: number;
   gold: number;
+  bank_gold: number;
   weapon_item_id: string | null;
   shield_item_id: string | null;
   helmet_item_id: string | null;

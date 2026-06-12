@@ -1,6 +1,9 @@
 import type { WebSocket } from "ws";
+import type { PvpSpellHitRecord } from "../../game-data/antiOneshot";
+import { createEmptyPvpSpellHitRecords } from "../../game-data/antiOneshot";
 import type { AttributeBuffState } from "../../game-data/consumables";
-import { INVENTORY_SLOT_COUNT } from "../../game-data/constants";
+import { ADMIN_GM_HP_MAX, ADMIN_GM_MP_MAX, BANK_SLOT_COUNT, INVENTORY_SLOT_COUNT } from "../../game-data/constants";
+import { expRequiredForLevel } from "../../game-data/progressFormulas";
 import type {
   Facing,
   NetPlayerEquipment,
@@ -14,6 +17,12 @@ export type ServerInventorySlot = {
   itemId: string | null;
   amount: number;
   isEquipped: boolean;
+};
+
+export type ServerBankSlot = {
+  slotIndex: number;
+  itemId: string | null;
+  amount: number;
 };
 
 export class PlayerSession {
@@ -33,13 +42,21 @@ export class PlayerSession {
   faceIndex: number;
   joined = false;
   role: PlayerRole = "player";
+  /** Muerto en el mundo (fantasma); autoritativo para Resucitar aunque hp se desincronice. */
+  isDead = false;
+  /** Evita dropear loot de muerte más de una vez por ciclo muerte/revive. */
+  deathLootProcessed = false;
 
-  level = 50;
+  level = 1;
+  exp = 0;
+  expToNext = expRequiredForLevel(1);
+  usersKilled = 0;
   hp = 100;
   hpMax = 100;
   mp = 50;
   mpMax = 50;
   gold = 0;
+  bankGold = 0;
   attackMin = 8;
   attackMax = 16;
   canCrit = false;
@@ -48,8 +65,21 @@ export class PlayerSession {
   magicDamageBonusPercent = 0;
   damageReductionPercent = 0;
   magicResistancePercent = 0;
+  shieldBlockChancePercent = 0;
+  shieldBlockReductionPercent = 0;
   nextAttackAt = 0;
+  nextSpellAt = 0;
   nextMoveAt = 0;
+  speedMultiplier = 1;
+  isMeditating = false;
+  isNavigating = false;
+  nextMeditationRegenAt = 0;
+  /** Hasta cuándo no puede moverse (inmovilizar / paralizar). */
+  immobilizedUntil = 0;
+  /** Hasta cuándo aplica invisibilidad (hechizo 14). */
+  invisibleUntil = 0;
+  /** Hechizos PvP recibidos (anti-oneshot por fuente distinta). */
+  recentPvpSpellHits: PvpSpellHitRecord[] = createEmptyPvpSpellHitRecords();
   attributeBuffs: AttributeBuffState = { strength: 0, agility: 0, expiresAtMs: 0 };
   inventorySlots: ServerInventorySlot[] = Array.from(
     { length: INVENTORY_SLOT_COUNT },
@@ -60,6 +90,12 @@ export class PlayerSession {
       isEquipped: false,
     })
   );
+  bankSlots: ServerBankSlot[] = Array.from({ length: BANK_SLOT_COUNT }, (_, slotIndex) => ({
+    slotIndex,
+    itemId: null,
+    amount: 0,
+  }));
+  learnedSpellIds = new Set<number>();
   equipment: NetPlayerEquipment = {
     weaponId: null,
     shieldId: null,
@@ -76,7 +112,7 @@ export class PlayerSession {
     this.characterId = id;
     this.socket = socket;
     this.name = "Viajero";
-    this.mapId = "pueblo";
+    this.mapId = "mapa44";
     this.tileX = 0;
     this.tileY = 0;
     this.facing = "down";
@@ -88,13 +124,23 @@ export class PlayerSession {
   }
 
   assignRoleByName() {
-    this.role = this.name.trim().toLowerCase() === "lonler" ? "admin" : "player";
+    if (this.name.trim().toLowerCase() === "lonler") {
+      this.role = "admin";
+    }
+    if (this.role === "admin") {
+      this.hpMax = ADMIN_GM_HP_MAX;
+      this.hp = ADMIN_GM_HP_MAX;
+      this.mpMax = ADMIN_GM_MP_MAX;
+      this.mp = ADMIN_GM_MP_MAX;
+    }
   }
 
   recalcDefenseStats() {
     const stats = getDefenseStatsFromEquipment(this.equipment);
     this.damageReductionPercent = stats.damageReductionPercent;
     this.magicResistancePercent = stats.magicResistancePercent;
+    this.shieldBlockChancePercent = stats.shieldBlockChancePercent;
+    this.shieldBlockReductionPercent = stats.shieldBlockReductionPercent;
   }
 
   recalcAttackStats() {
@@ -111,8 +157,24 @@ export class PlayerSession {
     return this.role === "admin";
   }
 
-  toNetState(): NetPlayerState {
-    return {
+  isImmobilized(nowMs = Date.now()): boolean {
+    return nowMs < this.immobilizedUntil;
+  }
+
+  clearImmobilized(): void {
+    this.immobilizedUntil = 0;
+  }
+
+  isInvisible(nowMs = Date.now()): boolean {
+    return nowMs < this.invisibleUntil;
+  }
+
+  clearInvisible(): void {
+    this.invisibleUntil = 0;
+  }
+
+  toNetState(options?: { includeAttributeBuffs?: boolean }): NetPlayerState {
+    const state: NetPlayerState = {
       id: this.id,
       name: this.name,
       mapId: this.mapId,
@@ -131,6 +193,17 @@ export class PlayerSession {
       level: this.level,
       role: this.role,
       equipment: { ...this.equipment },
+      isMeditating: this.isMeditating,
+      isNavigating: this.isNavigating,
+      invisibleUntilMs: Math.max(0, Math.floor(this.invisibleUntil)),
     };
+    if (options?.includeAttributeBuffs) {
+      state.attributeBuffs = {
+        strength: Math.floor(this.attributeBuffs.strength),
+        agility: Math.floor(this.attributeBuffs.agility),
+      };
+      state.buffExpiresAtMs = Math.max(0, Math.floor(this.attributeBuffs.expiresAtMs));
+    }
+    return state;
   }
 }

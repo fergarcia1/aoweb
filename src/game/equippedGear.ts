@@ -1,7 +1,7 @@
 import type Phaser from "phaser";
 import type { Facing } from "../player/playerSprites";
-import type { EquipmentSlot, ItemDefinition, ItemId } from "../items/itemDefinitions";
-import { getItemDefinition } from "../items/itemDefinitions";
+import type { EquipmentSlot, ItemDefinition, ItemId } from "../../game-data/items/definitions";
+import { getItemDefinition } from "../../game-data/items/definitions";
 
 /** Filas SWAD en hojas equipadas 192×192 (6×4 celdas de 32×48). */
 const EQUIP_ROW_BY_FACING: Record<Facing, number> = {
@@ -13,7 +13,13 @@ const EQUIP_ROW_BY_FACING: Record<Facing, number> = {
 
 const DEFAULT_EQUIP_SHEET_COLS = 6;
 
-const WEAPON_DEPTH_OFFSET = 0.015;
+/** S/D: arma delante del cuerpo; W/A: cuerpo delante (perspectiva). */
+export const WEAPON_DEPTH_OFFSET_BY_FACING: Record<Facing, number> = {
+  down: 0.015,
+  up: -0.015,
+  left: -0.015,
+  right: 0.015,
+};
 
 /** Ajuste fino del escudo equipado (pies del personaje = origen). */
 export const SHIELD_OFFSET_BY_FACING: Record<Facing, { x: number; y: number }> = {
@@ -58,6 +64,7 @@ export type EquippedGearSyncContext = {
   helmetSprite?: Phaser.GameObjects.Sprite;
   walkSwayX?: number;
   walkSwayY?: number;
+  hideEquipmentVisuals?: boolean;
 };
 
 function getEquippedSheetFacing(item: ItemDefinition, facing: Facing): Facing {
@@ -147,7 +154,7 @@ export function syncEquippedWeaponVisual(ctx: EquippedGearSyncContext): void {
   }
 
   const equippedWeaponId = ctx.equipment.weapon;
-  if (!equippedWeaponId || ctx.useGhostAppearance) {
+  if (!equippedWeaponId || ctx.useGhostAppearance || ctx.hideEquipmentVisuals) {
     sprite.setVisible(false);
     return;
   }
@@ -158,7 +165,7 @@ export function syncEquippedWeaponVisual(ctx: EquippedGearSyncContext): void {
   sprite.setFrame(getEquippedDirectionalFrame(weaponDef, ctx));
   sprite.setScale(weaponDef.equippedScale ?? 1);
   sprite.setPosition(ctx.player.x, ctx.player.y);
-  sprite.setDepth(ctx.player.depth + WEAPON_DEPTH_OFFSET);
+  sprite.setDepth(ctx.player.depth + WEAPON_DEPTH_OFFSET_BY_FACING[ctx.facing]);
   sprite.setVisible(true);
   sprite.setFlipX(getEquippedOverlayFlipX(weaponDef, ctx.facing));
 }
@@ -170,7 +177,7 @@ export function syncEquippedShieldVisual(ctx: EquippedGearSyncContext): void {
   }
 
   const equippedShieldId = ctx.equipment.shield;
-  if (!equippedShieldId || ctx.useGhostAppearance) {
+  if (!equippedShieldId || ctx.useGhostAppearance || ctx.hideEquipmentVisuals) {
     sprite.setVisible(false);
     return;
   }
@@ -203,7 +210,7 @@ export function syncEquippedHelmetVisual(ctx: EquippedGearSyncContext): void {
   }
 
   const equippedHelmetId = ctx.equipment.helmet;
-  if (!equippedHelmetId || ctx.useGhostAppearance) {
+  if (!equippedHelmetId || ctx.useGhostAppearance || ctx.hideEquipmentVisuals) {
     sprite.setVisible(false);
     return;
   }

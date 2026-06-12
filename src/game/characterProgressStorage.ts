@@ -1,10 +1,15 @@
 import { normalizeOutfit, type Outfit } from "../../game-data/outfits";
 import type { Facing } from "../../shared/types";
-import type { EquipmentSlot, ItemId } from "../items/itemDefinitions";
+import type { EquipmentSlot, ItemId } from "../../game-data/items/definitions";
 import type { InventorySlot } from "../items/inventoryStack";
-import { SKILL_IDS, type SkillId } from "./skills";
 
-export const INVENTORY_SLOT_COUNT = 24;
+import { INVENTORY_COLS, INVENTORY_ROWS, INVENTORY_SLOT_COUNT } from "../../game-data/constants";
+import { normalizeItemId } from "../../game-data/items/definitions";
+import { DEFAULT_MAP_ID } from "../../game-data/constants";
+import { getMapSpawnTile, isMapTileWalkable } from "../../shared/mapWalkability";
+import { getMap } from "../../shared/maps";
+
+export { INVENTORY_COLS, INVENTORY_ROWS, INVENTORY_SLOT_COUNT };
 export const MACRO_SLOT_COUNT = 10;
 
 const STORAGE_PREFIX = "aoweb_progress_v1_";
@@ -25,6 +30,7 @@ export type SavedMacroBinding = {
   keyCode: string | null;
   action: "cast_spell" | "use_item" | "equip_item";
   itemId: ItemId | null;
+  inventorySlotIndex?: number | null;
   spellId: number | null;
 };
 
@@ -51,8 +57,10 @@ export type SavedCharacterProgress = {
   equipment: Record<EquipmentSlot, ItemId | null>;
   equippedOutfit: Outfit;
   playerProgress: SavedPlayerProgress;
-  skillLevels: Record<SkillId, number>;
+
   learnedSpellIds: number[];
+  /** Orden personalizado de la lista de hechizos (IDs). */
+  spellListOrder?: number[];
   macroBindings: SavedMacroBinding[];
   killStats: SavedKillStats;
   deathPhase: "alive" | "ghost_offer" | "ghost";
@@ -83,8 +91,12 @@ function normalizeInventory(slots: unknown): InventorySlot[] {
       typeof stack.count === "number" &&
       stack.count > 0
     ) {
+      const itemId = normalizeItemId(stack.itemId);
+      if (!itemId) {
+        continue;
+      }
       inventory[i] = {
-        itemId: stack.itemId as ItemId,
+        itemId,
         count: Math.floor(stack.count),
       };
     }
@@ -106,31 +118,20 @@ function normalizeEquipment(raw: unknown): Record<EquipmentSlot, ItemId | null> 
   for (const slot of ["weapon", "shield", "helmet", "armor"] as EquipmentSlot[]) {
     const value = record[slot];
     if (typeof value === "string") {
-      equipment[slot] = value as ItemId;
+      equipment[slot] = normalizeItemId(value);
     }
   }
   return equipment;
 }
 
-function normalizeSkillLevels(raw: unknown): Record<SkillId, number> {
-  const levels = Object.fromEntries(SKILL_IDS.map((id) => [id, 0])) as Record<SkillId, number>;
-  if (!raw || typeof raw !== "object") {
-    return levels;
-  }
-  for (const skillId of SKILL_IDS) {
-    const value = (raw as Record<string, unknown>)[skillId];
-    if (typeof value === "number" && Number.isFinite(value)) {
-      levels[skillId] = Math.max(0, Math.floor(value));
-    }
-  }
-  return levels;
-}
+
 
 function normalizeMacroBindings(raw: unknown): SavedMacroBinding[] {
   const defaults: SavedMacroBinding[] = Array.from({ length: MACRO_SLOT_COUNT }, () => ({
     keyCode: null,
     action: "use_item",
     itemId: null,
+    inventorySlotIndex: null,
     spellId: null,
   }));
   if (!Array.isArray(raw)) {
@@ -148,7 +149,15 @@ function normalizeMacroBindings(raw: unknown): SavedMacroBinding[] {
         binding.action === "equip_item"
           ? binding.action
           : "use_item",
-      itemId: typeof binding.itemId === "string" ? (binding.itemId as ItemId) : null,
+      itemId:
+        typeof binding.itemId === "string"
+          ? normalizeItemId(binding.itemId)
+          : null,
+      inventorySlotIndex:
+        typeof binding.inventorySlotIndex === "number" &&
+        Number.isFinite(binding.inventorySlotIndex)
+          ? Math.floor(binding.inventorySlotIndex)
+          : null,
       spellId:
         typeof binding.spellId === "number" && Number.isFinite(binding.spellId)
           ? Math.floor(binding.spellId)
@@ -268,6 +277,12 @@ export function loadCharacterProgress(characterId: string): SavedCharacterProgre
           .map((id) => Math.floor(id))
       : [];
 
+    const spellListOrder = Array.isArray(parsed.spellListOrder)
+      ? parsed.spellListOrder
+          .filter((id): id is number => typeof id === "number" && Number.isFinite(id))
+          .map((id) => Math.floor(id))
+      : [];
+
     const killStats: SavedKillStats = {
       creaturesKilled:
         typeof parsed.killStats?.creaturesKilled === "number"
@@ -283,18 +298,34 @@ export function loadCharacterProgress(characterId: string): SavedCharacterProgre
           : 0,
     };
 
+    let mapId = parsed.mapId;
+    if (mapId && ["pueblo", "bosque", "montana", "desierto"].includes(mapId)) {
+      mapId = DEFAULT_MAP_ID;
+    }
+    try {
+      getMap(mapId);
+    } catch {
+      mapId = DEFAULT_MAP_ID;
+    }
+    const tileX = Math.max(0, Math.floor(parsed.tileX));
+    const tileY = Math.max(0, Math.floor(parsed.tileY));
+    const spawn = getMapSpawnTile(mapId);
+    const safeTile = isMapTileWalkable(mapId, tileX, tileY)
+      ? { tileX, tileY }
+      : spawn;
+
     return {
       version: 1,
-      mapId: parsed.mapId,
-      tileX: Math.max(0, Math.floor(parsed.tileX)),
-      tileY: Math.max(0, Math.floor(parsed.tileY)),
+      mapId: mapId,
+      tileX: safeTile.tileX,
+      tileY: safeTile.tileY,
       facing: normalizeFacing(parsed.facing),
       inventory: normalizeInventory(parsed.inventory),
       equipment: normalizeEquipment(parsed.equipment),
       equippedOutfit: normalizeOutfit(parsed.equippedOutfit),
       playerProgress,
-      skillLevels: normalizeSkillLevels(parsed.skillLevels),
       learnedSpellIds,
+      spellListOrder: spellListOrder.length > 0 ? spellListOrder : undefined,
       macroBindings: normalizeMacroBindings(parsed.macroBindings),
       killStats,
       deathPhase: normalizeDeathPhase(parsed.deathPhase),

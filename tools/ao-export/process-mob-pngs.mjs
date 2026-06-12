@@ -23,11 +23,14 @@ function parseArgs() {
   return opts;
 }
 
-function isNearBlack(r, g, b, threshold) {
-  return r <= threshold && g <= threshold && b <= threshold;
+/** Negro o azul clave típico de BMP/PNG de AO (evita halos azulados en el juego). */
+function isBackgroundPixel(r, g, b, threshold) {
+  if (r <= threshold && g <= threshold && b <= threshold) return true;
+  if (r <= threshold && g <= threshold && b >= 255 - threshold) return true;
+  return false;
 }
 
-function removeBackgroundBlack(png, threshold) {
+function removeBackgroundFromEdges(png, threshold) {
   const { width, height, data } = png;
   const visited = new Uint8Array(width * height);
   const queueX = [];
@@ -43,7 +46,7 @@ function removeBackgroundBlack(png, threshold) {
     const b = data[p + 2];
     const a = data[p + 3];
     if (a === 0) return;
-    if (!isNearBlack(r, g, b, threshold)) return;
+    if (!isBackgroundPixel(r, g, b, threshold)) return;
     visited[idx] = 1;
     queueX.push(x);
     queueY.push(y);
@@ -157,7 +160,7 @@ const thumbs = [];
 for (const file of files) {
   const p = path.join(opts.inputDir, file);
   const png = PNG.sync.read(fs.readFileSync(p));
-  removeBackgroundBlack(png, opts.threshold);
+  removeBackgroundFromEdges(png, opts.threshold);
   writePng(png, p); // overwrite original with transparent background
 
   const thumb = fitThumb(png, opts.thumbSize);

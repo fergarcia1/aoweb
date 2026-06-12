@@ -1,4 +1,4 @@
-import { MOB_SPAWNS } from "../../data/mobs";
+import { MOB_SPAWNS } from "../../../game-data/mobs";
 import type { DummyState, MobHitboxOverride } from "./types";
 
 const STORAGE_KEY = "mob_hitbox_overrides";
