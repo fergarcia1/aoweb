@@ -1107,7 +1107,6 @@ export class CombatSystem {
       this.world.sendInventoryUpdated(victim);
     }
 
-    const suicide = killer.id === victim.id;
     if (!suicide) {
       this.world.onUserKill(killer, victim);
     }
