@@ -51,7 +51,9 @@ export type NetworkClientHandlers = {
   onPlayerProgressUpdated?: (exp: number, expToNext: number, level: number) => void;
   onPartyUpdate?: (message: ServerPartyUpdateMessage) => void;
   onPartyInviteRequest?: (message: ServerPartyInviteRequestMessage) => void;
+  onAuctionCatalog?: (auctions: import("../../shared/types").NetAuctionState[]) => void;
   onWorldItemSpawned?: (mapId: string, item: NetWorldItemState) => void;
+
   onWorldItemUpdated?: (mapId: string, item: NetWorldItemState) => void;
   onWorldItemRemoved?: (mapId: string, worldItemId: string) => void;
   onLogoutCountdown?: (secondsLeft: number) => void;
@@ -308,9 +310,26 @@ export class NetworkClient {
     this.send({ type: "meditation", active });
   }
 
+  sendAuctionFetch() {
+    this.send({ type: "auction_fetch" });
+  }
+
+  sendAuctionList(inventorySlot: number, amount: number, price: number, durationHours: number) {
+    this.send({ type: "auction_list", inventorySlot, amount, price, durationHours });
+  }
+
+  sendAuctionBuy(auctionId: string) {
+    this.send({ type: "auction_buy", auctionId });
+  }
+
+  sendAuctionCancel(auctionId: string) {
+    this.send({ type: "auction_cancel", auctionId });
+  }
+
   sendRequestLogout() {
     this.send({ type: "request_logout" });
   }
+
 
   sendPartyAction(
     action: Extract<ClientMessage, { type: "party_action" }>["action"],
@@ -451,9 +470,14 @@ export class NetworkClient {
       this.handlers.onPartyInviteRequest?.(message);
       return;
     }
+    if (message.type === "auction_catalog") {
+      this.handlers.onAuctionCatalog?.(message.auctions);
+      return;
+    }
     if (message.type === "error") {
       this.handlers.onError?.(message.message, message.code);
     }
+
   }
 }
 

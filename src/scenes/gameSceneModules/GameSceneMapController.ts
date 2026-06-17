@@ -36,6 +36,12 @@ import {
 } from "./constants";
 import { spawnMapPortalSprites } from "../../maps/portalVisuals";
 
+type WorldCameraObjectInput =
+  | Phaser.GameObjects.GameObject
+  | (Phaser.GameObjects.GameObject | undefined | null)[]
+  | undefined
+  | null;
+
 export type GameSceneMapDeps = {
   scene: Phaser.Scene;
   getGameUi: () => GameUi;
@@ -53,6 +59,8 @@ export type GameSceneMapDeps = {
   onViewportLayout: () => void;
   setDoorTileOverride: (tileX: number, tileY: number, isOpen: boolean) => void;
   isMapTileWalkable: (tileX: number, tileY: number) => boolean;
+  registerForUiIgnore?: (...objects: WorldCameraObjectInput[]) => void;
+  addToWorld?: (...objects: WorldCameraObjectInput[]) => void;
 };
 
 /**
@@ -61,6 +69,7 @@ export type GameSceneMapDeps = {
 export class GameSceneMapController {
   readonly mapTiles: Phaser.GameObjects.Container;
   readonly mapOverlay: Phaser.GameObjects.Graphics;
+  readonly worldLayer: Phaser.GameObjects.Container;
 
   private uiCamera?: Phaser.Cameras.Scene2D.Camera;
   private readonly mapTrees: Phaser.GameObjects.Image[] = [];
@@ -79,12 +88,40 @@ export class GameSceneMapController {
     cellSize: number;
     bounds: ReturnType<typeof getWorldMapGridBounds>;
   } | null = null;
+  private lastOcclusionPlayerX: number | null = null;
+  private lastOcclusionPlayerY: number | null = null;
   private worldMapOpen = false;
 
   constructor(private readonly deps: GameSceneMapDeps) {
     const { scene } = deps;
-    this.mapTiles = scene.add.container(0, 0).setDepth(0);
-    this.mapOverlay = scene.add.graphics().setDepth(1);
+    this.mapTiles = scene.add.container(0, 0).setDepth(0).setScrollFactor(1);
+    this.mapOverlay = scene.add.graphics().setDepth(1).setScrollFactor(1);
+    this.worldLayer = this.mapTiles;
+  }
+
+  addToWorld(...objects: WorldCameraObjectInput[]): void {
+    const flat = objects.flat();
+    const valid = flat.filter((obj): obj is Phaser.GameObjects.GameObject => Boolean(obj));
+    if (valid.length === 0) return;
+
+    for (const obj of valid) {
+      const scrollable = obj as Phaser.GameObjects.GameObject & {
+        setScrollFactor?: (x: number, y?: number) => Phaser.GameObjects.GameObject;
+      };
+      scrollable.setScrollFactor?.(1, 1);
+    }
+
+    if (this.uiCamera) {
+      this.uiCamera.ignore(valid);
+    }
+  }
+
+  registerForUiIgnore(...objects: WorldCameraObjectInput[]): void {
+    const flat = objects.flat();
+    const valid = flat.filter((obj): obj is Phaser.GameObjects.GameObject => Boolean(obj));
+    if (valid.length > 0 && this.uiCamera) {
+      this.uiCamera.ignore(valid);
+    }
   }
 
   getMapTrees(): readonly Phaser.GameObjects.Image[] {
@@ -240,6 +277,7 @@ export class GameSceneMapController {
         this.deps.depthFromFeetY(feetY)
       );
       this.mapBuildings.push(building);
+      this.addToWorld(building);
     }
 
     const grhIndex = scene.cache.json.get("grh_index") as
@@ -259,18 +297,17 @@ export class GameSceneMapController {
       }
     }
 
-    this.mapPortalSprites.push(
-      ...spawnMapPortalSprites(scene, map.id, (feetY) => this.deps.depthFromFeetY(feetY))
+    const portalSprites = spawnMapPortalSprites(scene, map.id, (feetY) =>
+      this.deps.depthFromFeetY(feetY)
     );
+    this.mapPortalSprites.push(...portalSprites);
+    this.addToWorld(portalSprites);
 
     this.refreshSceneryUiCameraIgnore();
   }
 
   /** Mantiene árboles/edificios en la cámara del mundo (no en la UI). */
   refreshSceneryUiCameraIgnore(): void {
-    if (!this.uiCamera) {
-      return;
-    }
     const scenery = [
       ...this.mapTrees,
       ...this.mapBuildings,
@@ -279,7 +316,7 @@ export class GameSceneMapController {
       ...this.mapPortalSprites,
     ];
     if (scenery.length > 0) {
-      this.uiCamera.ignore(scenery);
+      this.addToWorld(scenery);
     }
   }
 
@@ -328,6 +365,7 @@ export class GameSceneMapController {
       } else if (options?.asRoofLayer) {
         img.setDepth(100000);
         this.mapRoofs.push(img);
+        this.addToWorld(img);
       } else {
         const tileFeetY = py + TILE_SIZE;
         img.setDepth(this.deps.depthFromFeetY(tileFeetY));
@@ -335,6 +373,7 @@ export class GameSceneMapController {
         img.setData("mapTileX", tileX);
         img.setData("mapTileY", tileY);
         this.mapBuildings.push(img);
+        this.addToWorld(img);
       }
       return img;
     };
@@ -410,6 +449,7 @@ export class GameSceneMapController {
       this.deps.setDoorTileOverride(tileX, tileY, isOpen);
     }
     this.mapBuildings.push(img);
+    this.addToWorld(img);
     return img;
   }
 
@@ -614,6 +654,14 @@ export class GameSceneMapController {
 
   syncSceneryOcclusion(playerTileX: number, playerTileY: number): void {
     const player = this.deps.getPlayer();
+
+    // Dirty-check: only re-evaluate if the player actually moved
+    if (this.lastOcclusionPlayerX === player.x && this.lastOcclusionPlayerY === player.y) {
+      return;
+    }
+    this.lastOcclusionPlayerX = player.x;
+    this.lastOcclusionPlayerY = player.y;
+
     syncMapSceneryOcclusion({
       map: this.deps.getCurrentMap(),
       playerTileX,
@@ -637,6 +685,7 @@ export class GameSceneMapController {
         .setScale(TREE_SCALE)
         .setDepth(TREE_FRONT_DEPTH);
       this.mapTrees.push(tree);
+      this.addToWorld(tree);
       return;
     }
 

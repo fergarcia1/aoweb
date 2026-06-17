@@ -11,7 +11,7 @@ import { loadImperiumNpcVisualAssetsForBodyIds } from "../../game/npcs/loadImper
 import { SPELL_DEFINITIONS } from "../../data/spells";
 import { preloadFootstepWavs } from "../../audio/footstepWav";
 import { preloadNamedWavs } from "../../audio/namedWav";
-import { preloadSpellAudioForSpellIds } from "../../audio/spellWav";
+import { preloadSpellAudioForSpellIds, preloadSpellWavs } from "../../audio/spellWav";
 import { ALL_FX_SHEETS, getSpellEffectConfig } from "../../spells/spellEffects";
 import { preloadMeditationVisuals } from "../../systems/meditationVisuals";
 import { macroSpellTextureKey } from "./progressFormulas";
@@ -26,6 +26,7 @@ import type { GrhIndexEntry } from "../../maps/legacyMapObjects";
 import { getMap } from "../../../shared/maps";
 import type { GameScenePreloadContext } from "./gameScenePreloadContext";
 import {
+  queueEquippableVisualAssets,
   queueImageIfMissing,
   queueItemAssetsById,
   queueMapVisualAssets,
@@ -35,6 +36,8 @@ import {
 const ESSENTIAL_NAMED_WAVS = [
   "step",
   "step2",
+  "pasoGolem",
+  "pasoGolem2",
   "lvlUp",
   "spawnInWorld",
   "pocionAzul",
@@ -54,6 +57,7 @@ export function runGameSceneEssentialPreload(scene: Phaser.Scene): void {
   registerAoTerrain(scene);
   registerRaceFaces(scene);
   registerInventoryPanelAssets(scene);
+  queueEquippableVisualAssets(scene);
 
   preloadMeditationVisuals(scene);
   preloadPortalAnimationAssets(scene);
@@ -67,18 +71,21 @@ export function runGameSceneEssentialPreload(scene: Phaser.Scene): void {
   scene.load.json("grh_index", "assets/ao/grh_index.json");
   preloadAoFont2(scene);
   preloadFootstepWavs(scene);
-  preloadNamedWavs(scene, ESSENTIAL_NAMED_WAVS);
+  preloadNamedWavs(scene);
 
-  const spawnFx = ALL_FX_SHEETS.find((fx) => fx.sheetKey === "fx_spawn_logeo");
-  if (spawnFx) {
+  // Preload all spell animations (so animations cast by any player or mob are visible)
+  for (const fx of ALL_FX_SHEETS) {
     queueSpritesheetIfMissing(
       scene,
-      spawnFx.sheetKey,
-      spawnFx.path,
-      spawnFx.frameWidth,
-      spawnFx.frameHeight
+      fx.sheetKey,
+      fx.path,
+      fx.frameWidth,
+      fx.frameHeight
     );
   }
+
+  // Preload all spell audio WAV files
+  preloadSpellWavs(scene);
 }
 
 /** Assets del personaje y del mapa inicial (sin precargar todo el juego). */

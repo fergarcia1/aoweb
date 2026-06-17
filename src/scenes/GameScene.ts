@@ -435,7 +435,7 @@ export class GameScene extends Phaser.Scene {
   /** Evita FX duplicado si el servidor reenvía spell_fx tras un cast local. */
   private suppressServerSpellFxUntil = 0;
   /** FX de canalización de Resucitar por id de lanzador. */
-  private readonly resurrectChannelFxByCasterId = new Map<string, Phaser.GameObjects.Sprite>();
+  private readonly resurrectChannelFxByCasterId = new Map<string, { sprite: Phaser.GameObjects.Sprite; bar: Phaser.GameObjects.Graphics; barBg: Phaser.GameObjects.Graphics; startMs: number; endsAtMs: number }>();
   private inspectedDummyId: string | null = null;
   private playerImmobilizedUntilMs = 0;
   private playerInvisibleUntilMs = 0;
@@ -671,9 +671,6 @@ export class GameScene extends Phaser.Scene {
       startResurrectChannelEffect: (casterId, tileX, tileY, endsAtMs) =>
         this.startResurrectChannelEffect(casterId, tileX, tileY, endsAtMs),
       getLocalPlayerId: () => this.mpController.getPlayerId(),
-      setSuppressServerSpellFxUntil: (until) => {
-        this.suppressServerSpellFxUntil = until;
-      },
       showSpellMagicWords: (spellId, spellNombre) => {
         const words = getSpellMagicWordsForCast(spellId, spellNombre);
         if (words) {
@@ -1234,6 +1231,14 @@ export class GameScene extends Phaser.Scene {
       onCharacterAlreadyOnline: (message) =>
         this.returnToCharacterSelectForDuplicateLogin(message),
       onLogoutComplete: () => this.returnToCharacterSelect(),
+      onAuctionCatalog: (auctions) => {
+        this.gameUi.showAuctionOverlay({
+          auctions,
+          inventory: this.inventory,
+          playerGold: this.playerProgress?.gold ?? 0,
+          playerId: this.characterId,
+        });
+      },
     });
   }
 
@@ -2885,11 +2890,14 @@ export class GameScene extends Phaser.Scene {
       hasCursors: Boolean(this.cursors && this.wasd),
       isChatFocused: this.gameUi.isChatFocused(),
       isConfirmOpen: this.gameUi.isConfirmOpen(),
+      isOptionsOverlayOpen: this.gameUi.isOptionsOverlayOpen(),
       isMacroEditorOpen: this.gameUi.isMacroEditorOpen(),
       isStatsOverlayOpen: this.gameUi.isStatsOverlayOpen(),
       isPartyOverlayOpen: this.gameUi.isPartyOverlayOpen(),
       isBankOpen: this.bankOverlay?.isOpen() ?? false,
       isShopOpen: this.shopOverlay?.isOpen() ?? false,
+      isAuctionOpen: this.gameUi.isAuctionOverlayOpen(),
+      isSpellShopOpen: this.shopBankSystem?.isSpellShopOpen() ?? false,
       justPressedWorldMapToggle: Boolean(
         this.worldMapToggleKey && Phaser.Input.Keyboard.JustDown(this.worldMapToggleKey)
       ),
@@ -2929,6 +2937,12 @@ export class GameScene extends Phaser.Scene {
       cancelSpellTargeting: (message) => this.combatController.cancelSpellTargeting(message),
       handleShopEscape: () => this.shopOverlay?.handleEscape(),
       handleBankEscape: () => this.bankOverlay?.handleEscape(),
+      handleAuctionEscape: () => this.gameUi.hideAuctionOverlay(),
+      handleWorldMapEscape: () => {
+        if (this.mapController.isWorldMapOpen()) {
+          this.mapController.toggleWorldMap();
+        }
+      },
       onMeditateHotkeyWhileDead: () =>
         this.gameUi.addChatLine("No podés meditar estando muerto o en forma fantasma."),
       onAttackWhileDead: () => this.gameUi.addChatLine("No podés atacar en esta forma."),
@@ -4890,20 +4904,54 @@ export class GameScene extends Phaser.Scene {
     }
 
     sprite.play({ key: animKey, repeat: -1 });
-    this.resurrectChannelFxByCasterId.set(casterId, sprite);
 
-    const remainingMs = Math.max(0, endsAtMs - Date.now());
-    if (remainingMs > 0) {
-      this.time.delayedCall(remainingMs, () => this.stopResurrectChannelEffect(casterId));
-    }
+    // --- Barra de progreso de la canalización bajo el caster ---
+    const BAR_W = 36;
+    const BAR_H = 5;
+    const barY = y + 14;
+    const barDepth = this.depthFromFeetY(y) + 2;
+
+    const barBg = this.add.graphics().setDepth(barDepth);
+    barBg.fillStyle(0x000000, 0.6);
+    barBg.fillRect(x - BAR_W / 2 - 1, barY - 1, BAR_W + 2, BAR_H + 2);
+    if (this.uiCamera) this.uiCamera.ignore(barBg);
+
+    const bar = this.add.graphics().setDepth(barDepth + 0.1);
+    bar.fillStyle(0x44ff88, 1);
+    bar.fillRect(x - BAR_W / 2, barY, BAR_W, BAR_H);
+    if (this.uiCamera) this.uiCamera.ignore(bar);
+
+    const startMs = Date.now();
+    const totalMs = Math.max(1, endsAtMs - startMs);
+    const entry = { sprite, bar, barBg, startMs, endsAtMs };
+    this.resurrectChannelFxByCasterId.set(casterId, entry);
+
+    this.tweens.add({
+      targets: { progress: 1 },
+      progress: 0,
+      duration: totalMs,
+      ease: "Linear",
+      onUpdate: (tween) => {
+        const progress = tween.getValue() as number;
+        if (!bar.active) return;
+        bar.clear();
+        bar.fillStyle(0x44ff88, 1);
+        bar.fillRect(x - BAR_W / 2, barY, BAR_W * progress, BAR_H);
+      },
+      onComplete: () => {
+        this.stopResurrectChannelEffect(casterId);
+      },
+    });
   }
 
   stopResurrectChannelEffect(casterId: string) {
-    const sprite = this.resurrectChannelFxByCasterId.get(casterId);
-    if (!sprite) {
+    const entry = this.resurrectChannelFxByCasterId.get(casterId);
+    if (!entry) {
       return;
     }
-    sprite.destroy();
+    if (entry.sprite.active) entry.sprite.destroy();
+    if (entry.bar.active) entry.bar.destroy();
+    if (entry.barBg.active) entry.barBg.destroy();
     this.resurrectChannelFxByCasterId.delete(casterId);
   }
 

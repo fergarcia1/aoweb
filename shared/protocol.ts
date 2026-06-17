@@ -219,6 +219,28 @@ export type ClientPartyActionMessage = {
   leaderId?: string;
 };
 
+export type ClientAuctionListMessage = {
+  type: "auction_list";
+  inventorySlot: number;
+  amount: number;
+  price: number;
+  durationHours: number;
+};
+
+export type ClientAuctionBuyMessage = {
+  type: "auction_buy";
+  auctionId: string;
+};
+
+export type ClientAuctionCancelMessage = {
+  type: "auction_cancel";
+  auctionId: string;
+};
+
+export type ClientAuctionFetchMessage = {
+  type: "auction_fetch";
+};
+
 export type ClientMessage =
   | ClientJoinMessage
   | ClientMoveMessage
@@ -244,7 +266,12 @@ export type ClientMessage =
   | ClientSyncVitalsMessage
   | ClientPartyActionMessage
   | ClientBecomeRenegadeMessage
-  | ClientRequestLogoutMessage;
+  | ClientRequestLogoutMessage
+  | ClientAuctionListMessage
+  | ClientAuctionBuyMessage
+  | ClientAuctionCancelMessage
+  | ClientAuctionFetchMessage;
+
 
 export type NetInventorySlotState = {
   slotIndex: number;
@@ -422,6 +449,11 @@ export type ServerPartyInviteRequestMessage = {
   leaderName: string;
 };
 
+export type ServerAuctionCatalogMessage = {
+  type: "auction_catalog";
+  auctions: import("./types").NetAuctionState[];
+};
+
 export type ServerMessage =
   | ServerWelcomeMessage
   | ServerWorldSnapshotMessage
@@ -447,7 +479,9 @@ export type ServerMessage =
   | ServerLogoutCompleteMessage
   | ServerPartyUpdateMessage
   | ServerPartyInviteRequestMessage
+  | ServerAuctionCatalogMessage
   | ServerErrorMessage;
+
 
 export function parseClientMessage(raw: string): ClientMessage | null {
   try {

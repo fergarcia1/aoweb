@@ -13,6 +13,12 @@ import { isPhaserObjectLive } from "./phaserObjectUtils";
 import { getGameViewport, UI_LAYOUT } from "./layout";
 import { createInventoryPanel, type InventoryPanel } from "./inventoryPanel";
 import { PartyOverlay } from "./partyOverlay";
+import { AuctionOverlay, AuctionViewState } from "./auctionOverlay";
+import { DropItemOverlay } from "./DropItemOverlay";
+import { SimpleConfirmOverlay } from "./SimpleConfirmOverlay";
+import { OptionsOverlay } from "./optionsOverlay";
+import { applyMasterVolume } from "../config/audioSettings";
+import { getItemDefinition } from "../items/itemDefinitions";
 import {
   type AowebUiSkinVariant,
   FONDO_BOTONES_FALLBACK_SIZE,
@@ -61,6 +67,10 @@ export type PlayerKillStats = {
   creaturesKilled: number;
   criminalsKilled: number;
   usersKilled: number;
+  imperialKilled?: number;
+  armadaKilled?: number;
+  caosKilled?: number;
+  renegadeKilled?: number;
 };
 
 const UI_DEPTH = 1000;
@@ -72,7 +82,7 @@ const INVENTORY_GAP = 1;
 const SPELL_ROW_HEIGHT = 14;
 const SPELL_ROW_GAP = 2;
 const SPELL_MIN_VISIBLE_ROWS = 8;
-const SPELL_PANEL_FOOTER = 40;
+const SPELL_PANEL_FOOTER = 50;
 const SPELL_PANEL_FOOTER_SKIN = 26;
 const SPELL_SKIN_CONTROL_COL_W = 22;
 const SPELL_MAX_VISIBLE_ROWS = 12;
@@ -191,6 +201,7 @@ export class GameUi {
   private inventoryStackLabels: Phaser.GameObjects.Text[] = [];
   private inventoryEquippedLabels: Phaser.GameObjects.Text[] = [];
   private inventorySlotItemIds: (string | null)[] = [];
+  private loadingItemTextureKeys = new Set<string>();
   private equippedItemIds = new Set<string>();
   private readonly scene: Phaser.Scene;
   private readonly root: Phaser.GameObjects.Container;
@@ -406,36 +417,6 @@ export class GameUi {
   private readonly inventoryDoubleClickMs = 350;
   private selectedInventorySlot = -1;
 
-  private confirmVisible = false;
-  private confirmAcceptHandler: ((amount: number) => void) | null = null;
-  private confirmCancelHandler: (() => void) | null = null;
-  private confirmMode: "simple" | "dropCount" = "simple";
-  private confirmAmount = 1;
-  private confirmMaxAmount = 1;
-  private confirmInputActive = false;
-  private confirmOverlay!: Phaser.GameObjects.Container;
-  private confirmDim!: Phaser.GameObjects.Graphics;
-  private confirmPanel!: Phaser.GameObjects.Graphics;
-  private confirmTitle!: Phaser.GameObjects.Text;
-  private confirmMessage!: Phaser.GameObjects.Text;
-  private confirmHint!: Phaser.GameObjects.Text;
-  private confirmAmountCaption!: Phaser.GameObjects.Text;
-  private confirmInputBox!: Phaser.GameObjects.Graphics;
-  private confirmInputZone!: Phaser.GameObjects.Zone;
-  private confirmAmountLabel!: Phaser.GameObjects.Text;
-  private confirmMinusBtn!: Phaser.GameObjects.Graphics;
-  private confirmPlusBtn!: Phaser.GameObjects.Graphics;
-  private confirmMinusZone!: Phaser.GameObjects.Zone;
-  private confirmPlusZone!: Phaser.GameObjects.Zone;
-  private confirmMinusText!: Phaser.GameObjects.Text;
-  private confirmPlusText!: Phaser.GameObjects.Text;
-  private confirmYesBtn!: Phaser.GameObjects.Graphics;
-  private confirmNoBtn!: Phaser.GameObjects.Graphics;
-  private confirmYesZone!: Phaser.GameObjects.Zone;
-  private confirmNoZone!: Phaser.GameObjects.Zone;
-  private confirmYesLabel!: Phaser.GameObjects.Text;
-  private confirmNoLabel!: Phaser.GameObjects.Text;
-
   private expBarGeom: BarGeom = { x: 0, y: 0, w: 0, h: 8 };
   private expSlotGeom: BarGeom = { x: 0, y: 0, w: 0, h: 8 };
   private expLabelFontPx = 8;
@@ -448,7 +429,12 @@ export class GameUi {
   private fullscreenBtnHit!: Phaser.GameObjects.Graphics;
   private fullscreenBtnLabel!: Phaser.GameObjects.Text;
   private partyOverlay!: PartyOverlay;
+  private auctionOverlay!: AuctionOverlay;
+  private dropItemOverlay!: DropItemOverlay;
+  private simpleConfirmOverlay!: SimpleConfirmOverlay;
+  private optionsOverlay!: OptionsOverlay;
   private partyMemberIds = new Set<string>();
+
 
   getContainer(): Phaser.GameObjects.Container {
     return this.root;
@@ -490,6 +476,7 @@ export class GameUi {
   constructor(scene: Phaser.Scene) {
     this.scene = scene;
     this.root = scene.add.container(0, 0).setDepth(UI_DEPTH).setScrollFactor(0);
+    applyMasterVolume(scene);
 
     // Ajuste manual persistente para la posición del "nombre de mapa".
     try {
@@ -531,11 +518,21 @@ export class GameUi {
     }
 
     this.build();
+    this.optionsOverlay = new OptionsOverlay({
+      onBindingsChanged: () => this.scene.events.emit("ui-keybindings-changed"),
+      onVolumeChanged: (volume) => applyMasterVolume(this.scene, volume),
+      onSkinVariantChanged: (variant) => {
+        if (!this.switchAowebSkinVariant(variant)) {
+          this.addChatLine(`No se pudo cargar la UI ${variant}.`);
+        }
+      },
+    });
     this.relayout();
 
     scene.scale.on("resize", this.relayout, this);
     scene.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       scene.scale.off("resize", this.relayout, this);
+      this.optionsOverlay.destroy();
     });
   }
 
@@ -865,6 +862,32 @@ export class GameUi {
     return this.statsOverlayVisible;
   }
 
+  isOptionsOverlayOpen() {
+    return this.optionsOverlay?.isOpen() ?? false;
+  }
+
+  isAuctionOverlayOpen() {
+    return this.auctionOverlay?.isOpen() ?? false;
+  }
+
+  hideAuctionOverlay() {
+    this.auctionOverlay?.hide();
+  }
+
+
+  showAuctionOverlay(state: AuctionViewState) {
+    this.auctionOverlay.show(getGameViewport(this.scene.scale.width, this.scene.scale.height), state);
+  }
+
+  refreshAuctionOverlay(state: AuctionViewState) {
+    this.auctionOverlay.refresh(state);
+  }
+
+  getAuctionOverlayDomObjects() {
+    return this.auctionOverlay.getDomObjects();
+  }
+
+
   toggleStatsOverlay() {
     if (this.statsOverlayVisible) {
       this.closeStatsOverlay();
@@ -952,7 +975,8 @@ export class GameUi {
       }
       return;
     }
-    this.addChatLine("Opciones del juego: próximamente.");
+    this.closeInventoryOptionsMenu();
+    this.optionsOverlay.toggle();
   }
 
   setInventorySlotInvalid(slotIndex: number, invalid: boolean) {
@@ -1444,6 +1468,15 @@ this.chatText.setMask(this.chatMaskGfx.createGeometryMask());
       onClose: () => this.partyOverlay.hide(),
     });
 
+    this.auctionOverlay = new AuctionOverlay(this.scene, {
+      onClose: () => this.auctionOverlay.hide(),
+      onBuy: (auctionId) => this.scene.events.emit("ui-auction-buy", auctionId),
+      onList: (slotIndex, amount, price, durationHours) =>
+        this.scene.events.emit("ui-auction-list", { slotIndex, amount, price, durationHours }),
+      onCancel: (auctionId) => this.scene.events.emit("ui-auction-cancel", auctionId),
+    });
+
+
 this.inventoryPanel = createInventoryPanel(this.scene, 0, 0, {
       cols: INVENTORY_COLS,
       rows: INVENTORY_ROWS,
@@ -1640,10 +1673,20 @@ this.inventoryPanel = createInventoryPanel(this.scene, 0, 0, {
     ]);
     this.setupMacroSlotInput();
     this.setupChatInput();
-    this.buildConfirmDialog();
     this.buildMacroEditorDialog();
     this.buildInventoryOptionsMenu();
     this.buildStatsOverlay();
+
+    const globalOverlays = globalThis as typeof globalThis & {
+      __aowebConfirmOverlays?: Array<{ destroy: () => void }>;
+    };
+    globalOverlays.__aowebConfirmOverlays?.forEach((overlay) => overlay.destroy());
+    this.dropItemOverlay = new DropItemOverlay(this.scene);
+    this.simpleConfirmOverlay = new SimpleConfirmOverlay(this.scene);
+    globalOverlays.__aowebConfirmOverlays = [
+      this.dropItemOverlay,
+      this.simpleConfirmOverlay,
+    ];
 
     this.addChatLine("Bienvenido a AOWEB.");
     this.addChatLine("WASD para moverte.");
@@ -1921,34 +1964,10 @@ this.inventoryPanel = createInventoryPanel(this.scene, 0, 0, {
         return;
       }
 
-      if (this.confirmVisible) {
+      if (this.dropItemOverlay?.isOpen() || this.simpleConfirmOverlay?.isOpen()) {
         event.preventDefault();
-
-        const key = event.key.toLowerCase();
-        if (this.confirmMode === "dropCount") {
-          if (key >= "0" && key <= "9") {
-            this.writeConfirmAmountDigit(key);
-            return;
-          }
-          if (event.key === "Backspace" || event.key === "Delete") {
-            this.backspaceConfirmAmount();
-            return;
-          }
-          if (event.key === "ArrowLeft" || event.key === "ArrowDown" || key === "-") {
-            this.adjustConfirmAmount(-1);
-            return;
-          }
-          if (event.key === "ArrowRight" || event.key === "ArrowUp" || key === "+") {
-            this.adjustConfirmAmount(1);
-            return;
-          }
-        }
-
-        if (event.key === "Enter" || key === "y") {
-          this.acceptConfirm();
-        } else if (event.key === "Escape" || key === "n") {
-          this.cancelConfirm();
-        }
+        this.dropItemOverlay?.handleKeyDown(event);
+        this.simpleConfirmOverlay?.handleKeyDown(event);
         return;
       }
 
@@ -2064,7 +2083,7 @@ this.inventoryPanel = createInventoryPanel(this.scene, 0, 0, {
   }
 
   isConfirmOpen() {
-    return this.confirmVisible;
+    return this.dropItemOverlay?.isOpen() || this.simpleConfirmOverlay?.isOpen() || false;
   }
 
   isPointerOverSidebar(pointerX: number, pointerY: number): boolean {
@@ -2078,18 +2097,13 @@ this.inventoryPanel = createInventoryPanel(this.scene, 0, 0, {
   }
 
   showConfirm(message: string, onConfirm: () => void, onCancel?: () => void) {
-    this.confirmMode = "simple";
-    this.confirmAmount = 0;
-    this.confirmMaxAmount = 1;
-    this.confirmInputActive = false;
-    this.confirmAcceptHandler = () => onConfirm();
-    this.confirmCancelHandler = onCancel ?? null;
-    this.confirmTitle.setText("Confirmacion");
-    this.confirmMessage.setText(message);
-    this.confirmHint.setText("Enter: Si | Esc: No");
-    this.confirmVisible = true;
-    this.confirmOverlay.setVisible(true);
-    this.relayout();
+    if (this.isConfirmOpen()) {
+      return;
+    }
+    this.simpleConfirmOverlay.show(this.scene, "Confirmacion", message, {
+      onConfirm,
+      onCancel: onCancel ?? (() => {}),
+    });
   }
 
   showDropConfirm(
@@ -2098,446 +2112,19 @@ this.inventoryPanel = createInventoryPanel(this.scene, 0, 0, {
     onConfirm: (amount: number) => void,
     onCancel?: () => void
   ) {
-    this.confirmMode = "dropCount";
-    this.confirmMaxAmount = Math.max(1, Math.floor(maxAmount));
-    this.confirmAmount = 1;
-    this.confirmInputActive = true;
-    this.confirmAcceptHandler = onConfirm;
-    this.confirmCancelHandler = onCancel ?? null;
-    this.confirmTitle.setText("Tirar objetos");
-    this.confirmMessage.setText(itemName);
-    this.confirmHint.setText("Escribi cantidad o usa +/-");
-    this.confirmVisible = true;
-    this.confirmOverlay.setVisible(true);
-    this.relayout();
-  }
-
-  private acceptConfirm() {
-    if (!this.confirmVisible) {
+    if (this.isConfirmOpen()) {
       return;
     }
-
-    if (this.confirmMode === "dropCount" && this.confirmAmount <= 0) {
-      this.confirmHint.setText("Elegi una cantidad mayor a 0");
-      this.confirmHint.setColor("#f58f8f");
-      this.layoutConfirmDialog();
-      return;
-    }
-
-    const handler = this.confirmAcceptHandler;
-    const amount = this.confirmAmount;
-    this.hideConfirm();
-    handler?.(amount);
-  }
-
-  private cancelConfirm() {
-    if (!this.confirmVisible) {
-      return;
-    }
-
-    const handler = this.confirmCancelHandler;
-    this.hideConfirm();
-    handler?.();
-  }
-
-  private hideConfirm() {
-    this.confirmVisible = false;
-    this.confirmOverlay.setVisible(false);
-    this.confirmAcceptHandler = null;
-    this.confirmCancelHandler = null;
-    this.confirmMode = "simple";
-    this.confirmAmount = 0;
-    this.confirmMaxAmount = 1;
-    this.confirmInputActive = false;
-  }
-
-  private buildStatsOverlay() {
-    this.statsOverlay = this.scene.add.container(0, 0).setScrollFactor(0).setVisible(false);
-    this.statsOverlayDim = this.scene.add.graphics().setScrollFactor(0);
-    this.statsOverlayPanel = this.scene.add.graphics().setScrollFactor(0);
-    this.statsOverlayTitle = this.makeText("ESTADÍSTICAS DEL PERSONAJE", 12, "#e8c56a", true).setOrigin(
-      0.5,
-      0
-    );
-    this.statsOverlayCloseBtn = this.scene.add.graphics().setScrollFactor(0);
-    this.statsOverlayCloseLabel = this.makeText("X", 11, "#ffffff", true).setOrigin(0.5, 0.5);
-    this.statsOverlayCloseZone = this.scene.add
-      .zone(0, 0, 1, 1)
-      .setOrigin(0, 0)
-      .setInteractive({ useHandCursor: true });
-    this.statsOverlayCloseZone.on("pointerdown", () => this.closeStatsOverlay());
-    this.statsOverlayDim.setInteractive(
-      new Phaser.Geom.Rectangle(0, 0, 1, 1),
-      Phaser.Geom.Rectangle.Contains
-    );
-    this.statsOverlayDim.on("pointerdown", () => this.closeStatsOverlay());
-
-    for (let i = 0; i < 4; i += 1) {
-      this.statsOverlayAttrTexts.push(this.makeText("", 9, "#c8d0dc"));
-    }
-    this.statsOverlaySectionTitles.push(
-      this.makeText("Asesinatos", 10, "#9aa3b2", true)
-    );
-
-    this.statsOverlay.add([
-      this.statsOverlayDim,
-      this.statsOverlayPanel,
-      this.statsOverlayTitle,
-      this.statsOverlayCloseBtn,
-      this.statsOverlayCloseLabel,
-      this.statsOverlayCloseZone,
-      ...this.statsOverlayAttrTexts,
-      ...this.statsOverlaySectionTitles,
-      ...this.statsKillTexts,
-    ]);
-    this.root.add(this.statsOverlay);
-  }
-
-  /** Rectángulo en pantalla que cubre toda la grilla de inventario (5×4). */
-  private getInventoryGridScreenRect(): { x: number; y: number; w: number; h: number } {
-    const lastIndex = INVENTORY_COLS * INVENTORY_ROWS - 1;
-    const first = this.inventoryPanel.slots[0];
-    const last = this.inventoryPanel.slots[lastIndex];
-    const container = this.inventoryPanel.container;
-    if (!first || !last) {
-      return { ...this.inventoryPanelGeom };
-    }
-    return {
-      x: container.x + first.x,
-      y: container.y + first.y,
-      w: last.x + last.displayWidth - first.x,
-      h: last.y + last.displayHeight - first.y,
-    };
-  }
-
-  private buildInventoryOptionsMenu() {
-    const menuItems: { id: "options" | "stats"; label: string }[] = [
-      { id: "options", label: "Opciones" },
-      { id: "stats", label: "Estadísticas" },
-    ];
-
-    this.inventoryOptionsMenu = this.scene.add
-      .container(0, 0)
-      .setScrollFactor(0)
-      .setVisible(false);
-    this.inventoryOptionsMenuDim = this.scene.add.graphics().setScrollFactor(0);
-    this.inventoryOptionsMenuDim.setInteractive(
-      new Phaser.Geom.Rectangle(0, 0, 1, 1),
-      Phaser.Geom.Rectangle.Contains
-    );
-    this.inventoryOptionsMenuDim.on("pointerdown", () => this.closeInventoryOptionsMenu());
-
-    for (const item of menuItems) {
-      const bg = this.scene.add
-        .image(0, 0, FONDO_BOTONES_TEXTURE_KEY)
-        .setOrigin(0, 0)
-        .setScrollFactor(0);
-      const label = this.makeText(item.label, 9, "#e6edf3", true).setOrigin(0.5, 0.5);
-      const hit = this.scene.add
-        .zone(0, 0, 1, 1)
-        .setOrigin(0, 0)
-        .setInteractive({ useHandCursor: true });
-      hit.on(
-        "pointerdown",
-        (
-          _pointer: Phaser.Input.Pointer,
-          _localX: number,
-          _localY: number,
-          event: Phaser.Types.Input.EventData
-        ) => {
-          event.stopPropagation();
-          this.handleInventoryOptionsMenuPick(item.id);
-        }
-      );
-      this.inventoryOptionsMenuEntries.push({ id: item.id, bg, label, hit });
-    }
-
-    this.inventoryOptionsMenu.add([
-      this.inventoryOptionsMenuDim,
-      ...this.inventoryOptionsMenuEntries.flatMap((entry) => [entry.bg, entry.label, entry.hit]),
-    ]);
-    this.root.add(this.inventoryOptionsMenu);
-  }
-
-  private layoutInventoryOptionsMenu() {
-    if (!this.inventoryOptionsMenuVisible) {
-      return;
-    }
-
-    const { x, y, w, h } = this.getInventoryGridScreenRect();
-    if (w <= 0 || h <= 0) {
-      return;
-    }
-
-    this.inventoryOptionsMenuDim.clear();
-    this.inventoryOptionsMenuDim.input?.hitArea.setTo(x, y, w, h);
-
-    const rowCount = this.inventoryOptionsMenuEntries.length;
-    const pad = 10;
-    const rowGap = 6;
-    const rowH = Math.min(24, Math.max(18, Math.floor((h - pad * 2 - rowGap * (rowCount - 1)) / rowCount)));
-    const btnW = Math.min(w - pad * 2, Math.max(72, Math.floor(w * 0.72)));
-    const stackH = rowCount * rowH + (rowCount - 1) * rowGap;
-    const btnX = x + Math.floor((w - btnW) / 2);
-    const firstBtnY = y + Math.floor((h - stackH) / 2);
-    const fontPx = Math.max(8, Math.min(10, Math.floor(rowH * 0.42)));
-
-    this.inventoryOptionsMenuEntries.forEach((entry, index) => {
-      const btnY = firstBtnY + index * (rowH + rowGap);
-      entry.bg.setPosition(btnX, btnY).setDisplaySize(btnW, rowH);
-      entry.label
-        .setFontSize(`${fontPx}px`)
-        .setPosition(btnX + btnW / 2, btnY + rowH / 2);
-      entry.hit.setPosition(btnX, btnY).setSize(btnW, rowH);
+    this.dropItemOverlay.show(this.scene, itemName, maxAmount, {
+      onConfirm,
+      onCancel: onCancel ?? (() => {}),
     });
-  }
-
-  private layoutStatsOverlay() {
-    if (!this.statsOverlayVisible) {
-      return;
-    }
-
-    const w = this.scene.scale.width;
-    const h = this.scene.scale.height;
-    const viewport = getGameViewport(w, h);
-    const panelW = Math.min(440, Math.floor(viewport.width * 0.88));
-    const panelH = Math.min(360, Math.floor(viewport.height * 0.82));
-    const panelX = viewport.x + Math.floor((viewport.width - panelW) / 2);
-    const panelY = viewport.y + Math.floor((viewport.height - panelH) / 2);
-    const pad = 12;
-    const colGap = 10;
-    const colW = Math.floor((panelW - pad * 2 - colGap) / 2);
-    const leftX = panelX + pad;
-    const rightX = leftX + colW + colGap;
-
-    this.statsOverlayDim.clear();
-    this.statsOverlayDim.fillStyle(0x000000, 0.45);
-    this.statsOverlayDim.fillRect(viewport.x, viewport.y, viewport.width, viewport.height);
-    this.statsOverlayDim.input?.hitArea.setTo(viewport.x, viewport.y, viewport.width, viewport.height);
-
-    this.statsOverlayPanel.clear();
-    this.statsOverlayPanel.fillStyle(0x0a0c12, 0.97);
-    this.statsOverlayPanel.fillRect(panelX, panelY, panelW, panelH);
-    this.statsOverlayPanel.lineStyle(2, 0x6b5428, 1);
-    this.statsOverlayPanel.strokeRect(panelX + 0.5, panelY + 0.5, panelW - 1, panelH - 1);
-    this.statsOverlayPanel.lineStyle(1, COLORS.panelBorder, 1);
-    this.statsOverlayPanel.strokeRect(panelX + 4, panelY + 4, panelW - 8, panelH - 8);
-
-    this.statsOverlayTitle.setPosition(panelX + panelW / 2, panelY + 10);
-    const closeSize = 20;
-    const closeX = panelX + panelW - pad - closeSize;
-    const closeY = panelY + 8;
-    this.drawConfirmButton(this.statsOverlayCloseBtn, closeX, closeY, closeSize, closeSize);
-    this.statsOverlayCloseZone.setPosition(closeX, closeY).setSize(closeSize, closeSize);
-    this.statsOverlayCloseLabel.setPosition(closeX + closeSize / 2, closeY + closeSize / 2);
-
-    const attr = this.characterAttributes;
-    const attrY = panelY + 34;
-    const attrColW = Math.floor(colW / 2);
-    const attrLines = [
-      `FUE ${attr.strength}`,
-      `AGI ${attr.agility}`,
-      `INT ${attr.intelligence}`,
-      `CON ${attr.constitution}`,
-    ];
-    this.statsOverlayAttrTexts.forEach((text, index) => {
-      const col = index % 2;
-      const row = Math.floor(index / 2);
-      text.setPosition(leftX + col * attrColW, attrY + row * 13);
-      text.setText(attrLines[index] ?? "");
-      if (index === 0) {
-        text.setColor(
-          attr.strength >= this.strengthAttributeCeiling
-            ? ATTRIBUTE_STAT_COLOR_AT_MAX
-            : "#c8d0dc"
-        );
-      } else if (index === 1) {
-        text.setColor(
-          attr.agility >= this.agilityAttributeCeiling
-            ? ATTRIBUTE_STAT_COLOR_AT_MAX
-            : "#c8d0dc"
-        );
-      } else {
-        text.setColor("#c8d0dc");
-      }
-    });
-
-    const killsTitle = this.statsOverlaySectionTitles[0];
-    const sectionY = attrY + 34;
-    killsTitle.setPosition(leftX, sectionY);
-
-    const killsTop = sectionY + 16;
-
-    const killLines = [
-      `Criaturas matadas: ${this.killStats.creaturesKilled}`,
-      `Criminales matados: ${this.killStats.criminalsKilled}`,
-      `Usuarios matados: ${this.killStats.usersKilled}`,
-      `Nobles matados: 0`,
-      `Plebeyos matados: 0`,
-    ];
-    this.statsKillTexts.forEach((text, index) => {
-      text.setPosition(rightX, killsTop + index * 15);
-      text.setText(killLines[index] ?? "");
-      text.setVisible(index < killLines.length);
-    });
-  }
-
-  private buildConfirmDialog() {
-    this.confirmOverlay = this.scene.add.container(0, 0).setScrollFactor(0).setVisible(false);
-    this.confirmDim = this.scene.add.graphics().setScrollFactor(0);
-    this.confirmPanel = this.scene.add.graphics().setScrollFactor(0);
-    this.confirmTitle = this.makeText("", 10, "#ffe08a", true).setOrigin(0.5, 0);
-    this.confirmMessage = this.makeText("", 11, "#ffffff");
-    this.confirmMessage.setOrigin(0.5, 0);
-    this.confirmHint = this.makeText("Enter: Si | Esc: No", 9, "#9b9b9b");
-    this.confirmHint.setOrigin(0.5, 0);
-    this.confirmAmountCaption = this.makeText("Cantidad", 10, "#c7d4ea", true).setOrigin(0.5, 0.5);
-    this.confirmInputBox = this.scene.add.graphics().setScrollFactor(0);
-    this.confirmInputZone = this.scene.add.zone(0, 0, 1, 1).setOrigin(0, 0);
-    this.confirmAmountLabel = this.makeText("", 12, "#e8f2ff", true).setOrigin(0.5, 0.5);
-    this.confirmMinusBtn = this.scene.add.graphics().setScrollFactor(0);
-    this.confirmPlusBtn = this.scene.add.graphics().setScrollFactor(0);
-    this.confirmMinusZone = this.scene.add.zone(0, 0, 1, 1).setOrigin(0, 0);
-    this.confirmPlusZone = this.scene.add.zone(0, 0, 1, 1).setOrigin(0, 0);
-    this.confirmMinusText = this.makeText("-", 12, "#ffffff", true).setOrigin(0.5, 0.5);
-    this.confirmPlusText = this.makeText("+", 12, "#ffffff", true).setOrigin(0.5, 0.5);
-    this.confirmYesBtn = this.scene.add.graphics().setScrollFactor(0);
-    this.confirmNoBtn = this.scene.add.graphics().setScrollFactor(0);
-    this.confirmYesZone = this.scene.add.zone(0, 0, 1, 1).setOrigin(0, 0);
-    this.confirmNoZone = this.scene.add.zone(0, 0, 1, 1).setOrigin(0, 0);
-    this.confirmYesLabel = this.makeText("Si", 10, "#ffffff", true).setOrigin(0.5, 0.5);
-    this.confirmNoLabel = this.makeText("No", 10, "#ffffff", true).setOrigin(0.5, 0.5);
-
-    this.confirmYesZone.setInteractive({ useHandCursor: true });
-    this.confirmNoZone.setInteractive({ useHandCursor: true });
-    this.confirmMinusZone.setInteractive({ useHandCursor: true });
-    this.confirmPlusZone.setInteractive({ useHandCursor: true });
-    this.confirmInputZone.setInteractive({ useHandCursor: true });
-    this.confirmYesZone.on("pointerup", (_pointer: Phaser.Input.Pointer, _x: number, _y: number, event: Phaser.Types.Input.EventData) => {
-      event.stopPropagation();
-      this.acceptConfirm();
-    });
-    this.confirmNoZone.on("pointerup", (_pointer: Phaser.Input.Pointer, _x: number, _y: number, event: Phaser.Types.Input.EventData) => {
-      event.stopPropagation();
-      this.cancelConfirm();
-    });
-    this.confirmMinusZone.on("pointerdown", () => this.adjustConfirmAmount(-1));
-    this.confirmPlusZone.on("pointerdown", () => this.adjustConfirmAmount(1));
-    this.confirmInputZone.on("pointerdown", () => {
-      this.confirmInputActive = true;
-      this.layoutConfirmDialog();
-    });
-
-    this.confirmOverlay.add([
-      this.confirmDim,
-      this.confirmPanel,
-      this.confirmTitle,
-      this.confirmMessage,
-      this.confirmHint,
-      this.confirmAmountCaption,
-      this.confirmInputBox,
-      this.confirmInputZone,
-      this.confirmAmountLabel,
-      this.confirmMinusBtn,
-      this.confirmPlusBtn,
-      this.confirmMinusZone,
-      this.confirmPlusZone,
-      this.confirmMinusText,
-      this.confirmPlusText,
-      this.confirmYesBtn,
-      this.confirmNoBtn,
-      this.confirmYesZone,
-      this.confirmNoZone,
-      this.confirmYesLabel,
-      this.confirmNoLabel,
-    ]);
-    this.root.add(this.confirmOverlay);
-  }
-
-  private layoutConfirmDialog() {
-    if (!this.confirmOverlay) {
-      return;
-    }
-
-    const w = this.scene.scale.width;
-    const h = this.scene.scale.height;
-    const panelW = Math.min(260, w - 24);
-    const panelH = this.confirmMode === "dropCount" ? 128 : 78;
-    const panelX = Math.floor((w - panelW) / 2);
-    const panelY = Math.floor((h - panelH) / 2);
-    const btnW = 58;
-    const btnH = 20;
-    const btnY = panelY + panelH - 30;
-    const yesX = Math.floor(w / 2 - btnW - 6);
-    const noX = Math.floor(w / 2 + 6);
-    const amountY = panelY + 62;
-    const adjustW = 24;
-    const adjustH = 20;
-    const inputW = 62;
-    const inputH = 22;
-    const inputX = Math.floor(w / 2 - inputW / 2);
-    const minusX = inputX - adjustW - 8;
-    const plusX = inputX + inputW + 8;
-    const showAmountControls = this.confirmMode === "dropCount";
-
-    this.confirmDim.clear();
-    this.confirmDim.fillStyle(0x000000, 0.55);
-    this.confirmDim.fillRect(0, 0, w, h);
-
-    this.drawConfirmPanel(this.confirmPanel, panelX, panelY, panelW, panelH);
-    this.confirmTitle.setPosition(Math.floor(w / 2), panelY + 4);
-    this.confirmMessage.setPosition(Math.floor(w / 2), panelY + 20);
-    this.confirmMessage.setWordWrapWidth(panelW - 24);
-    this.confirmHint.setPosition(Math.floor(w / 2), showAmountControls ? panelY + 92 : panelY + 44);
-    this.confirmHint.setColor("#9b9b9b");
-
-    this.confirmAmountCaption.setVisible(showAmountControls);
-    this.confirmInputBox.setVisible(showAmountControls);
-    this.confirmInputZone.setVisible(showAmountControls);
-    this.confirmAmountLabel.setVisible(showAmountControls);
-    this.confirmMinusBtn.setVisible(showAmountControls);
-    this.confirmPlusBtn.setVisible(showAmountControls);
-    this.confirmMinusZone.setVisible(showAmountControls);
-    this.confirmPlusZone.setVisible(showAmountControls);
-    this.confirmMinusText.setVisible(showAmountControls);
-    this.confirmPlusText.setVisible(showAmountControls);
-
-    if (showAmountControls) {
-      this.confirmAmountCaption.setPosition(Math.floor(w / 2), amountY - 14);
-      this.drawConfirmButton(this.confirmMinusBtn, minusX, amountY, adjustW, adjustH);
-      this.drawConfirmButton(this.confirmPlusBtn, plusX, amountY, adjustW, adjustH);
-      this.confirmMinusZone.setPosition(minusX, amountY).setSize(adjustW, adjustH);
-      this.confirmPlusZone.setPosition(plusX, amountY).setSize(adjustW, adjustH);
-      this.confirmMinusText.setPosition(minusX + adjustW / 2, amountY + adjustH / 2);
-      this.confirmPlusText.setPosition(plusX + adjustW / 2, amountY + adjustH / 2);
-      this.drawConfirmInputBox(this.confirmInputBox, inputX, amountY - 1, inputW, inputH);
-      this.confirmInputZone.setPosition(inputX, amountY - 1).setSize(inputW, inputH);
-      this.confirmAmountLabel.setText(String(this.confirmAmount));
-      this.confirmAmountLabel.setPosition(Math.floor(w / 2), amountY + adjustH / 2);
-    }
-
-    this.drawConfirmButton(this.confirmYesBtn, yesX, btnY, btnW, btnH);
-    this.drawConfirmButton(this.confirmNoBtn, noX, btnY, btnW, btnH);
-    this.confirmYesZone.setPosition(yesX, btnY).setSize(btnW, btnH);
-    this.confirmNoZone.setPosition(noX, btnY).setSize(btnW, btnH);
-    this.confirmYesLabel.setPosition(yesX + btnW / 2, btnY + btnH / 2);
-    this.confirmNoLabel.setPosition(noX + btnW / 2, btnY + btnH / 2);
-  }
-
-  private adjustConfirmAmount(delta: number) {
-    if (this.confirmMode !== "dropCount") {
-      return;
-    }
-    this.confirmAmount = Phaser.Math.Clamp(this.confirmAmount + delta, 0, this.confirmMaxAmount);
-    this.confirmHint.setText("Escribi cantidad o usa +/-");
-    this.layoutConfirmDialog();
   }
 
   private cycleMacroAction(delta: number) {
     const prevAction = this.macroEditorConfig.action;
     const currentIndex = MACRO_ACTIONS.indexOf(prevAction);
-    const nextIndex =
-      (currentIndex + delta + MACRO_ACTIONS.length) % MACRO_ACTIONS.length;
+    const nextIndex = (currentIndex + delta + MACRO_ACTIONS.length) % MACRO_ACTIONS.length;
     this.macroEditorConfig.action = MACRO_ACTIONS[nextIndex];
     if (this.macroEditorConfig.action === "cast_spell") {
       if (
@@ -2601,7 +2188,6 @@ this.inventoryPanel = createInventoryPanel(this.scene, 0, 0, {
     this.macroEditorItemOptionsForAction = null;
   }
 
-  /** Mantiene itemId + casillero alineados con las opciones filtradas por acción. */
   private syncMacroEditorItemSelection(preferredSlotIndex: number | null) {
     const options = this.macroEditorConfig.itemOptions;
     if (options.length === 0) {
@@ -2706,9 +2292,7 @@ this.inventoryPanel = createInventoryPanel(this.scene, 0, 0, {
 
     const lineHeight = 16;
     const maxLines = Math.max(1, Math.floor(this.chatTextArea.h / lineHeight));
-    const filtered = this.chatHistory.filter(
-      (entry) => entry.channel === this.activeChatTab
-    );
+    const filtered = this.chatHistory.filter((entry) => entry.channel === this.activeChatTab);
     const maxScroll = Math.max(0, filtered.length - maxLines);
 
     if (deltaY < 0) {
@@ -2861,28 +2445,6 @@ this.inventoryPanel = createInventoryPanel(this.scene, 0, 0, {
     this.macroEditorCancelZone.setPosition(valueX + 8, btnY).setSize(saveBtnW, fieldH);
     this.macroEditorSaveLabel.setPosition(valueX - saveBtnW - 8 + saveBtnW / 2, btnY + fieldH / 2);
     this.macroEditorCancelLabel.setPosition(valueX + 8 + saveBtnW / 2, btnY + fieldH / 2);
-
-  }
-
-  private writeConfirmAmountDigit(digit: string) {
-    if (this.confirmMode !== "dropCount") {
-      return;
-    }
-    const current = String(this.confirmAmount);
-    const nextRaw = current === "0" ? digit : `${current}${digit}`;
-    this.confirmAmount = Phaser.Math.Clamp(Number.parseInt(nextRaw, 10), 0, this.confirmMaxAmount);
-    this.confirmHint.setText("Escribi cantidad o usa +/-");
-    this.layoutConfirmDialog();
-  }
-
-  private backspaceConfirmAmount() {
-    if (this.confirmMode !== "dropCount") {
-      return;
-    }
-    const next = Math.floor(this.confirmAmount / 10);
-    this.confirmAmount = Phaser.Math.Clamp(next, 0, this.confirmMaxAmount);
-    this.confirmHint.setText("Escribi cantidad o usa +/-");
-    this.layoutConfirmDialog();
   }
 
   private drawConfirmPanel(
@@ -2901,20 +2463,6 @@ this.inventoryPanel = createInventoryPanel(this.scene, 0, 0, {
     g.strokeRect(x + 2.5, y + 2.5, w - 5, h - 5);
   }
 
-  private drawConfirmInputBox(
-    g: Phaser.GameObjects.Graphics,
-    x: number,
-    y: number,
-    w: number,
-    h: number
-  ) {
-    g.clear();
-    g.fillStyle(0x070a10, 1);
-    g.fillRect(x, y, w, h);
-    g.lineStyle(1, this.confirmInputActive ? 0xffd37a : 0x45566d, 1);
-    g.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
-  }
-
   private drawConfirmButton(
     g: Phaser.GameObjects.Graphics,
     x: number,
@@ -2927,6 +2475,249 @@ this.inventoryPanel = createInventoryPanel(this.scene, 0, 0, {
     g.fillRect(x, y, w, h);
     g.lineStyle(1, COLORS.panelBorder, 1);
     g.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
+  }
+
+  private drawSpellPanelButton(
+    g: Phaser.GameObjects.Graphics,
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+    primary = false
+  ) {
+    const fill = primary ? 0x7a261a : 0x2b1512;
+    const border = primary ? 0xa63f32 : 0x8f4737;
+    const innerBorder = primary ? 0xc2664f : 0x5b261f;
+    const highlightAlpha = primary ? 0.14 : 0.08;
+
+    g.clear();
+    g.fillStyle(fill, 1);
+    g.fillRect(x, y, w, h);
+    g.fillStyle(0xffffff, highlightAlpha);
+    g.fillRect(x + 1, y + 1, Math.max(0, w - 2), Math.max(1, Math.floor(h * 0.24)));
+    g.lineStyle(1, border, 1);
+    g.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
+    if (w > 4 && h > 4) {
+      g.lineStyle(1, innerBorder, 0.9);
+      g.strokeRect(x + 1.5, y + 1.5, w - 3, h - 3);
+    }
+  }
+
+  private buildStatsOverlay() {
+    this.statsOverlay = this.scene.add.container(0, 0).setScrollFactor(0).setVisible(false);
+    this.statsOverlayDim = this.scene.add.graphics().setScrollFactor(0);
+    this.statsOverlayPanel = this.scene.add.graphics().setScrollFactor(0);
+    this.statsOverlayTitle = this.makeText("Estadisticas", 14, "#5c4033", true).setOrigin(
+      0.5,
+      0
+    );
+    this.statsOverlayCloseBtn = this.scene.add.graphics().setScrollFactor(0);
+    this.statsOverlayCloseLabel = this.makeText("Volver", 10, "#fbf0d9", true).setOrigin(0.5, 0.5);
+    this.statsOverlayCloseZone = this.scene.add
+      .zone(0, 0, 1, 1)
+      .setOrigin(0, 0)
+      .setInteractive({ useHandCursor: true });
+    this.statsOverlayCloseZone.on("pointerdown", () => this.closeStatsOverlay());
+    this.statsOverlayDim.setInteractive(
+      new Phaser.Geom.Rectangle(0, 0, 1, 1),
+      Phaser.Geom.Rectangle.Contains
+    );
+    this.statsOverlayDim.on("pointerdown", () => this.closeStatsOverlay());
+
+    for (let i = 0; i < 2; i += 1) {
+      this.statsOverlayAttrTexts.push(this.makeText("", 10, "#5c4033", i === 0));
+    }
+    this.statsOverlaySectionTitles.push(
+      this.makeText("Asesinatos", 11, "#5c4033", true)
+    );
+
+    this.statsOverlay.add([
+      this.statsOverlayDim,
+      this.statsOverlayPanel,
+      this.statsOverlayTitle,
+      this.statsOverlayCloseBtn,
+      this.statsOverlayCloseLabel,
+      this.statsOverlayCloseZone,
+      ...this.statsOverlayAttrTexts,
+      ...this.statsOverlaySectionTitles,
+      ...this.statsKillTexts,
+    ]);
+    this.root.add(this.statsOverlay);
+  }
+
+  /** Rectángulo en pantalla que cubre toda la grilla de inventario (5×4). */
+  private getInventoryGridScreenRect(): { x: number; y: number; w: number; h: number } {
+    const lastIndex = INVENTORY_COLS * INVENTORY_ROWS - 1;
+    const first = this.inventoryPanel.slots[0];
+    const last = this.inventoryPanel.slots[lastIndex];
+    const container = this.inventoryPanel.container;
+    if (!first || !last) {
+      return { ...this.inventoryPanelGeom };
+    }
+    return {
+      x: container.x + first.x,
+      y: container.y + first.y,
+      w: last.x + last.displayWidth - first.x,
+      h: last.y + last.displayHeight - first.y,
+    };
+  }
+
+  private buildInventoryOptionsMenu() {
+    const menuItems: { id: "options" | "stats"; label: string }[] = [
+      { id: "options", label: "Opciones" },
+      { id: "stats", label: "Estadísticas" },
+    ];
+
+    this.inventoryOptionsMenu = this.scene.add
+      .container(0, 0)
+      .setScrollFactor(0)
+      .setVisible(false);
+    this.inventoryOptionsMenuDim = this.scene.add.graphics().setScrollFactor(0);
+    this.inventoryOptionsMenuDim.setInteractive(
+      new Phaser.Geom.Rectangle(0, 0, 1, 1),
+      Phaser.Geom.Rectangle.Contains
+    );
+    this.inventoryOptionsMenuDim.on("pointerdown", () => this.closeInventoryOptionsMenu());
+
+    for (const item of menuItems) {
+      const bg = this.scene.add
+        .image(0, 0, FONDO_BOTONES_TEXTURE_KEY)
+        .setOrigin(0, 0)
+        .setScrollFactor(0);
+      const label = this.makeText(item.label, 9, "#e6edf3", true).setOrigin(0.5, 0.5);
+      const hit = this.scene.add
+        .zone(0, 0, 1, 1)
+        .setOrigin(0, 0)
+        .setInteractive({ useHandCursor: true });
+      hit.on(
+        "pointerdown",
+        (
+          _pointer: Phaser.Input.Pointer,
+          _localX: number,
+          _localY: number,
+          event: Phaser.Types.Input.EventData
+        ) => {
+          event.stopPropagation();
+          this.handleInventoryOptionsMenuPick(item.id);
+        }
+      );
+      this.inventoryOptionsMenuEntries.push({ id: item.id, bg, label, hit });
+    }
+
+    this.inventoryOptionsMenu.add([
+      this.inventoryOptionsMenuDim,
+      ...this.inventoryOptionsMenuEntries.flatMap((entry) => [entry.bg, entry.label, entry.hit]),
+    ]);
+    this.root.add(this.inventoryOptionsMenu);
+  }
+
+  private layoutInventoryOptionsMenu() {
+    if (!this.inventoryOptionsMenuVisible) {
+      return;
+    }
+
+    const { x, y, w, h } = this.getInventoryGridScreenRect();
+    if (w <= 0 || h <= 0) {
+      return;
+    }
+
+    this.inventoryOptionsMenuDim.clear();
+    this.inventoryOptionsMenuDim.input?.hitArea.setTo(x, y, w, h);
+
+    const rowCount = this.inventoryOptionsMenuEntries.length;
+    const pad = 10;
+    const rowGap = 6;
+    const rowH = Math.min(24, Math.max(18, Math.floor((h - pad * 2 - rowGap * (rowCount - 1)) / rowCount)));
+    const btnW = Math.min(w - pad * 2, Math.max(72, Math.floor(w * 0.72)));
+    const stackH = rowCount * rowH + (rowCount - 1) * rowGap;
+    const btnX = x + Math.floor((w - btnW) / 2);
+    const firstBtnY = y + Math.floor((h - stackH) / 2);
+    const fontPx = Math.max(8, Math.min(10, Math.floor(rowH * 0.42)));
+
+    this.inventoryOptionsMenuEntries.forEach((entry, index) => {
+      const btnY = firstBtnY + index * (rowH + rowGap);
+      entry.bg.setPosition(btnX, btnY).setDisplaySize(btnW, rowH);
+      entry.label
+        .setFontSize(`${fontPx}px`)
+        .setPosition(btnX + btnW / 2, btnY + rowH / 2);
+      entry.hit.setPosition(btnX, btnY).setSize(btnW, rowH);
+    });
+  }
+
+  private layoutStatsOverlay() {
+    if (!this.statsOverlayVisible) {
+      return;
+    }
+
+    const w = this.scene.scale.width;
+    const h = this.scene.scale.height;
+    const viewport = getGameViewport(w, h);
+    const panelW = Math.min(270, Math.floor(viewport.width * 0.88));
+    const panelH = Math.min(194, Math.floor(viewport.height * 0.82));
+    const panelX = viewport.x + Math.floor((viewport.width - panelW) / 2);
+    const panelY = viewport.y + Math.floor((viewport.height - panelH) / 2);
+    const pad = 12;
+    const leftX = panelX + pad;
+
+    this.statsOverlayDim.clear();
+    this.statsOverlayDim.fillStyle(0x0a0c10, 0.6);
+    this.statsOverlayDim.fillRect(viewport.x, viewport.y, viewport.width, viewport.height);
+    this.statsOverlayDim.input?.hitArea.setTo(viewport.x, viewport.y, viewport.width, viewport.height);
+
+    this.statsOverlayPanel.clear();
+    this.statsOverlayPanel.fillStyle(0xeadbb9, 0.98);
+    this.statsOverlayPanel.fillRect(panelX, panelY, panelW, panelH);
+    this.statsOverlayPanel.lineStyle(2, 0x6f4e37, 0.95);
+    this.statsOverlayPanel.strokeRect(panelX + 0.5, panelY + 0.5, panelW - 1, panelH - 1);
+
+    this.statsOverlayTitle.setPosition(panelX + panelW / 2, panelY + 10);
+    const closeW = 58;
+    const closeH = 20;
+    const closeX = panelX + panelW - pad - closeW;
+    const closeY = panelY + 12;
+    this.statsOverlayCloseBtn.clear();
+    this.statsOverlayCloseBtn.fillStyle(0x8a6c5b, 1);
+    this.statsOverlayCloseBtn.fillRect(closeX, closeY, closeW, closeH);
+    this.statsOverlayCloseBtn.lineStyle(1, 0x6f4e37, 0.95);
+    this.statsOverlayCloseBtn.strokeRect(closeX + 0.5, closeY + 0.5, closeW - 1, closeH - 1);
+    this.statsOverlayCloseZone.setPosition(closeX, closeY).setSize(closeW, closeH);
+    this.statsOverlayCloseLabel.setPosition(closeX + closeW / 2, closeY + closeH / 2);
+
+    const infoY = panelY + 44;
+    const infoLines = [
+      `Nombre: ${this.stats.name}`,
+      `Nivel: ${this.stats.level}`,
+    ];
+    this.statsOverlayAttrTexts.forEach((text, index) => {
+      text.setPosition(leftX, infoY + index * 16);
+      text.setText(infoLines[index] ?? "");
+      text.setColor("#5c4033");
+    });
+
+    const killsTitle = this.statsOverlaySectionTitles[0];
+    const sectionY = infoY + 42;
+    killsTitle.setPosition(leftX, sectionY);
+
+    const killsTop = sectionY + 16;
+    const factionKills = {
+      imperial: this.killStats.imperialKilled ?? 0,
+      armada: this.killStats.armadaKilled ?? 0,
+      caos: this.killStats.caosKilled ?? 0,
+      renegade: this.killStats.renegadeKilled ?? this.killStats.usersKilled,
+    };
+
+    const killLines = [
+      `Imperiales: ${factionKills.imperial}`,
+      `Armada: ${factionKills.armada}`,
+      `Caos: ${factionKills.caos}`,
+      `Renegados: ${factionKills.renegade}`,
+    ];
+    this.statsKillTexts.forEach((text, index) => {
+      text.setPosition(leftX, killsTop + index * 15);
+      text.setText(killLines[index] ?? "");
+      text.setColor("#5c4033");
+      text.setVisible(index < killLines.length);
+    });
   }
 
   /** Zona clickeable sin dibujar encima del arte de fondoBotones. */
@@ -3072,6 +2863,12 @@ this.inventoryPanel = createInventoryPanel(this.scene, 0, 0, {
     if (!slot) return;
 
     this.inventorySlotItemIds[slotIndex] = itemId ?? null;
+    if (!this.scene.textures.exists(textureKey) && itemId) {
+      const item = getItemDefinition(itemId as never);
+      if (item) {
+        this.loadMissingInventoryIcon(slotIndex, item.textureKey, item.assetPath, count, itemId);
+      }
+    }
   
     if (this.inventoryIcons[slotIndex]) {
       this.inventoryIcons[slotIndex].setTexture(textureKey);
@@ -3090,6 +2887,33 @@ this.inventoryPanel = createInventoryPanel(this.scene, 0, 0, {
 
     this.updateInventoryStackLabel(slotIndex, count);
     this.updateInventoryEquippedLabel(slotIndex);
+  }
+
+  private loadMissingInventoryIcon(
+    slotIndex: number,
+    textureKey: string,
+    assetPath: string,
+    count: number,
+    itemId: string
+  ) {
+    if (!assetPath || this.scene.textures.exists(textureKey) || this.loadingItemTextureKeys.has(textureKey)) {
+      return;
+    }
+
+    this.loadingItemTextureKeys.add(textureKey);
+    this.scene.load.image(textureKey, assetPath);
+    this.scene.load.once(`filecomplete-image-${textureKey}`, () => {
+      this.loadingItemTextureKeys.delete(textureKey);
+      if (this.inventorySlotItemIds[slotIndex] === itemId) {
+        this.setInventorySlot(slotIndex, textureKey, count, itemId);
+      }
+    });
+    this.scene.load.once("loaderror", () => {
+      this.loadingItemTextureKeys.delete(textureKey);
+    });
+    if (!this.scene.load.isLoading()) {
+      this.scene.load.start();
+    }
   }
   
   clearInventorySlot(slotIndex: number) {
@@ -3262,8 +3086,6 @@ this.inventoryPanel = createInventoryPanel(this.scene, 0, 0, {
     return [
       this.spellPanelBg,
       this.spellSelectionGfx,
-      this.spellCastBtn,
-      this.spellCastLabel,
       this.spellScrollHintText,
       ...this.spellRows,
     ];
@@ -3316,14 +3138,15 @@ this.inventoryPanel = createInventoryPanel(this.scene, 0, 0, {
     const listY = content.y + listPad;
     const listW = Math.max(48, content.w - listPad * 2 - controlColW);
     const controlX = content.x + content.w - listPad - controlColW;
-    const castH = Math.max(scaleSkinY(18, screenH), footerH - scaleSkinY(4, screenH));
-    const castY = content.y + content.h - castH - scaleSkinY(2, screenH);
-    const listH = Math.max(SPELL_ROW_HEIGHT, castY - listY - scaleSkinY(4, screenH));
-    const rowStride = SPELL_ROW_HEIGHT + SPELL_ROW_GAP;
+    const castH = Math.max(scaleSkinY(42, screenH), footerH);
+    const castY = panel.y + panel.h - castH - scaleSkinY(4, screenH);
+    const listRowGap = 1;
+    const listH = Math.max(SPELL_ROW_HEIGHT, castY - listY - scaleSkinY(2, screenH));
+    const rowStride = SPELL_ROW_HEIGHT + listRowGap;
 
     this.spellVisibleRows = Math.min(
       SPELL_MAX_VISIBLE_ROWS,
-      Math.max(1, Math.floor((listH + SPELL_ROW_GAP) / rowStride))
+      Math.max(1, Math.floor((listH + listRowGap) / rowStride))
     );
 
     const maxScroll = Math.max(0, this.spells.length - this.spellVisibleRows);
@@ -3336,7 +3159,7 @@ this.inventoryPanel = createInventoryPanel(this.scene, 0, 0, {
 
     const listScrollH = Math.max(
       SPELL_ROW_HEIGHT,
-      this.spellVisibleRows * rowStride - SPELL_ROW_GAP
+      this.spellVisibleRows * rowStride - listRowGap
     );
     this.spellListScrollGeom = { x: listX, y: listY, w: listW, h: listScrollH };
 
@@ -3376,8 +3199,8 @@ this.inventoryPanel = createInventoryPanel(this.scene, 0, 0, {
     const reorderBtnW = Math.max(18, controlColW - 2);
     const reorderBtnH = Math.max(14, scaleSkinY(15, screenH));
 
-    this.drawConfirmButton(this.spellUpBtn, controlX, listY, reorderBtnW, reorderBtnH);
-    this.drawConfirmButton(
+    this.drawSpellPanelButton(this.spellUpBtn, controlX, listY, reorderBtnW, reorderBtnH);
+    this.drawSpellPanelButton(
       this.spellDownBtn,
       controlX,
       listY + reorderBtnH + 2,
@@ -3397,10 +3220,14 @@ this.inventoryPanel = createInventoryPanel(this.scene, 0, 0, {
     this.spellUpZone.input!.enabled = canReorderUp;
     this.spellDownZone.input!.enabled = canReorderDown;
     this.spellUpLabel
+      .setText("▲")
+      .setColor("#ffe6c8")
       .setPosition(controlX + reorderBtnW / 2, listY + reorderBtnH / 2)
       .setAlpha(canReorderUp ? 1 : 0.35)
       .setVisible(true);
     this.spellDownLabel
+      .setText("▼")
+      .setColor("#ffe6c8")
       .setPosition(controlX + reorderBtnW / 2, listY + reorderBtnH + 2 + reorderBtnH / 2)
       .setAlpha(canReorderDown ? 1 : 0.35)
       .setVisible(true);
@@ -3417,9 +3244,12 @@ this.inventoryPanel = createInventoryPanel(this.scene, 0, 0, {
       this.spellInfoLabel,
     ].forEach((obj) => obj.setVisible(false));
 
-    this.drawConfirmButton(this.spellCastBtn, listX, castY, listW + controlColW, castH);
-    this.spellCastZone.setPosition(listX, castY).setSize(listW + controlColW, castH);
-    this.spellCastLabel.setPosition(listX + (listW + controlColW) / 2, castY + castH / 2);
+    const spellCastW = listW + controlColW;
+    this.drawSpellPanelButton(this.spellCastBtn, listX, castY, spellCastW, castH, true);
+    this.spellCastZone.setPosition(listX, castY).setSize(spellCastW, castH);
+    this.spellCastLabel
+      .setColor("#fff4e6")
+      .setPosition(listX + spellCastW / 2, castY + castH / 2);
 
     if (maxScroll > 0) {
       const firstVisible = this.spellScrollOffset + 1;
@@ -3429,8 +3259,9 @@ this.inventoryPanel = createInventoryPanel(this.scene, 0, 0, {
       );
       this.spellScrollHintText
         .setText(`${firstVisible}-${lastVisible}/${this.spells.length}`)
-        .setPosition(listX, castY - scaleSkinY(8, screenH))
+        .setPosition(listX, castY - scaleSkinY(6, screenH))
         .setFontSize("8px")
+        .setColor("#d8a475")
         .setVisible(true);
     } else {
       this.spellScrollHintText.setText("").setVisible(false);
@@ -3802,9 +3633,9 @@ this.inventoryPanel = createInventoryPanel(this.scene, 0, 0, {
 
     this.layoutMacroSlots(w, h);
 
-    this.layoutConfirmDialog();
     this.layoutMacroEditorDialog();
     this.layoutStatsOverlay();
+    this.auctionOverlay.layout(getGameViewport(w, h));
     this.layoutInventoryOptionsMenu();
     this.refreshStats();
     this.syncMinimapLayerDepth();
@@ -3815,6 +3646,7 @@ this.inventoryPanel = createInventoryPanel(this.scene, 0, 0, {
     this.layoutMinimapTuneHint();
     this.scene.events.emit("ui-viewport-changed");
   }
+
 
   private layoutMinimapTuneHint() {
     if (!this.minimapLayoutTuneActive || !this.minimapTuneHintText) {
@@ -4005,7 +3837,6 @@ this.inventoryPanel = createInventoryPanel(this.scene, 0, 0, {
       }
     });
     this.redrawInventorySelection();
-    this.layoutConfirmDialog();
     this.layoutMacroEditorDialog();
     this.layoutInventoryOptionsMenu();
 
@@ -4183,12 +4014,16 @@ this.inventoryPanel = createInventoryPanel(this.scene, 0, 0, {
         }
       }
 
-      this.drawConfirmButton(this.spellUpBtn, controlX, listY, 22, 20);
-      this.drawConfirmButton(this.spellDownBtn, controlX, listY + 24, 22, 20);
-      this.drawConfirmButton(this.spellInfoBtn, controlX, listY + 48, 22, 20);
-      this.drawConfirmButton(this.spellScrollUpBtn, controlX, listY + 72, 22, 16);
-      this.drawConfirmButton(this.spellScrollDownBtn, controlX, listY + 90, 22, 16);
-      this.drawConfirmButton(this.spellCastBtn, panelX + listPad, panelY + panelH - 26, panelW - listPad * 2, 20);
+      this.drawSpellPanelButton(this.spellUpBtn, controlX, listY, 22, 20);
+      this.drawSpellPanelButton(this.spellDownBtn, controlX, listY + 24, 22, 20);
+      this.drawSpellPanelButton(this.spellInfoBtn, controlX, listY + 48, 22, 20);
+      this.drawSpellPanelButton(this.spellScrollUpBtn, controlX, listY + 72, 22, 16);
+      this.drawSpellPanelButton(this.spellScrollDownBtn, controlX, listY + 90, 22, 16);
+      const spellCastX = panelX + listPad;
+      const spellCastH = 38;
+      const spellCastY = panelY + panelH - spellCastH - 2;
+      const spellCastW = panelW - listPad * 2;
+      this.drawSpellPanelButton(this.spellCastBtn, spellCastX, spellCastY, spellCastW, spellCastH, true);
 
       this.spellUpBtn.setAlpha(canReorderUp ? 1 : 0.35);
       this.spellDownBtn.setAlpha(canReorderDown ? 1 : 0.35);
@@ -4203,14 +4038,24 @@ this.inventoryPanel = createInventoryPanel(this.scene, 0, 0, {
       this.spellScrollUpZone.input!.enabled = canScrollUp;
       this.spellScrollDownZone.input!.enabled = canScrollDown;
       this.spellInfoZone.setPosition(controlX, listY + 48).setSize(22, 20);
-      this.spellCastZone
-        .setPosition(panelX + listPad, panelY + panelH - 26)
-        .setSize(panelW - listPad * 2, 20);
+      this.spellCastZone.setPosition(spellCastX, spellCastY).setSize(spellCastW, spellCastH);
 
-      this.spellUpLabel.setPosition(controlX + 11, listY + 10).setAlpha(canReorderUp ? 1 : 0.35);
-      this.spellDownLabel.setPosition(controlX + 11, listY + 34).setAlpha(canReorderDown ? 1 : 0.35);
-      this.spellScrollUpLabel.setPosition(controlX + 11, listY + 80).setAlpha(canScrollUp ? 1 : 0.35);
+      this.spellUpLabel
+        .setText("▲")
+        .setColor("#ffe6c8")
+        .setPosition(controlX + 11, listY + 10)
+        .setAlpha(canReorderUp ? 1 : 0.35);
+      this.spellDownLabel
+        .setText("▼")
+        .setColor("#ffe6c8")
+        .setPosition(controlX + 11, listY + 34)
+        .setAlpha(canReorderDown ? 1 : 0.35);
+      this.spellScrollUpLabel
+        .setColor("#ffe6c8")
+        .setPosition(controlX + 11, listY + 80)
+        .setAlpha(canScrollUp ? 1 : 0.35);
       this.spellScrollDownLabel
+        .setColor("#ffe6c8")
         .setPosition(controlX + 11, listY + 98)
         .setAlpha(canScrollDown ? 1 : 0.35);
       if (maxScroll > 0) {
@@ -4218,13 +4063,15 @@ this.inventoryPanel = createInventoryPanel(this.scene, 0, 0, {
         const lastVisible = Math.min(this.spells.length, this.spellScrollOffset + this.spellVisibleRows);
         this.spellScrollHintText
           .setText(`${firstVisible}-${lastVisible}/${this.spells.length}`)
-          .setPosition(listX, panelY + panelH - 40)
+          .setPosition(listX, panelY + panelH - 48)
           .setVisible(true);
       } else {
         this.spellScrollHintText.setText("").setVisible(false);
       }
       this.spellInfoLabel.setPosition(controlX + 11, listY + 58);
-      this.spellCastLabel.setPosition(panelX + panelW / 2, panelY + panelH - 16);
+      this.spellCastLabel
+        .setColor("#fff4e6")
+        .setPosition(spellCastX + spellCastW / 2, spellCastY + spellCastH / 2);
     } else {
       this.spellPanelBg.clear();
       this.spellSelectionGfx.clear();

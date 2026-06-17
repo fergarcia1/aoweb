@@ -8,6 +8,7 @@ import {
 } from "../network/authApi";
 
 const AUTH_REQUIRED = import.meta.env.VITE_AUTH_REQUIRED === "true";
+const HERO_BACKGROUND_URL = "/assets/ui/aoweb-dragon-war-loading.png";
 
 export class AuthScene extends Phaser.Scene {
   private overlay?: HTMLDivElement;
@@ -37,27 +38,45 @@ export class AuthScene extends Phaser.Scene {
           inset: 0;
           display: grid;
           place-items: center;
-          background: rgba(13,17,23,0.92);
+          background:
+            linear-gradient(90deg, rgba(8, 10, 16, 0.64), rgba(16, 7, 6, 0.72)),
+            url("${HERO_BACKGROUND_URL}") center center / cover no-repeat;
           z-index: 20;
-          font-family: "Segoe UI", Tahoma, sans-serif;
-          color: #e6edf3;
+          font-family: Arial, sans-serif;
+          color: #f3dcc5;
+        }
+        #aoweb-auth::after {
+          content: "";
+          position: fixed;
+          inset: 0;
+          pointer-events: none;
+          background:
+            radial-gradient(circle at 50% 44%, rgba(255, 219, 150, 0.1), transparent 26%),
+            linear-gradient(180deg, rgba(0, 0, 0, 0.18), rgba(0, 0, 0, 0.52));
         }
         #aoweb-auth .panel {
           width: min(360px, calc(100vw - 32px));
-          border: 1px solid #5c4a22;
-          background: #14100c;
-          box-shadow: 0 0 0 1px #1f2937, 0 16px 48px rgba(0,0,0,0.45);
-          padding: 22px;
+          position: relative;
+          z-index: 1;
+          border: 1px solid #b7332b;
+          background: linear-gradient(180deg, rgba(25, 11, 9, 0.92), rgba(9, 7, 8, 0.96));
+          box-shadow: 0 16px 48px rgba(0,0,0,0.65);
+          padding: 24px;
+          border-radius: 4px;
+          backdrop-filter: blur(5px);
         }
         #aoweb-auth h1 {
           margin: 0 0 6px;
-          font-size: 24px;
-          color: #d4b65a;
+          font-size: 30px;
+          color: #f1c44d;
           text-align: center;
+          font-weight: bold;
+          letter-spacing: 0.08em;
+          text-shadow: 0 2px 0 #4b100d, 0 0 18px rgba(255, 85, 48, 0.38);
         }
         #aoweb-auth p {
           margin: 0 0 18px;
-          color: #9aa4b2;
+          color: #d8b887;
           text-align: center;
           font-size: 13px;
         }
@@ -65,40 +84,51 @@ export class AuthScene extends Phaser.Scene {
           display: block;
           margin: 10px 0 5px;
           font-size: 13px;
-          color: #c7d0dd;
+          color: #d8b887;
+          text-transform: uppercase;
+          font-weight: bold;
         }
         #aoweb-auth input {
           width: 100%;
           box-sizing: border-box;
-          border: 1px solid #3d4858;
-          background: #0d1117;
-          color: #e6edf3;
+          border: 1px solid #8d2a24;
+          background: rgba(10, 8, 9, 0.86);
+          color: #ffffff;
           padding: 10px 11px;
           font-size: 14px;
           outline: none;
+          border-radius: 0;
         }
         #aoweb-auth input:focus {
-          border-color: #d4b65a;
+          border-color: #f1c44d;
         }
         #aoweb-auth button {
           width: 100%;
           margin-top: 14px;
-          border: 1px solid #8a6f2a;
-          background: #2c2414;
-          color: #f2d77a;
+          border: 1px solid #d4a72c;
+          background: #4b1714;
+          color: #ffe6c8;
           padding: 10px;
           cursor: pointer;
           font-weight: 700;
+          border-radius: 0;
+        }
+        #aoweb-auth button:hover {
+          background: #6f211d;
         }
         #aoweb-auth .link {
           border: 0;
           background: transparent;
-          color: #9fb3d9;
+          color: #f1c44d;
           font-weight: 400;
           margin-top: 8px;
         }
+        #aoweb-auth .link:hover {
+          text-decoration: underline;
+          background: transparent;
+        }
         #aoweb-auth .dev {
-          color: #9aa4b2;
+          color: #d8b887;
         }
         #aoweb-auth .error {
           min-height: 18px;
@@ -142,6 +172,20 @@ export class AuthScene extends Phaser.Scene {
       event.preventDefault();
       void this.submit();
     });
+
+    const stopPropagation = (e: Event) => e.stopPropagation();
+    const userEl = overlay.querySelector("#auth-user");
+    const passEl = overlay.querySelector("#auth-pass");
+    if (userEl) {
+      userEl.addEventListener("keydown", stopPropagation);
+      userEl.addEventListener("keyup", stopPropagation);
+      userEl.addEventListener("keypress", stopPropagation);
+    }
+    if (passEl) {
+      passEl.addEventListener("keydown", stopPropagation);
+      passEl.addEventListener("keyup", stopPropagation);
+      passEl.addEventListener("keypress", stopPropagation);
+    }
   }
 
   private async submit(): Promise<void> {

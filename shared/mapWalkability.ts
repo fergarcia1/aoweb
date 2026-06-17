@@ -277,11 +277,13 @@ export function isLegacyBlockedDoorwayTile(
   }
 
   const tile = resolveMapTile(map.tiles, tileX, tileY, tileOverrides);
-
   if (tile === undefined || !BLOCKED_TILE_IDS.has(tile)) {
-
     return false;
+  }
 
+  const overrideTile = getMapTileOverride(tileOverrides, tileX, tileY);
+  if (overrideTile !== undefined && BLOCKED_TILE_IDS.has(overrideTile)) {
+    return false;
   }
 
 
@@ -345,7 +347,10 @@ export function isLegacyInvisibleObjectBlock(
 
   if ((legacy.L4[tileY]?.[tileX] ?? 0) !== 0) return false;
 
-
+  const overrideTile = getMapTileOverride(tileOverrides, tileX, tileY);
+  if (overrideTile !== undefined && BLOCKED_TILE_IDS.has(overrideTile)) {
+    return false;
+  }
 
   let blockedIn3x3 = 0;
 
@@ -447,21 +452,18 @@ export function isMapTileWalkable(
 
   const isWater = isWaterTile(map, tileX, tileY, tileOverrides);
 
-  if (isAquatic) {
-    // Aquatic mobs can ONLY move on water tiles.
-    return isWater;
+  if (isAquatic && !isWater) {
+    return false;
   }
 
   // Non-aquatic mobs/players:
-  if (isWater && !isLegacyShoreWaterTile(map, tileX, tileY)) {
+  if (!isAquatic && isWater && !isLegacyShoreWaterTile(map, tileX, tileY)) {
     // Cannot walk on deep water.
     return false;
   }
 
   if (isMapCollisionDenyTile(mapId, tileX, tileY)) {
-
     return false;
-
   }
 
 
@@ -599,45 +601,49 @@ export function findNearestWalkableSpawnTile(
 
 
   while (queue.length > 0) {
-
     const current = queue.shift()!;
-
     if (
-
       isMapTileWalkable(mapId, current.tileX, current.tileY) &&
-
       !isBlocked(current.tileX, current.tileY)
-
     ) {
-
       return { tileX: current.tileX, tileY: current.tileY };
-
     }
-
     if (current.dist >= maxRadius) continue;
-
     for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
-
       const neighbor = { tileX: current.tileX + dx, tileY: current.tileY + dy };
-
       const key = `${neighbor.tileX},${neighbor.tileY}`;
-
       if (!visited.has(key)) {
-
         visited.add(key);
-
         queue.push({ ...neighbor, dist: current.dist + 1 });
-
       }
-
     }
-
   }
 
+  // Fallback: try to find an aquatic (water) tile if no land tile was found
+  queue.push({ tileX: origin.tileX, tileY: origin.tileY, dist: 0 });
+  visited.clear();
+  visited.add(`${origin.tileX},${origin.tileY}`);
 
+  while (queue.length > 0) {
+    const current = queue.shift()!;
+    if (
+      isMapTileWalkable(mapId, current.tileX, current.tileY, undefined, true) &&
+      !isBlocked(current.tileX, current.tileY)
+    ) {
+      return { tileX: current.tileX, tileY: current.tileY };
+    }
+    if (current.dist >= maxRadius) continue;
+    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
+      const neighbor = { tileX: current.tileX + dx, tileY: current.tileY + dy };
+      const key = `${neighbor.tileX},${neighbor.tileY}`;
+      if (!visited.has(key)) {
+        visited.add(key);
+        queue.push({ ...neighbor, dist: current.dist + 1 });
+      }
+    }
+  }
 
   return { tileX: origin.tileX, tileY: origin.tileY };
-
 }
 
 

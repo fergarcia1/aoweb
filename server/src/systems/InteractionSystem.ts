@@ -126,7 +126,7 @@ export class InteractionSystem {
         amount
       );
       if (removed <= 0) return;
-      const { added, remaining } = this.addToBankSlots(session, itemId, removed);
+      const { added, remaining } = this.world.addToBankSlots(session, itemId, removed);
       if (remaining > 0) {
         addToServerInventory(session.inventorySlots, itemId, remaining);
       }
@@ -143,7 +143,7 @@ export class InteractionSystem {
         );
       }
     } else {
-      const { removed, itemId } = this.removeFromBankSlot(
+      const { removed, itemId } = this.world.removeFromBankSlot(
         session,
         slotIndex,
         amount
@@ -155,7 +155,7 @@ export class InteractionSystem {
         removed
       );
       if (remaining > 0) {
-        this.addToBankSlots(session, itemId, remaining);
+        this.world.addToBankSlots(session, itemId, remaining);
       }
       if (added <= 0) {
         this.world.sendCombatLog(session, "No hay espacio en tu inventario.");
@@ -341,6 +341,7 @@ export class InteractionSystem {
       player: session.toNetState(),
     });
     this.world.broadcastPlayerMoved(session);
+    this.world.notifyPartyOfHpChange(session.id);
     void this.world.persistSession(session).catch((error) => {
       console.error("[revive] persist failed:", error);
     });
@@ -365,28 +366,30 @@ export class InteractionSystem {
     const obj = map.legacyObjs?.find((o) => o.tileX === tileX && o.tileY === tileY);
     if (obj) {
       const def = resolveImportedObjDef(obj.objIndex);
-      if (def?.objType === 14) {
+      if (def?.objType === 6 && (def.indexAbierta > 0 || def.indexCerrada > 0)) {
         // Puerta
         const dynamicObjs = this.world.getDynamicMapObjs(session.mapId) || [];
         const entry = dynamicObjs.find(
           (d) => d.tileX === tileX && d.tileY === tileY
         );
-        const isOpen = entry ? entry.isOpen : false;
+        const isOpen = entry ? entry.isOpen : (obj.objIndex === def.indexAbierta);
         const nextOpen = !isOpen;
+
+        const nextIndex = nextOpen ? def.indexAbierta : def.indexCerrada;
 
         if (entry) {
           entry.isOpen = nextOpen;
+          entry.objIndex = nextIndex;
         } else {
           dynamicObjs.push({
             tileX,
             tileY,
-            objIndex: obj.objIndex,
+            objIndex: nextIndex,
             isOpen: nextOpen,
           });
           this.world.setDynamicMapObjs(session.mapId, dynamicObjs);
         }
 
-        const nextIndex = nextOpen ? obj.objIndex + 1 : obj.objIndex;
         this.world.setDoorTileOverride(session.mapId, tileX, tileY, nextOpen);
 
         this.world.broadcastToAoi(session.mapId, tileX, tileY, {
@@ -400,6 +403,63 @@ export class InteractionSystem {
         });
         return;
       }
+    }
+  }
+
+  public handleNpcInteraction(session: PlayerSession, npcId: string) {
+    if (!session.joined || session.hp <= 0) return;
+    const npcs = getNpcsForMap(session.mapId);
+    const npc = npcs.find((n) => n.id === npcId);
+    if (!npc) return;
+
+    const distance = Math.max(
+      Math.abs(session.tileX - npc.tileX),
+      Math.abs(session.tileY - npc.tileY)
+    );
+
+    if (distance > MERCHANT_INTERACT_MAX_TILE_DISTANCE) {
+      this.world.sendCombatLog(session, "Estás demasiado lejos.");
+      return;
+    }
+
+    if (npc.role === "priest") {
+      this.handleRevive(session, "priest");
+    } else if (isMerchantRole(npc.role)) {
+      this.world.send(session, {
+        type: "inventory_updated",
+        inventory: session.inventorySlots.map((slot) => ({
+          slotIndex: slot.slotIndex,
+          itemId: slot.itemId,
+          amount: slot.amount,
+          isEquipped: slot.isEquipped,
+        })),
+        gold: session.gold,
+      });
+    } else if (npc.role === "banker") {
+      this.world.send(session, {
+        type: "inventory_updated",
+        inventory: session.inventorySlots.map((slot) => ({
+          slotIndex: slot.slotIndex,
+          itemId: slot.itemId,
+          amount: slot.amount,
+          isEquipped: slot.isEquipped,
+        })),
+        gold: session.gold,
+      });
+      this.world.sendBankUpdated(session);
+    } else if (npc.role === "auctioneer") {
+      this.world.send(session, {
+        type: "inventory_updated",
+        inventory: session.inventorySlots.map((slot) => ({
+          slotIndex: slot.slotIndex,
+          itemId: slot.itemId,
+          amount: slot.amount,
+          isEquipped: slot.isEquipped,
+        })),
+        gold: session.gold,
+      });
+      // @ts-ignore
+      this.world.auctionSystem.sendAuctionCatalog(session);
     }
   }
 
@@ -428,57 +488,6 @@ export class InteractionSystem {
       return false;
     }
     return true;
-  }
-
-  private addToBankSlots(
-    session: PlayerSession,
-    itemId: string,
-    amount: number
-  ): { added: number; remaining: number } {
-    let toAdd = Math.floor(amount);
-    let addedTotal = 0;
-
-    for (const slot of session.bankSlots) {
-      if (slot.itemId === itemId) {
-        slot.amount += toAdd;
-        addedTotal += toAdd;
-        toAdd = 0;
-        break;
-      }
-    }
-
-    if (toAdd > 0) {
-      for (const slot of session.bankSlots) {
-        if (!slot.itemId || slot.amount <= 0) {
-          slot.itemId = itemId;
-          slot.amount = toAdd;
-          addedTotal += toAdd;
-          toAdd = 0;
-          break;
-        }
-      }
-    }
-
-    return { added: addedTotal, remaining: toAdd };
-  }
-
-  private removeFromBankSlot(
-    session: PlayerSession,
-    slotIndex: number,
-    amount: number
-  ): { removed: number; itemId: string | null } {
-    const slot = session.bankSlots[slotIndex];
-    if (!slot?.itemId || slot.amount <= 0 || amount <= 0) {
-      return { removed: 0, itemId: null };
-    }
-    const removed = Math.min(slot.amount, Math.floor(amount));
-    const itemId = slot.itemId;
-    slot.amount -= removed;
-    if (slot.amount <= 0) {
-      slot.itemId = null;
-      slot.amount = 0;
-    }
-    return { removed, itemId };
   }
 
   private applyServerPriestRevivePosition(session: PlayerSession) {

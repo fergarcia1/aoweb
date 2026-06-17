@@ -36,19 +36,48 @@ export type SavedCharacter = {
 
 export type CharacterSlot = SavedCharacter | null;
 
-function getCurrentAccountStorageSuffix(): string {
+function normalizeAccountSegment(value: unknown): string | null {
+  if (typeof value !== "string") {
+    return null;
+  }
+  const normalized = value.trim().toLowerCase();
+  return normalized ? normalized.replace(/[^a-z0-9_-]/g, "_") : null;
+}
+
+function readAuthAccount(): { id?: unknown; username?: unknown } | null {
   const raw = localStorage.getItem(AUTH_ACCOUNT_KEY);
   if (!raw) {
-    return "guest";
+    return null;
   }
   try {
-    const account = JSON.parse(raw) as { id?: unknown };
-    return typeof account.id === "string" && account.id.trim()
-      ? `account_${account.id.trim()}`
-      : "guest";
+    return JSON.parse(raw) as { id?: unknown; username?: unknown };
   } catch {
+    return null;
+  }
+}
+
+function getCurrentAccountStorageSuffix(): string {
+  const account = readAuthAccount();
+  if (!account) {
     return "guest";
   }
+  const username = normalizeAccountSegment(account.username);
+  if (username) {
+    return `account_${username}`;
+  }
+  const id = normalizeAccountSegment(account.id);
+  return id ? `account_${id}` : "guest";
+}
+
+function getLegacyAccountStorageSuffixes(): string[] {
+  const account = readAuthAccount();
+  const primary = getCurrentAccountStorageSuffix();
+  const id = normalizeAccountSegment(account?.id);
+  if (!id) {
+    return [];
+  }
+  const legacy = `account_${id}`;
+  return legacy !== primary ? [legacy] : [];
 }
 
 function getCharacterSlotsStorageKey(): string {
@@ -57,6 +86,14 @@ function getCharacterSlotsStorageKey(): string {
 
 function getActiveSlotStorageKey(): string {
   return `${ACTIVE_SLOT_KEY}_${getCurrentAccountStorageSuffix()}`;
+}
+
+function getLegacyCharacterSlotsStorageKeys(): string[] {
+  return getLegacyAccountStorageSuffixes().map((suffix) => `${STORAGE_KEY}_${suffix}`);
+}
+
+function getLegacyActiveSlotStorageKeys(): string[] {
+  return getLegacyAccountStorageSuffixes().map((suffix) => `${ACTIVE_SLOT_KEY}_${suffix}`);
 }
 
 function isGuestCharacterStorage(): boolean {
@@ -259,7 +296,17 @@ function normalizeSlots(raw: unknown): CharacterSlot[] {
 
 export function loadCharacterSlots(): CharacterSlot[] {
   try {
-    const raw = localStorage.getItem(getCharacterSlotsStorageKey());
+    const storageKey = getCharacterSlotsStorageKey();
+    let raw = localStorage.getItem(storageKey);
+    if (!raw) {
+      for (const legacyKey of getLegacyCharacterSlotsStorageKeys()) {
+        raw = localStorage.getItem(legacyKey);
+        if (raw) {
+          localStorage.setItem(storageKey, raw);
+          break;
+        }
+      }
+    }
     if (!raw) {
       const defaults = createDefaultSlots();
       saveCharacterSlots(defaults);
@@ -281,7 +328,17 @@ export function saveCharacterSlots(slots: CharacterSlot[]): void {
 }
 
 export function getActiveCharacterSlotIndex(): number | null {
-  const raw = localStorage.getItem(getActiveSlotStorageKey());
+  const storageKey = getActiveSlotStorageKey();
+  let raw = localStorage.getItem(storageKey);
+  if (raw === null) {
+    for (const legacyKey of getLegacyActiveSlotStorageKeys()) {
+      raw = localStorage.getItem(legacyKey);
+      if (raw !== null) {
+        localStorage.setItem(storageKey, raw);
+        break;
+      }
+    }
+  }
   if (raw === null) return null;
   const index = Number.parseInt(raw, 10);
   if (!Number.isInteger(index) || index < 0 || index >= CHARACTER_SLOT_COUNT) {

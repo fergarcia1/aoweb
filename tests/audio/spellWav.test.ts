@@ -30,4 +30,10 @@ describe("spell cast audio targets", () => {
     const { wavIndices } = resolveSpellAudioTargets([1]);
     expect(wavIndices.has(239)).toBe(true);
   });
+
+  it("mantiene named wavs para hechizos especiales", () => {
+    const { namedWavs } = resolveSpellAudioTargets([13, 25]);
+    expect(namedWavs.has("furiaUkhrul")).toBe(true);
+    expect(namedWavs.has("apoca")).toBe(true);
+  });
 });

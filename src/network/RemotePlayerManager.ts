@@ -1,5 +1,6 @@
 import Phaser from "phaser";
 import { STEP_DURATION_MS, TILE_SIZE } from "../config";
+import { ensureItemAssetsLoaded } from "../scenes/gameSceneModules/gameSceneAssetQueue";
 import { GHOST_PLAYER_ALPHA } from "../game/deathConfig";
 import {
   GHOST_RACE_ID,
@@ -129,6 +130,15 @@ export type RemoteEntry = {
   invisibleUntilMs: number;
   isMeditating: boolean;
   isNavigating: boolean;
+  lastSyncBodyX?: number;
+  lastSyncBodyY?: number;
+  lastSyncFacing?: Facing;
+  lastSyncIsMoving?: boolean;
+  lastSyncIsGhost?: boolean;
+  lastSyncIsNavigating?: boolean;
+  lastSyncHp?: number;
+  lastSyncHpMax?: number;
+  lastSyncParty?: boolean;
 };
 
 export class RemotePlayerManager {
@@ -495,6 +505,7 @@ export class RemotePlayerManager {
     this.applyBodyFacing(entry);
     this.playRemoteBodyAnim(entry, "idle");
     this.syncRemoteVisuals(entry);
+    this.triggerOnDemandLoading(entry);
 
     return entry;
   }
@@ -531,6 +542,7 @@ export class RemotePlayerManager {
     }
 
     entry.equipment = netEquipmentToLocal(state.equipment);
+    this.triggerOnDemandLoading(entry);
 
     if (state.hp > 0 && !entry.isNavigating) {
       if (entry.isGhost) {
@@ -648,7 +660,34 @@ export class RemotePlayerManager {
       : getRaceFaceLayout(entry.raceId, entry.genderId);
   }
 
-  private syncRemoteVisuals(entry: RemoteEntry) {
+  private syncRemoteVisuals(entry: RemoteEntry, force = false) {
+    const isParty = this.partyMemberIds.has(entry.id);
+
+    if (
+      !force &&
+      entry.lastSyncBodyX === entry.body.x &&
+      entry.lastSyncBodyY === entry.body.y &&
+      entry.lastSyncFacing === entry.facing &&
+      entry.lastSyncIsMoving === entry.isMoving &&
+      entry.lastSyncIsGhost === entry.isGhost &&
+      entry.lastSyncIsNavigating === entry.isNavigating &&
+      entry.lastSyncHp === entry.hp &&
+      entry.lastSyncHpMax === entry.hpMax &&
+      entry.lastSyncParty === isParty
+    ) {
+      return;
+    }
+
+    entry.lastSyncBodyX = entry.body.x;
+    entry.lastSyncBodyY = entry.body.y;
+    entry.lastSyncFacing = entry.facing;
+    entry.lastSyncIsMoving = entry.isMoving;
+    entry.lastSyncIsGhost = entry.isGhost;
+    entry.lastSyncIsNavigating = entry.isNavigating;
+    entry.lastSyncHp = entry.hp;
+    entry.lastSyncHpMax = entry.hpMax;
+    entry.lastSyncParty = isParty;
+
     const depth = this.depthFromFeetY(entry.body.y);
     entry.body.setDepth(depth);
 
@@ -858,6 +897,59 @@ export class RemotePlayerManager {
     }
 
     entry.body.play(playOpts(key), true);
+  }
+
+  private triggerOnDemandLoading(entry: RemoteEntry) {
+    const itemsToLoad: ItemId[] = [];
+    if (entry.equipment.weapon) itemsToLoad.push(entry.equipment.weapon);
+    if (entry.equipment.shield) itemsToLoad.push(entry.equipment.shield);
+    if (entry.equipment.helmet) itemsToLoad.push(entry.equipment.helmet);
+    if (entry.equipment.armor) itemsToLoad.push(entry.equipment.armor);
+
+    for (const itemId of itemsToLoad) {
+      ensureItemAssetsLoaded(this.scene, itemId, {
+        raceId: entry.raceId,
+        onComplete: () => {
+          const activeEntry = this.entries.get(entry.id);
+          if (activeEntry) {
+            this.refreshRemoteTexturesAndGear(activeEntry);
+          }
+        }
+      });
+    }
+  }
+
+  private refreshRemoteTexturesAndGear(entry: RemoteEntry) {
+    if (this.isRemoteDead(entry)) {
+      return;
+    }
+
+    const mockStateEquipment = {
+      weaponId: entry.equipment.weapon,
+      shieldId: entry.equipment.shield,
+      helmetId: entry.equipment.helmet,
+      armorId: entry.equipment.armor,
+      equippedOutfit: entry.equippedOutfit,
+    };
+    const nextOutfit = remoteOutfitFromState({ equipment: mockStateEquipment });
+    entry.armorVisual = remoteArmorVisual(
+      entry.equipment,
+      nextOutfit,
+      entry.raceId
+    );
+    const nextBodyKey = textureKeyForPlayer(
+      nextOutfit,
+      raceBodyTextureKey(entry.raceId, entry.genderId),
+      entry.armorVisual,
+      entry.raceId
+    );
+    if (entry.body.texture.key !== nextBodyKey) {
+      entry.body.setTexture(nextBodyKey);
+      entry.body.anims.stop();
+    }
+
+    this.playRemoteBodyAnim(entry, entry.isMoving ? "walk" : "idle");
+    this.syncRemoteVisuals(entry, true);
   }
 
   private remove(id: string) {

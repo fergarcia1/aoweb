@@ -66,6 +66,19 @@ export class CombatSystem {
     );
   }
 
+  private canAttackMob(session: PlayerSession, mob: MobEntity, silent: boolean = false): boolean {
+    if (mob.aggroTargetId && mob.aggroTargetId !== session.id) {
+      if (!this.world.areInSameParty(session.id, mob.aggroTargetId)) {
+        if (!silent) {
+          this.world.sendCombatLog(session, "Ese mob está peleando con otra persona.");
+        }
+        return false;
+      }
+    }
+    mob.aggroUpdatedAt = Date.now();
+    return true;
+  }
+
   public tickResurrectChannels(): void {
     const now = Date.now();
     for (const [casterId, channel] of [...this.resurrectChannels.entries()]) {
@@ -139,6 +152,8 @@ export class CombatSystem {
 
     const targetMob = this.findMobAtTile(session.mapId, front.x, front.y);
     if (targetMob && targetMob.alive) {
+      if (!this.canAttackMob(session, targetMob)) return;
+
       session.nextAttackAt = now + ATTACK_COOLDOWN_MS;
       const roll = rollAttackDamage(session.attackMin, session.attackMax, {
         canCrit: session.canCrit,
@@ -200,6 +215,7 @@ export class CombatSystem {
     targetTileY: number
   ) {
     session.mp -= spell.manaCost;
+    this.world.sendPlayerState(session, { includeAttributeBuffs: true });
 
     this.world.broadcastGameEvent(session.mapId, targetTileX, targetTileY, {
       kind: "spell_fx",
@@ -272,6 +288,16 @@ export class CombatSystem {
         sourceTileX: session.tileX,
         sourceTileY: session.tileY,
       });
+
+      // Send player_updated to AOI so other players see the updated HP bar above head
+      this.world.broadcastToAoi(healTarget.mapId, healTarget.tileX, healTarget.tileY, {
+        type: "player_updated",
+        player: healTarget.toNetState(),
+      });
+      // Send player_updated to the healed player themselves
+      this.world.send(healTarget, { type: "player_updated", player: healTarget.toNetState() });
+      // Notify party of the HP change
+      this.world.notifyPartyOfHpChange(healTarget.id);
     }
 
     const invisTarget = isInvisibilitySpell(spellId)
@@ -349,6 +375,9 @@ export class CombatSystem {
     if (allyStatBuffApplied) {
       return true;
     }
+    if (healTarget || invisTarget) {
+      return true;
+    }
 
     const spellBehavior = getSpellBehavior(spellId);
     if (spellBehavior?.removeAllEffects) {
@@ -368,6 +397,8 @@ export class CombatSystem {
     }
 
     if (targetMob && isImmobilizeSpell(spellId)) {
+      if (!this.canAttackMob(session, targetMob, isAoE)) return false;
+
       const durationMs = getImmobilizeMobDurationMs(spellId);
       targetMob.immobilizedUntil = Math.max(
         targetMob.immobilizedUntil,
@@ -429,6 +460,8 @@ export class CombatSystem {
 
     if (targetMob && (spell.danioMax > 0 || spell.danioMin > 0)) {
       if (spell.puedeUsarseEnAliados) return false;
+      if (!this.canAttackMob(session, targetMob, isAoE)) return false;
+
       const base = rollInt(spell.danioMin, spell.danioMax);
       const damage = Math.max(
         0,
@@ -494,6 +527,7 @@ export class CombatSystem {
     targetTileY: number,
     targetPlayerId?: string
   ) {
+    const now = Date.now();
     const spellId = this.resolveIncomingSpellId(spellIdRaw);
     if (!Number.isFinite(spellId)) {
       this.world.sendCombatLog(session, "Hechizo inválido.");
@@ -529,7 +563,13 @@ export class CombatSystem {
       return;
     }
 
+    if (now < session.nextSpellAt) {
+      this.world.sendCombatLog(session, "No podés lanzar el hechizo tan rápido.");
+      return;
+    }
+
     if (spell.aoe) {
+      session.nextSpellAt = now + MECHANICS.INTERVAL_SPELL_CAST;
       this.handleAoECast(session, spell, targetTileX, targetTileY);
       return;
     }
@@ -584,7 +624,20 @@ export class CombatSystem {
     }
 
     session.mp -= spell.manaCost;
+    const applied = this.applySpellEffectsToTarget(
+      session,
+      spell,
+      targetMob,
+      targetPlayer,
+      targetTileX,
+      targetTileY
+    );
+    if (!applied) {
+      session.mp += spell.manaCost;
+      return;
+    }
 
+    session.nextSpellAt = now + MECHANICS.INTERVAL_SPELL_CAST;
     this.world.broadcastGameEvent(session.mapId, targetTileX, targetTileY, {
       kind: "spell_fx",
       spellId,
@@ -594,8 +647,7 @@ export class CombatSystem {
       sourceTileX: session.tileX,
       sourceTileY: session.tileY,
     });
-
-    this.applySpellEffectsToTarget(session, spell, targetMob, targetPlayer, targetTileX, targetTileY);
+    this.world.sendPlayerState(session, { includeAttributeBuffs: true });
   }
 
   private isTileOnCaster(
@@ -621,8 +673,8 @@ export class CombatSystem {
       return `${spell.nombre} no puede lanzarse sobre ese objetivo.`;
     }
 
-    if (targetMob?.isImmobilized()) {
-      return null;
+    if (targetMob) {
+      return `${spell.nombre} no puede lanzarse sobre NPCs.`;
     }
     if (targetPlayer?.isImmobilized()) {
       if (
@@ -648,17 +700,6 @@ export class CombatSystem {
     targetsSelf: boolean,
     onCasterTile: boolean
   ): boolean {
-    if (targetMob?.isImmobilized()) {
-      targetMob.immobilizedUntil = 0;
-      this.world.broadcastCombatLog(
-        session.mapId,
-        targetMob.tileX,
-        targetMob.tileY,
-        `${session.name}: ${spell.nombre} libera a ${targetMob.name}.`
-      );
-      return true;
-    }
-
     if (targetPlayer?.isImmobilized()) {
       targetPlayer.clearImmobilized();
       this.world.broadcastCombatLog(
@@ -1012,6 +1053,7 @@ export class CombatSystem {
       player: victim.toNetState(),
     });
     this.world.send(victim, { type: "player_updated", player: victim.toNetState() });
+    this.world.notifyPartyOfHpChange(victim.id);
 
     if (victim.hp > 0) {
       const action = spellName ? `${spellName} golpea` : "Golpea";
@@ -1045,12 +1087,10 @@ export class CombatSystem {
   }
 
   private handlePlayerKilled(killer: PlayerSession, victim: PlayerSession) {
-    if (victim.deathLootProcessed) {
-      victim.isDead = true;
-      victim.hp = 0;
-      victim.recentPvpSpellHits = createEmptyPvpSpellHitRecords();
+    if (victim.isDead) {
       return;
     }
+    const shouldDropLoot = !victim.deathLootProcessed;
     victim.isDead = true;
     victim.hp = 0;
     victim.recentPvpSpellHits = createEmptyPvpSpellHitRecords();
@@ -1060,8 +1100,10 @@ export class CombatSystem {
     // Or we add `inventorySystem` to WorldContext or expose `dropPlayerDeathLoot` on `WorldContext`.
     
     // For now, let's expose dropPlayerDeathLoot in WorldContext.
-    this.world.dropPlayerDeathLoot(victim);
-    this.world.sendInventoryUpdated(victim);
+    if (shouldDropLoot) {
+      this.world.dropPlayerDeathLoot(victim);
+      this.world.sendInventoryUpdated(victim);
+    }
 
     const suicide = killer.id === victim.id;
     if (!suicide) {
@@ -1465,6 +1507,7 @@ export class CombatSystem {
     }
 
     target.isDead = false;
+    target.deathLootProcessed = false;
     target.recentPvpSpellHits = createEmptyPvpSpellHitRecords();
     target.hp = Math.max(1, Math.floor(target.hpMax * RESURRECT_REVIVE_HP_RATIO));
     this.world.sendPlayerState(target);
@@ -1473,6 +1516,7 @@ export class CombatSystem {
       player: target.toNetState(),
     });
     this.world.broadcastPlayerMoved(target);
+    this.world.notifyPartyOfHpChange(target.id);
 
     const completeEvent = {
       kind: "resurrect_complete" as const,

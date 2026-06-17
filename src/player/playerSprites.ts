@@ -473,12 +473,24 @@ function registerAnimationsForTexture(
 ): void {
   const facings: Facing[] = ["down", "up", "right", "left"];
   const texture = scene.textures.get(textureKey);
+  if (texture.key === "__MISSING") {
+    return;
+  }
   const layout = bodyAnimLayout(textureKey);
   const frameWidth = layout.frameWidth ?? FRAME_W;
   const frameHeight = layout.frameHeight ?? FRAME_H;
   const stepDurationMs = stepDurationMsForBodyTexture(textureKey);
 
   for (const facing of facings) {
+    const walkAnimKey = buildAnimationKey("walk", facing, animOutfitKey);
+    const idleAnimKey = buildAnimationKey("idle", facing, animOutfitKey);
+    if (scene.anims.exists(walkAnimKey)) {
+      scene.anims.remove(walkAnimKey);
+    }
+    if (scene.anims.exists(idleAnimKey)) {
+      scene.anims.remove(idleAnimKey);
+    }
+
     const walkColumnCount = layout.walkColumns[facing];
     const walkStartCol = layout.walkStartCol[facing];
     const walkFrames: Phaser.Types.Animations.AnimationFrame[] = [];
@@ -508,7 +520,7 @@ function registerAnimationsForTexture(
     );
 
     scene.anims.create({
-      key: buildAnimationKey("walk", facing, animOutfitKey),
+      key: walkAnimKey,
       frames: walkFrames,
       frameRate: computeWalkFrameRate(
         facing,
@@ -521,7 +533,7 @@ function registerAnimationsForTexture(
     });
 
     scene.anims.create({
-      key: buildAnimationKey("idle", facing, animOutfitKey),
+      key: idleAnimKey,
       frames: [{ key: textureKey, frame: idleFrameName }],
       frameRate: 1,
     });

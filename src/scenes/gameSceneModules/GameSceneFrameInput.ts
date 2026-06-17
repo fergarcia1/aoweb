@@ -7,9 +7,12 @@ export type GameSceneFrameInputDeps = {
   isConfirmOpen: boolean;
   isMacroEditorOpen: boolean;
   isStatsOverlayOpen: boolean;
+  isOptionsOverlayOpen: boolean;
   isPartyOverlayOpen: boolean;
+  isAuctionOpen: boolean;
   isBankOpen: boolean;
   isShopOpen: boolean;
+  isSpellShopOpen: boolean;
   justPressedWorldMapToggle: boolean;
   justPressedPartyToggle: boolean;
   hasPendingSpellCast: boolean;
@@ -33,6 +36,8 @@ export type GameSceneFrameInputDeps = {
   cancelSpellTargeting: (message: string) => void;
   handleShopEscape: () => void;
   handleBankEscape: () => void;
+  handleAuctionEscape: () => void;
+  handleWorldMapEscape: () => void;
   onMeditateHotkeyWhileDead: () => void;
   onAttackWhileDead: () => void;
   tryNetworkStep: (direction: MoveDirection) => void;
@@ -55,7 +60,12 @@ export function processGameSceneFrameInput(deps: GameSceneFrameInputDeps): boole
     return true;
   }
 
-  if (deps.isChatFocused || deps.isConfirmOpen || deps.isMacroEditorOpen) {
+  if (
+    deps.isChatFocused ||
+    deps.isConfirmOpen ||
+    deps.isMacroEditorOpen ||
+    deps.isOptionsOverlayOpen
+  ) {
     return true;
   }
 
@@ -64,11 +74,38 @@ export function processGameSceneFrameInput(deps: GameSceneFrameInputDeps): boole
     return true;
   }
 
+  if (deps.isAuctionOpen && deps.justPressedCancelTargeting) {
+    deps.handleAuctionEscape();
+    return true;
+  }
+
+  if (deps.isShopOpen && deps.justPressedCancelTargeting) {
+    deps.handleShopEscape();
+    return true;
+  }
+
+  if (deps.isSpellShopOpen && deps.justPressedCancelTargeting) {
+    deps.handleShopEscape();
+    return true;
+  }
+
+  if (deps.isBankOpen && deps.justPressedCancelTargeting) {
+    deps.handleBankEscape();
+    return true;
+  }
+
+  if (deps.isWorldMapOpen && deps.justPressedCancelTargeting) {
+    deps.handleWorldMapEscape();
+    return true;
+  }
+
   if (
     deps.isStatsOverlayOpen ||
     deps.isPartyOverlayOpen ||
+    deps.isAuctionOpen ||
     deps.isBankOpen ||
-    deps.isShopOpen
+    deps.isShopOpen ||
+    deps.isSpellShopOpen
   ) {
     return true;
   }
@@ -80,16 +117,6 @@ export function processGameSceneFrameInput(deps: GameSceneFrameInputDeps): boole
 
   if (deps.hasPendingSpellCast && deps.justPressedCancelTargeting) {
     deps.cancelSpellTargeting("Lanzamiento cancelado.");
-    return true;
-  }
-
-  if (deps.isShopOpen && deps.justPressedCancelTargeting) {
-    deps.handleShopEscape();
-    return true;
-  }
-
-  if (deps.isBankOpen && deps.justPressedCancelTargeting) {
-    deps.handleBankEscape();
     return true;
   }
 

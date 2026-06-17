@@ -17,7 +17,7 @@ import { TILE } from "../../shared/tileTypes";
 describe("mapWalkability", () => {
   it("carga overrides desde mapa1.collision.json", () => {
     const file = getMapCollisionOverridesFile("mapa1");
-    expect(file?.allow).toContain("72,36");
+    expect(file?.allow).toContain("74,37");
     expect(file?.deny).toContain("41,37");
     expect(file?.roofTriggerRects?.length).toBeGreaterThan(0);
     for (const key of file?.allow ?? []) {
@@ -51,14 +51,36 @@ describe("mapWalkability", () => {
     expect(isMapTileWalkable(map.id, 67, 80)).toBe(false);
   });
 
-  it("allows both door tiles at 62,66 and 63,66 on the wooden house", () => {
-    expect(isMapTileWalkable("mapa1", 62, 66)).toBe(true);
-    expect(isMapTileWalkable("mapa1", 63, 66)).toBe(true);
+  it("allows/blocks both door tiles at 62,66 and 63,66 on the wooden house", () => {
+    // Closed by default:
+    expect(isMapTileWalkable("mapa1", 62, 66)).toBe(false);
+    expect(isMapTileWalkable("mapa1", 63, 66)).toBe(false);
+
+    // Open override:
+    const overrides = new Map<string, number>();
+    setDoorTileOverride(overrides, 63, 66, true);
+    expect(isMapTileWalkable("mapa1", 62, 66, overrides)).toBe(true);
+    expect(isMapTileWalkable("mapa1", 63, 66, overrides)).toBe(true);
+
+    // Closed override:
+    setDoorTileOverride(overrides, 63, 66, false);
+    expect(isMapTileWalkable("mapa1", 62, 66, overrides)).toBe(false);
+    expect(isMapTileWalkable("mapa1", 63, 66, overrides)).toBe(false);
   });
 
   it("allows magic shop entrance tiles 60,30 and 61,30 on mapa1", () => {
     expect(isMapTileWalkable("mapa1", 60, 30)).toBe(true);
-    expect(isMapTileWalkable("mapa1", 61, 30)).toBe(true);
+    // Closed initially:
+    expect(isMapTileWalkable("mapa1", 61, 30)).toBe(false);
+    
+    // Open override:
+    const overrides = new Map<string, number>();
+    setDoorTileOverride(overrides, 61, 30, true);
+    expect(isMapTileWalkable("mapa1", 61, 30, overrides)).toBe(true);
+    
+    // Closed override:
+    setDoorTileOverride(overrides, 61, 30, false);
+    expect(isMapTileWalkable("mapa1", 61, 30, overrides)).toBe(false);
   });
 
   it("bloquea fachadas de alquimia y sastrería en Ullathorpe (37) sin cerrar puertas", () => {
@@ -74,9 +96,7 @@ describe("mapWalkability", () => {
     expect(isMapTileWalkable("mapa1", 79, 38)).toBe(true);
   });
 
-  it("puertas alquimia y sastrería caminables; esquina 75,36 bloqueada", () => {
-    expect(isMapTileWalkable("mapa1", 72, 36)).toBe(true);
-    expect(isMapTileWalkable("mapa1", 73, 36)).toBe(true);
+  it("esquina 75,36 bloqueada; pasillos y caminos de sastrería y mercería caminables", () => {
     expect(isMapTileWalkable("mapa1", 75, 36)).toBe(false);
     expect(isMapTileWalkable("mapa1", 75, 38)).toBe(true);
     const sastreDoor: Array<[number, number]> = [
@@ -85,12 +105,44 @@ describe("mapWalkability", () => {
       [77, 36],
       [80, 37],
       [81, 37],
-      [80, 36],
-      [81, 36],
     ];
     for (const [x, y] of sastreDoor) {
       expect(isMapTileWalkable("mapa1", x, y)).toBe(true);
     }
+  });
+
+  it("permite/bloquea puertas de sastrería (72,36 y 73,36)", () => {
+    // Cerradas por defecto:
+    expect(isMapTileWalkable("mapa1", 72, 36)).toBe(false);
+    expect(isMapTileWalkable("mapa1", 73, 36)).toBe(false);
+
+    // Abiertas:
+    const overrides = new Map<string, number>();
+    setDoorTileOverride(overrides, 73, 36, true);
+    expect(isMapTileWalkable("mapa1", 72, 36, overrides)).toBe(true);
+    expect(isMapTileWalkable("mapa1", 73, 36, overrides)).toBe(true);
+
+    // Cerradas override:
+    setDoorTileOverride(overrides, 73, 36, false);
+    expect(isMapTileWalkable("mapa1", 72, 36, overrides)).toBe(false);
+    expect(isMapTileWalkable("mapa1", 73, 36, overrides)).toBe(false);
+  });
+
+  it("permite/bloquea puertas de mercería general (80,36 y 81,36)", () => {
+    // Cerradas por defecto:
+    expect(isMapTileWalkable("mapa1", 80, 36)).toBe(false);
+    expect(isMapTileWalkable("mapa1", 81, 36)).toBe(false);
+
+    // Abiertas:
+    const overrides = new Map<string, number>();
+    setDoorTileOverride(overrides, 81, 36, true);
+    expect(isMapTileWalkable("mapa1", 80, 36, overrides)).toBe(true);
+    expect(isMapTileWalkable("mapa1", 81, 36, overrides)).toBe(true);
+
+    // Cerradas override:
+    setDoorTileOverride(overrides, 81, 36, false);
+    expect(isMapTileWalkable("mapa1", 80, 36, overrides)).toBe(false);
+    expect(isMapTileWalkable("mapa1", 81, 36, overrides)).toBe(false);
   });
 
   it("puertas/pasillos 44,39 45,39 y 59,68 caminables", () => {

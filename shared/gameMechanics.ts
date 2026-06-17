@@ -4,11 +4,11 @@
 
 export const MECHANICS = {
   // Intervalos de acciones principales (ms)
-  INTERVAL_MELEE_ATTACK: 1500,
-  INTERVAL_SPELL_CAST: 1400,
+  INTERVAL_MELEE_ATTACK: 1200,
+  INTERVAL_SPELL_CAST: 200,
   
   // Intervalos cruzados (inlan)
-  INTERVAL_MELEE_TO_SPELL: 1000,
+  INTERVAL_MELEE_TO_SPELL: 600,
   INTERVAL_SPELL_TO_MELEE: 1400,
   
   // Intervalo de uso de objetos (Pociones U-U-U)

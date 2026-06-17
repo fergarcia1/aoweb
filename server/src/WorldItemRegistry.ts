@@ -38,6 +38,10 @@ export class WorldItemRegistry {
     return [...this.byId.values()].filter((item) => item.mapId === mapId);
   }
 
+  count(): number {
+    return this.byId.size;
+  }
+
   listInAoi(mapId: string, tileX: number, tileY: number): WorldItemRecord[] {
     return this.listForMap(mapId).filter((item) =>
       isInAoi(tileX, tileY, item.tileX, item.tileY)

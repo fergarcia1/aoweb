@@ -78,14 +78,15 @@ export const MAPA1_BANKER: StaticNpcDefinition = {
   faceOffsetX: 1,
 };
 
-/** Herrero en la herrería de Ullathorpe (mapa1); sin NPC de herrería en mapa1.csm. */
+// ======================= VENDEDORES ESTÁNDAR DE CIUDAD (MAPA 1) =======================
+
 export const MAPA1_BLACKSMITH: StaticNpcDefinition = {
   id: "blacksmith_mapa1",
   role: "blacksmith",
   displayName: "Herrero",
   mapId: START_MAP_ID,
-  tileX: 59,
-  tileY: 62,
+  tileX: 34,
+  tileY: 61,
   facing: "down",
   raceId: "dwarf",
   genderId: "male",
@@ -96,14 +97,13 @@ export const MAPA1_BLACKSMITH: StaticNpcDefinition = {
   faceOffsetX: 1,
 };
 
-/** Armero en la herrería de Ullathorpe (mapa1); sin spawn de armero en mapa1.csm. */
 export const MAPA1_ARMORER: StaticNpcDefinition = {
   id: "armorer_mapa1",
   role: "armorer",
   displayName: "Armaduras",
   mapId: START_MAP_ID,
-  tileX: 41,
-  tileY: 35,
+  tileX: 32,
+  tileY: 61,
   facing: "down",
   raceId: "human",
   genderId: "male",
@@ -112,13 +112,12 @@ export const MAPA1_ARMORER: StaticNpcDefinition = {
   bodyAssetPath: ARMORER_ARMOR_PATH,
 };
 
-/** Sastre en Ullathorpe (mapa1), junto al alquimista. */
 export const MAPA1_TAILOR: StaticNpcDefinition = {
   id: "tailor_mapa1",
   role: "tailor",
   displayName: "Sastre",
   mapId: START_MAP_ID,
-  tileX: 77,
+  tileX: 69,
   tileY: 32,
   facing: "down",
   raceId: "gnome",
@@ -130,13 +129,12 @@ export const MAPA1_TAILOR: StaticNpcDefinition = {
   faceOffsetX: 1,
 };
 
-/** Alquimista en el local de Ullathorpe (mapa1); mapa1.csm NPC 14 @ (80,33) queda fuera del edificio. */
 export const MAPA1_ALCHEMIST: StaticNpcDefinition = {
   id: "alchemist_mapa1",
   role: "alchemist",
   displayName: "Alquimista",
   mapId: START_MAP_ID,
-  tileX: 69,
+  tileX: 77,
   tileY: 32,
   facing: "down",
   raceId: "gnome",
@@ -148,14 +146,13 @@ export const MAPA1_ALCHEMIST: StaticNpcDefinition = {
   faceOffsetX: 2,
 };
 
-/** Vendedor de magia en Ullathorpe (mapa1), local de hechizos @ (57,26). */
 export const MAPA1_MAGE_VENDOR: StaticNpcDefinition = {
   id: "mage_vendor_mapa1",
   role: "mage",
   displayName: "Mago",
   mapId: START_MAP_ID,
-  tileX: 57,
-  tileY: 26,
+  tileX: 59,
+  tileY: 62,
   facing: "down",
   raceId: "elf",
   genderId: "male",
@@ -166,19 +163,134 @@ export const MAPA1_MAGE_VENDOR: StaticNpcDefinition = {
   faceOffsetX: 0,
 };
 
-/** Vendedor General, disponible en ciudades. */
-export const GENERAL_MERCHANT_MAPA34: StaticNpcDefinition = {
-  id: "general_merchant_mapa34",
+export const MAPA1_GENERAL_MERCHANT: StaticNpcDefinition = {
+  id: "general_merchant_mapa1",
   role: "general",
   displayName: "Vendedor General",
-  mapId: "mapa34",
-  tileX: 29,
-  tileY: 72,
+  mapId: START_MAP_ID,
+  tileX: 60,
+  tileY: 39,
   facing: "down",
   raceId: "human",
   genderId: "male",
   faceIndex: 1,
-  bodyTextureKey: BANKER_ARMOR_TEXTURE_KEY, // Reuse banker armor for generic look
+  bodyTextureKey: BANKER_ARMOR_TEXTURE_KEY,
+  bodyAssetPath: BANKER_ARMOR_PATH,
+};
+
+/** Subastador en Ullathorpe (mapa1). */
+export const MAPA1_AUCTIONEER: StaticNpcDefinition = {
+  id: "auctioneer_mapa1",
+  role: "auctioneer",
+  displayName: "Subastador",
+  mapId: START_MAP_ID,
+  tileX: 52,
+  tileY: 34,
+  facing: "down",
+  raceId: "human",
+  genderId: "male",
+  faceIndex: 5,
+  bodyTextureKey: ALCHEMIST_TUNIC_TEXTURE_KEY,
+  bodyAssetPath: ALCHEMIST_TUNIC_PATH,
+};
+
+// ======================= VENDEDORES DE TESTING (MAPA 251) =======================
+
+export const TEST_BLACKSMITH: StaticNpcDefinition = {
+  id: "test_blacksmith",
+  role: "test_blacksmith",
+  displayName: "Herrero (Test)",
+  mapId: "mapa251",
+  tileX: 48,
+  tileY: 51,
+  facing: "down",
+  raceId: "dwarf",
+  genderId: "male",
+  faceIndex: 1,
+  bodyTextureKey: BLACKSMITH_ARMOR_TEXTURE_KEY,
+  bodyAssetPath: BLACKSMITH_ARMOR_PATH,
+  faceDropY: 2,
+  faceOffsetX: 1,
+};
+
+export const TEST_ARMORER: StaticNpcDefinition = {
+  id: "test_armorer",
+  role: "test_armorer",
+  displayName: "Armero (Test)",
+  mapId: "mapa251",
+  tileX: 49,
+  tileY: 51,
+  facing: "down",
+  raceId: "human",
+  genderId: "male",
+  faceIndex: 3,
+  bodyTextureKey: ARMORER_ARMOR_TEXTURE_KEY,
+  bodyAssetPath: ARMORER_ARMOR_PATH,
+};
+
+export const TEST_TAILOR: StaticNpcDefinition = {
+  id: "test_tailor",
+  role: "test_tailor",
+  displayName: "Sastre (Test)",
+  mapId: "mapa251",
+  tileX: 50,
+  tileY: 51,
+  facing: "down",
+  raceId: "gnome",
+  genderId: "male",
+  faceIndex: 9,
+  bodyTextureKey: TAILOR_ARMOR_TEXTURE_KEY,
+  bodyAssetPath: TAILOR_ARMOR_PATH,
+  faceDropY: -2,
+  faceOffsetX: 1,
+};
+
+export const TEST_ALCHEMIST: StaticNpcDefinition = {
+  id: "test_alchemist",
+  role: "test_alchemist",
+  displayName: "Alquimista (Test)",
+  mapId: "mapa251",
+  tileX: 51,
+  tileY: 51,
+  facing: "down",
+  raceId: "gnome",
+  genderId: "male",
+  faceIndex: 0,
+  bodyTextureKey: ALCHEMIST_TUNIC_TEXTURE_KEY,
+  bodyAssetPath: ALCHEMIST_TUNIC_PATH,
+  faceDropY: -2,
+  faceOffsetX: 2,
+};
+
+export const TEST_MAGE_VENDOR: StaticNpcDefinition = {
+  id: "test_mage_vendor",
+  role: "test_mage",
+  displayName: "Mago (Test)",
+  mapId: "mapa251",
+  tileX: 52,
+  tileY: 51,
+  facing: "down",
+  raceId: "elf",
+  genderId: "male",
+  faceIndex: 4,
+  bodyTextureKey: MAGE_VENDOR_ARMOR_TEXTURE_KEY,
+  bodyAssetPath: MAGE_VENDOR_ARMOR_PATH,
+  faceDropY: 0,
+  faceOffsetX: 0,
+};
+
+export const TEST_GENERAL_MERCHANT: StaticNpcDefinition = {
+  id: "test_general_merchant",
+  role: "test_general",
+  displayName: "General (Test)",
+  mapId: "mapa251",
+  tileX: 53,
+  tileY: 51,
+  facing: "down",
+  raceId: "human",
+  genderId: "male",
+  faceIndex: 1,
+  bodyTextureKey: BANKER_ARMOR_TEXTURE_KEY,
   bodyAssetPath: BANKER_ARMOR_PATH,
 };
 
@@ -191,7 +303,14 @@ export const STATIC_NPCS: StaticNpcDefinition[] = [
   MAPA1_TAILOR,
   MAPA1_ALCHEMIST,
   MAPA1_MAGE_VENDOR,
-  GENERAL_MERCHANT_MAPA34,
+  MAPA1_GENERAL_MERCHANT,
+  MAPA1_AUCTIONEER,
+  TEST_BLACKSMITH,
+  TEST_ARMORER,
+  TEST_TAILOR,
+  TEST_ALCHEMIST,
+  TEST_MAGE_VENDOR,
+  TEST_GENERAL_MERCHANT,
 ];
 
 export function getNpcsForMap(mapId: string): StaticNpcDefinition[] {

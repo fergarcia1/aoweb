@@ -1,7 +1,4 @@
 import Phaser from "phaser";
-import { GAME_FONT, GAME_TEXT_RESOLUTION } from "./fonts";
-
-const UI_DEPTH = 1000;
 
 export type PartyMemberInfo = {
   id: string;
@@ -19,136 +16,187 @@ export type PartyOverlayHandlers = {
   onClose: () => void;
 };
 
-export class PartyOverlay {
-  private container: Phaser.GameObjects.Container;
-  private backdrop: Phaser.GameObjects.Graphics;
-  private panel: Phaser.GameObjects.Graphics;
-  private title: Phaser.GameObjects.Text;
-  private inviteLabel: Phaser.GameObjects.Text;
-  private inviteInputBg: Phaser.GameObjects.Graphics;
-  private inviteInputText: Phaser.GameObjects.Text;
-  private inviteBtn: Phaser.GameObjects.Graphics;
-  private inviteBtnLabel: Phaser.GameObjects.Text;
-  private inviteZone: Phaser.GameObjects.Zone;
-  private membersContainer: Phaser.GameObjects.Container;
-  private leaveBtn: Phaser.GameObjects.Graphics;
-  private leaveLabel: Phaser.GameObjects.Text;
-  private leaveZone: Phaser.GameObjects.Zone;
-  private closeBtn: Phaser.GameObjects.Graphics;
-  private closeLabel: Phaser.GameObjects.Text;
-  private closeZone: Phaser.GameObjects.Zone;
+type PartyOverlayGlobal = typeof globalThis & {
+  __aowebPartyOverlays?: PartyOverlay[];
+};
 
+export class PartyOverlay {
+  private readonly container: HTMLDivElement;
+  private readonly inviteInput: HTMLInputElement;
+  private readonly membersList: HTMLDivElement;
+  private readonly leaveBtn: HTMLButtonElement;
+  
   private visible = false;
   private partyId: string | null = null;
   private leaderId: string | null = null;
   private localPlayerId: string | null = null;
-  private inviteInputValue = "";
   private members: PartyMemberInfo[] = [];
 
-  constructor(private scene: Phaser.Scene, private handlers: PartyOverlayHandlers) {
-    this.container = scene.add.container(0, 0).setDepth(UI_DEPTH + 100).setVisible(false);
-    
-    this.backdrop = scene.add.graphics();
-    this.backdrop.fillStyle(0x000000, 0.6);
-    
-    this.panel = scene.add.graphics();
-    
-    this.title = scene.add.text(0, 0, "Grupo", {
-      fontFamily: GAME_FONT,
-      fontSize: "20px",
-      color: "#ffffff",
-      fontStyle: "bold",
-      resolution: GAME_TEXT_RESOLUTION,
-    }).setOrigin(0.5, 0);
+  constructor(private readonly scene: Phaser.Scene, private readonly handlers: PartyOverlayHandlers) {
+    const globalOverlays = globalThis as PartyOverlayGlobal;
+    globalOverlays.__aowebPartyOverlays?.forEach((overlay) => overlay.destroy());
+    globalOverlays.__aowebPartyOverlays = [this];
 
-    this.inviteLabel = scene.add.text(0, 0, "Invitar jugador", {
-      fontFamily: GAME_FONT,
-      fontSize: "13px",
-      color: "#cccccc",
-      resolution: GAME_TEXT_RESOLUTION,
+    this.container = document.createElement("div");
+    this.container.style.position = "absolute";
+    this.container.style.top = "50%";
+    this.container.style.left = "50%";
+    this.container.style.transform = "translate(-50%, -50%)";
+    this.container.style.width = "340px";
+    this.container.style.maxHeight = "min(680px, calc(100vh - 32px))";
+    this.container.style.boxSizing = "border-box";
+    this.container.style.overflowY = "auto";
+    this.container.style.background = "linear-gradient(180deg, rgba(28, 12, 10, 0.98), rgba(10, 8, 9, 0.98))";
+    this.container.style.border = "1px solid #7d3028";
+    this.container.style.borderRadius = "6px";
+    this.container.style.padding = "14px";
+    this.container.style.color = "#f3dcc5";
+    this.container.style.fontFamily = "Arial, sans-serif";
+    this.container.style.zIndex = "1100";
+    this.container.style.display = "none";
+    this.container.style.boxShadow = "0 16px 48px rgba(0, 0, 0, 0.65)";
+
+    this.container.innerHTML = `
+      <style>
+        .ao-party-title { margin: 0 0 12px; text-align: center; font-size: 20px; color: #ffd9a6; font-weight: bold; }
+        .ao-party-section { border-top: 1px solid rgba(196, 92, 72, 0.45); padding-top: 12px; margin-top: 12px; }
+        .ao-party-section-title { margin: 0 0 8px; font-size: 12px; color: #d8a475; text-transform: uppercase; font-weight: bold; }
+        .ao-party-invite-row { display: flex; gap: 8px; margin-bottom: 12px; }
+        .ao-party-input { flex: 1; height: 26px; border: 1px solid #8f4737; background: #1a0a08; color: #ffe6c8; padding: 0 8px; font-size: 13px; border-radius: 4px; }
+        .ao-party-input:focus { outline: none; border-color: #ffd9a6; }
+        .ao-party-btn { height: 26px; min-width: 70px; border: 1px solid #8f4737; background: #2b1512; color: #ffe6c8; cursor: pointer; font-size: 12px; font-weight: bold; border-radius: 4px; box-sizing: border-box; }
+        .ao-party-btn:hover { background: #3d1d18; }
+        .ao-party-btn-danger { background: #661510; border-color: #992d24; color: #ffd9d6; }
+        .ao-party-btn-danger:hover { background: #7a1a14; }
+        .ao-party-members-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px; max-height: 280px; overflow-y: auto; }
+        .ao-party-member-card { display: flex; align-items: center; justify-content: space-between; background: rgba(30, 20, 20, 0.6); border: 1px solid #4a2520; border-radius: 4px; padding: 8px 10px; }
+        .ao-party-member-card.local { border-color: #4da6ff; }
+        .ao-party-member-info { flex: 1; display: flex; flex-direction: column; gap: 4px; }
+        .ao-party-member-header { display: flex; align-items: center; justify-content: space-between; }
+        .ao-party-member-name { font-size: 13px; font-weight: bold; }
+        .ao-party-member-name.leader { color: #ffcc00; }
+        .ao-party-member-name.local { color: #4da6ff; }
+        .ao-party-member-level { font-size: 11px; color: #a69080; margin-right: 12px; }
+        .ao-party-member-hp-container { display: flex; align-items: center; gap: 6px; }
+        .ao-party-member-hp-bar { flex: 1; max-width: 140px; height: 8px; background: #330000; border: 1px solid #550000; border-radius: 2px; overflow: hidden; position: relative; }
+        .ao-party-member-hp-fill { height: 100%; background: #ff3333; transition: width 0.2s ease; }
+        .ao-party-member-hp-text { font-size: 11px; color: #d8a475; font-family: monospace; }
+        .ao-party-btn-kick { width: 22px; height: 22px; border: 1px solid #992d24; background: #661510; color: #ffffff; font-weight: bold; cursor: pointer; border-radius: 4px; display: flex; align-items: center; justify-content: center; font-size: 11px; line-height: 1; }
+        .ao-party-btn-kick:hover { background: #7a1a14; }
+        .ao-party-empty { text-align: center; padding: 16px; font-size: 13px; color: #a69080; font-style: italic; }
+        .ao-party-footer { display: flex; justify-content: space-between; border-top: 1px solid rgba(196, 92, 72, 0.45); padding-top: 12px; }
+      </style>
+      <h2 class="ao-party-title">Grupo</h2>
+      
+      <div class="ao-party-section">
+        <h3 class="ao-party-section-title">Invitar jugador</h3>
+        <div class="ao-party-invite-row">
+          <input type="text" class="ao-party-input" id="ao-party-invite-input" placeholder="Nombre del jugador..." maxlength="20" />
+          <button class="ao-party-btn" id="ao-party-invite-btn">Invitar</button>
+        </div>
+      </div>
+
+      <div class="ao-party-section">
+        <h3 class="ao-party-section-title">Miembros</h3>
+        <div class="ao-party-members-list" id="ao-party-members"></div>
+      </div>
+
+      <div class="ao-party-footer">
+        <button class="ao-party-btn ao-party-btn-danger" id="ao-party-leave-btn">SALIR</button>
+        <button class="ao-party-btn" id="ao-party-close-btn">Cerrar</button>
+      </div>
+    `;
+
+    document.body.appendChild(this.container);
+
+    this.inviteInput = this.container.querySelector("#ao-party-invite-input")!;
+    this.membersList = this.container.querySelector("#ao-party-members")!;
+    this.leaveBtn = this.container.querySelector("#ao-party-leave-btn")!;
+
+    // Stop keyboard events from bubbling up to Phaser's window listener
+    const stopPropagation = (e: KeyboardEvent) => {
+      e.stopPropagation();
+    };
+    this.inviteInput.addEventListener("keydown", (e) => {
+      e.stopPropagation(); // Prevent Phaser key capture/preventDefault
+      if (e.key === "Enter") {
+        e.preventDefault();
+        this.submitInvite();
+      } else if (e.key === "Escape") {
+        e.preventDefault();
+        this.handlers.onClose();
+      }
     });
-    this.inviteInputBg = scene.add.graphics();
-    this.inviteInputText = scene.add.text(0, 0, "", {
-      fontFamily: GAME_FONT,
-      fontSize: "14px",
-      color: "#ffffff",
-      resolution: GAME_TEXT_RESOLUTION,
+    this.inviteInput.addEventListener("keyup", stopPropagation);
+    this.inviteInput.addEventListener("keypress", stopPropagation);
+
+    // Focus and blur events to suspend Phaser keyboard input
+    this.inviteInput.addEventListener("focus", () => {
+      if (this.scene.input?.keyboard) {
+        this.scene.input.keyboard.enabled = false;
+      }
     });
-    this.inviteBtn = scene.add.graphics();
-    this.inviteBtnLabel = scene.add.text(0, 0, "Invitar", {
-      fontFamily: GAME_FONT,
-      fontSize: "14px",
-      color: "#ffffff",
-      resolution: GAME_TEXT_RESOLUTION,
-    }).setOrigin(0.5, 0.5);
-    this.inviteZone = scene.add.zone(0, 0, 80, 30).setInteractive({ useHandCursor: true });
-    this.inviteZone.on("pointerdown", () => this.submitInvite());
+    this.inviteInput.addEventListener("blur", () => {
+      if (this.scene.input?.keyboard) {
+        this.scene.input.keyboard.enabled = true;
+      }
+    });
 
-    this.membersContainer = scene.add.container(0, 0);
+    // Event listeners
+    this.container.querySelector("#ao-party-invite-btn")!.addEventListener("click", () => this.submitInvite());
 
-    this.leaveBtn = scene.add.graphics();
-    this.leaveLabel = scene.add.text(0, 0, "Salir del Grupo", {
-      fontFamily: GAME_FONT,
-      fontSize: "14px",
-      color: "#ffffff",
-      resolution: GAME_TEXT_RESOLUTION,
-    }).setOrigin(0.5, 0.5);
-    this.leaveZone = scene.add.zone(0, 0, 140, 30).setInteractive({ useHandCursor: true });
-    this.leaveZone.on("pointerdown", () => {
+    this.leaveBtn.addEventListener("click", () => {
       if (this.leaderId === this.localPlayerId) {
         this.handlers.onDissolve();
-        return;
+      } else {
+        this.handlers.onLeave();
       }
-      this.handlers.onLeave();
     });
 
-    this.closeBtn = scene.add.graphics();
-    this.closeLabel = scene.add.text(0, 0, "Cerrar", {
-      fontFamily: GAME_FONT,
-      fontSize: "14px",
-      color: "#ffffff",
-      resolution: GAME_TEXT_RESOLUTION,
-    }).setOrigin(0.5, 0.5);
-    this.closeZone = scene.add.zone(0, 0, 80, 30).setInteractive({ useHandCursor: true });
-    this.closeZone.on("pointerdown", () => this.handlers.onClose());
+    this.container.querySelector("#ao-party-close-btn")!.addEventListener("click", () => this.handlers.onClose());
+    
+    // Global ESC handler
+    document.addEventListener("keydown", this.handleDocumentKeyDown, true);
+  }
 
-    this.container.add([
-      this.backdrop,
-      this.panel,
-      this.title,
-      this.inviteLabel,
-      this.inviteInputBg,
-      this.inviteInputText,
-      this.inviteBtn,
-      this.inviteBtnLabel,
-      this.inviteZone,
-      this.membersContainer,
-      this.leaveBtn,
-      this.leaveLabel,
-      this.leaveZone,
-      this.closeBtn,
-      this.closeLabel,
-      this.closeZone,
-    ]);
+  private handleDocumentKeyDown = (e: KeyboardEvent) => {
+    if (this.isOpen() && e.key === "Escape") {
+      e.preventDefault();
+      e.stopPropagation();
+      this.handlers.onClose();
+    }
+  };
 
-    scene.input.keyboard?.on("keydown", (event: KeyboardEvent) => this.handleKeyDown(event));
+  private submitInvite() {
+    const targetName = this.inviteInput.value.trim();
+    if (!targetName) return;
+    this.handlers.onInvite(targetName);
+    this.inviteInput.value = "";
   }
 
   show(localPlayerId: string | null) {
     this.localPlayerId = localPlayerId;
     this.visible = true;
-    this.container.setVisible(true);
+    this.container.style.display = "block";
     this.renderMembers();
-    this.layout();
+    
+    // Focus input
+    setTimeout(() => {
+      this.inviteInput.focus();
+      this.inviteInput.select();
+    }, 40);
   }
 
   hide() {
     this.visible = false;
-    this.container.setVisible(false);
+    this.container.style.display = "none";
+    if (this.scene.input?.keyboard) {
+      this.scene.input.keyboard.enabled = true; // Ensure keyboard is re-enabled
+    }
   }
 
   isOpen() {
-    return this.visible;
+    return this.container.style.display === "block";
   }
 
   updateParty(partyId: string | null, leaderId: string | null, members: PartyMemberInfo[]) {
@@ -156,226 +204,84 @@ export class PartyOverlay {
     this.leaderId = leaderId;
     this.members = members;
     this.renderMembers();
-    if (this.visible) this.layout();
+  }
+
+  layout() {
+    // Left backward compatibility wrapper (HTML is layout-independent of Phaser window resizing)
   }
 
   private renderMembers() {
-    this.membersContainer.removeAll(true);
-    let y = 0;
-    const cardW = 280;
-    const cardH = 50;
-    const hpBarW = 120;
-    const hpBarH = 8;
+    this.membersList.innerHTML = "";
 
     if (this.members.length === 0) {
-      const empty = this.scene.add.text(0, 0, "Sin grupo actual.", {
-        fontFamily: GAME_FONT,
-        fontSize: "14px",
-        color: "#cccccc",
-        resolution: GAME_TEXT_RESOLUTION,
-      });
-      this.membersContainer.add(empty);
+      this.membersList.innerHTML = `<div class="ao-party-empty">Sin grupo actual.</div>`;
+      this.leaveBtn.style.display = "none";
       return;
+    }
+
+    this.leaveBtn.style.display = "block";
+    if (this.leaderId === this.localPlayerId) {
+      this.leaveBtn.innerText = "DISOLVER";
+    } else {
+      this.leaveBtn.innerText = "SALIR";
     }
 
     for (const member of this.members) {
       const isLeader = member.id === this.leaderId;
       const isLocal = member.id === this.localPlayerId;
-      
-      const card = this.scene.add.graphics();
-      card.fillStyle(0x222222, 1);
-      card.lineStyle(1, isLocal ? 0x4da6ff : 0x444444, 1);
-      card.fillRoundedRect(0, y, cardW, cardH, 4);
-      card.strokeRoundedRect(0, y, cardW, cardH, 4);
-      
+
+      const card = document.createElement("div");
+      card.className = "ao-party-member-card";
+      if (isLocal) {
+        card.classList.add("local");
+      }
+
       let nameStr = member.name;
-      let nameColor = "#ffffff";
+      let nameClass = "";
       if (isLeader) {
         nameStr = `[LÍDER] ${member.name}`;
-        nameColor = "#ffcc00";
+        nameClass = "leader";
       } else if (isLocal) {
         nameStr = `[TÚ] ${member.name}`;
-        nameColor = "#4da6ff";
+        nameClass = "local";
       }
 
-      const name = this.scene.add.text(10, y + 8, nameStr, {
-        fontFamily: GAME_FONT,
-        fontSize: "14px",
-        color: nameColor,
-        fontStyle: "bold",
-        resolution: GAME_TEXT_RESOLUTION,
-      });
-      
-      const level = this.scene.add.text(cardW - 10, y + 10, `Nv. ${member.level}`, {
-        fontFamily: GAME_FONT,
-        fontSize: "11px",
-        color: "#999999",
-        resolution: GAME_TEXT_RESOLUTION,
-      }).setOrigin(1, 0);
+      const hpPct = Math.max(0, Math.min(100, (member.hp / member.hpMax) * 100));
 
-      // HP Bar
-      const hpBg = this.scene.add.graphics();
-      hpBg.fillStyle(0x330000, 1);
-      hpBg.fillRect(10, y + 30, hpBarW, hpBarH);
-      
-      const hpFill = this.scene.add.graphics();
-      const pct = Math.max(0, Math.min(1, member.hp / member.hpMax));
-      hpFill.fillStyle(0xff3333, 1);
-      hpFill.fillRect(10, y + 30, hpBarW * pct, hpBarH);
-
-      const hpText = this.scene.add.text(10 + hpBarW + 8, y + 27, `${member.hp}/${member.hpMax}`, {
-        fontFamily: GAME_FONT,
-        fontSize: "11px",
-        color: "#cccccc",
-        resolution: GAME_TEXT_RESOLUTION,
-      });
-
-      this.membersContainer.add([card, name, level, hpBg, hpFill, hpText]);
-
+      let kickBtnHtml = "";
       if (this.leaderId === this.localPlayerId && !isLocal) {
-        const kickBtn = this.scene.add.graphics();
-        const kickLabel = this.scene.add.text(0, 0, "X", {
-          fontFamily: GAME_FONT,
-          fontSize: "12px",
-          color: "#ffffff",
-          fontStyle: "bold",
-          resolution: GAME_TEXT_RESOLUTION,
-        }).setOrigin(0.5, 0.5);
-        
-        const btnX = cardW - 35;
-        const btnY = y + 25;
-        const btnSize = 22;
-
-        kickBtn.fillStyle(0x772222, 1);
-        kickBtn.lineStyle(1, 0xaa5555, 1);
-        kickBtn.fillRoundedRect(btnX, btnY, btnSize, btnSize, 2);
-        kickBtn.strokeRoundedRect(btnX, btnY, btnSize, btnSize, 2);
-        
-        kickLabel.setPosition(btnX + btnSize / 2, btnY + btnSize / 2);
-        
-        const kickZone = this.scene.add.zone(btnX + btnSize / 2, btnY + btnSize / 2, btnSize, btnSize).setInteractive({ useHandCursor: true });
-        kickZone.on("pointerdown", () => this.handlers.onKick(member.id));
-        
-        this.membersContainer.add([kickBtn, kickLabel, kickZone]);
+        kickBtnHtml = `<button class="ao-party-btn-kick" data-member-id="${member.id}">X</button>`;
       }
-      y += 60;
+
+      card.innerHTML = `
+        <div class="ao-party-member-info">
+          <div class="ao-party-member-header">
+            <span class="ao-party-member-name ${nameClass}">${nameStr}</span>
+            <span class="ao-party-member-level">Nv. ${member.level}</span>
+          </div>
+          <div class="ao-party-member-hp-container">
+            <div class="ao-party-member-hp-bar">
+              <div class="ao-party-member-hp-fill" style="width: ${hpPct}%"></div>
+            </div>
+            <span class="ao-party-member-hp-text">${member.hp}/${member.hpMax}</span>
+          </div>
+        </div>
+        ${kickBtnHtml}
+      `;
+
+      const kickBtn = card.querySelector(".ao-party-btn-kick");
+      if (kickBtn) {
+        kickBtn.addEventListener("click", () => {
+          this.handlers.onKick(member.id);
+        });
+      }
+
+      this.membersList.appendChild(card);
     }
   }
 
-  private submitInvite() {
-    const targetName = this.inviteInputValue.trim();
-    if (!targetName) {
-      return;
-    }
-    this.handlers.onInvite(targetName);
-    this.inviteInputValue = "";
-    this.syncInviteInputText();
-  }
-
-  private syncInviteInputText() {
-    this.inviteInputText.setText(this.inviteInputValue ? `> ${this.inviteInputValue}` : "> ");
-  }
-
-  private handleKeyDown(event: KeyboardEvent) {
-    if (!this.visible) {
-      return;
-    }
-
-    event.preventDefault();
-    event.stopPropagation();
-
-    if (event.key === "Escape") {
-      this.handlers.onClose();
-      return;
-    }
-    if (event.key === "Enter") {
-      this.submitInvite();
-      return;
-    }
-    if (event.key === "Backspace") {
-      this.inviteInputValue = this.inviteInputValue.slice(0, -1);
-      this.syncInviteInputText();
-      return;
-    }
-    if (
-      event.key.length === 1 &&
-      !event.repeat &&
-      !event.ctrlKey &&
-      !event.metaKey &&
-      !event.altKey &&
-      this.inviteInputValue.length < 20
-    ) {
-      this.inviteInputValue += event.key;
-      this.syncInviteInputText();
-    }
-  }
-
-  layout() {
-    const w = this.scene.scale.width;
-    const h = this.scene.scale.height;
-    
-    this.backdrop.clear().fillRect(0, 0, w, h);
-    
-    const panelW = 340;
-    const panelH = 420;
-    const x = (w - panelW) / 2;
-    const y = (h - panelH) / 2;
-    
-    this.panel.clear();
-    this.panel.fillStyle(0x111111, 0.98);
-    this.panel.lineStyle(2, 0x4da6ff, 1);
-    this.panel.fillRoundedRect(x, y, panelW, panelH, 8);
-    this.panel.strokeRoundedRect(x, y, panelW, panelH, 8);
-    
-    // Header divider
-    this.panel.lineStyle(1, 0x333333, 1);
-    this.panel.lineBetween(x + 15, y + 45, x + panelW - 15, y + 45);
-
-    this.title.setPosition(x + panelW / 2, y + 15);
-    
-    // Invite Section
-    this.inviteLabel.setPosition(x + 30, y + 55);
-    this.inviteInputBg.clear();
-    this.inviteInputBg.fillStyle(0x000000, 1).fillRect(x + 30, y + 78, 200, 30);
-    this.inviteInputBg.lineStyle(1, 0x444444, 1).strokeRect(x + 30, y + 78, 200, 30);
-    this.inviteInputText.setPosition(x + 38, y + 84);
-    this.syncInviteInputText();
-
-    this.inviteBtn.clear();
-    this.inviteBtn.fillStyle(0x2d5a27, 1); // Dark green for invite
-    this.inviteBtn.lineStyle(1, 0x4caf50, 1);
-    this.inviteBtn.fillRoundedRect(x + 240, y + 78, 70, 30, 2);
-    this.inviteBtn.strokeRoundedRect(x + 240, y + 78, 70, 30, 2);
-    this.inviteBtnLabel.setPosition(x + 275, y + 93);
-    this.inviteZone.setPosition(x + 275, y + 93).setSize(70, 30);
-
-    this.membersContainer.setPosition(x + 30, y + 125);
-    
-    const btnY = y + panelH - 35;
-    
-    // Leave Button
-    this.leaveBtn.clear();
-    this.leaveBtn.fillStyle(0x772222, 1);
-    this.leaveBtn.lineStyle(1, 0xaa5555, 1);
-    this.leaveBtn.fillRoundedRect(x + 30, btnY - 15, 140, 30, 4);
-    this.leaveBtn.strokeRoundedRect(x + 30, btnY - 15, 140, 30, 4);
-    this.leaveLabel.setPosition(x + 100, btnY);
-    this.leaveZone.setPosition(x + 100, btnY).setSize(140, 30);
-    
-    // Close Button
-    this.closeBtn.clear();
-    this.closeBtn.fillStyle(0x333333, 1);
-    this.closeBtn.lineStyle(1, 0x666666, 1);
-    this.closeBtn.fillRoundedRect(x + panelW - 110, btnY - 15, 80, 30, 4);
-    this.closeBtn.strokeRoundedRect(x + panelW - 110, btnY - 15, 80, 30, 4);
-    this.closeLabel.setPosition(x + panelW - 70, btnY);
-    this.closeZone.setPosition(x + panelW - 70, btnY).setSize(80, 30);
-
-    if (this.leaderId === this.localPlayerId) {
-       this.leaveLabel.setText("DISOLVER");
-       this.leaveBtn.fillStyle(0x992222, 1); // Brighter red for leader dissolve
-    } else {
-       this.leaveLabel.setText("SALIR");
-    }
+  destroy() {
+    document.removeEventListener("keydown", this.handleDocumentKeyDown, true);
+    this.container.remove();
   }
 }

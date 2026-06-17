@@ -13,4 +13,15 @@ export default defineConfig({
     port: 4173,
     host: true,
   },
+  build: {
+    chunkSizeWarningLimit: 2000,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          phaser: ["phaser"],
+          game: ["./src/scenes/GameScene", "./src/network/RemotePlayerManager"],
+        },
+      },
+    },
+  },
 });

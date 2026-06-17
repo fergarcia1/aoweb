@@ -256,5 +256,20 @@ export class MovementSystem {
       type: "world_snapshot",
       snapshot: this.ctx.buildWorldSnapshot(session.mapId),
     });
+
+    const dynamicObjs = this.ctx.getDynamicMapObjs(session.mapId);
+    if (dynamicObjs) {
+      for (const obj of dynamicObjs) {
+        this.ctx.send(session, {
+          type: "game_event",
+          event: {
+            kind: "map_object_updated",
+            tileX: obj.tileX,
+            tileY: obj.tileY,
+            objIndex: obj.objIndex,
+          },
+        });
+      }
+    }
   }
 }

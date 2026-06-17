@@ -52,6 +52,13 @@ export type MobModelId =
   | "hormiga"
   | "huargo"
   | "leviatan"
+  | "sirena"
+  | "rata"
+  | "cracko"
+  | "yeti"
+  | "zombie"
+  | "hombre_lagarto"
+  | "demonio_abisal"
   | "lobo_invernal"
   | "wisp"
   | "ogro"
@@ -93,6 +100,13 @@ export type MobId =
   | "hormiga"
   | "huargo"
   | "leviatan"
+  | "sirena"
+  | "rata"
+  | "cracko"
+  | "yeti"
+  | "zombie"
+  | "hombre_lagarto"
+  | "demonio_abisal"
   | "lobo_invernal"
   | "wisp"
   | "ogro"
@@ -134,6 +148,13 @@ const MOB_IDS: MobId[] = [
   "hormiga",
   "huargo",
   "leviatan",
+  "sirena",
+  "rata",
+  "cracko",
+  "yeti",
+  "zombie",
+  "hombre_lagarto",
+  "demonio_abisal",
   "lobo_invernal",
   "wisp",
   "ogro",
@@ -176,6 +197,13 @@ const MOB_MODEL_IDS: MobModelId[] = [
   "hormiga",
   "huargo",
   "leviatan",
+  "sirena",
+  "rata",
+  "cracko",
+  "yeti",
+  "zombie",
+  "hombre_lagarto",
+  "demonio_abisal",
   "lobo_invernal",
   "wisp",
   "ogro",
@@ -184,13 +212,20 @@ const MOB_MODEL_IDS: MobModelId[] = [
   "pirata_arquero",
   "pirata_guerrero",
 ];
-const GLOBAL_MOB_ATTACK_COOLDOWN_MS = 1000;
+const GLOBAL_MOB_ATTACK_COOLDOWN_MS = 1400;
 
 export type MobBehavior = "aggressive" | "peaceful" | "static";
 
 export type MobDropConfig = {
   itemId: ItemId;
   chancePercent: number;
+};
+
+export type MobCasterConfig = {
+  spellId: number;
+  cooldownMs: number;
+  minDamage: number;
+  maxDamage: number;
 };
 
 export type MobSpawnConfig = {
@@ -219,6 +254,7 @@ export type MobSpawnConfig = {
   tileY?: number;
   drops: MobDropConfig[];
   aquatic?: boolean;
+  caster?: MobCasterConfig;
 };
 
 export type MobDefinitionConfig = {
@@ -242,6 +278,7 @@ export type MobDefinitionConfig = {
   npcId?: number;
   drops: MobDropConfig[];
   aquatic?: boolean;
+  caster?: MobCasterConfig;
 };
 
 type MobJsonEntry = (typeof mobsRaw.mobs)[number] & {
@@ -249,11 +286,36 @@ type MobJsonEntry = (typeof mobsRaw.mobs)[number] & {
   maxHit?: number;
   attackDamage?: number;
   aquatic?: boolean;
+  caster?: Partial<MobCasterConfig>;
 };
 
 
 function parseMobCombatStats(mob: MobJsonEntry) {
   return normalizeMobHitRange(mob.minHit, mob.maxHit, mob.attackDamage);
+}
+
+function parseMobCasterConfig(mob: MobJsonEntry): MobCasterConfig | undefined {
+  if (!mob.caster) {
+    return undefined;
+  }
+  const spellId = Math.floor(Number(mob.caster.spellId));
+  const cooldownMs = Math.floor(Number(mob.caster.cooldownMs));
+  const minDamage = Math.floor(Number(mob.caster.minDamage));
+  const maxDamage = Math.floor(Number(mob.caster.maxDamage));
+  if (
+    !Number.isFinite(spellId) ||
+    !Number.isFinite(cooldownMs) ||
+    !Number.isFinite(minDamage) ||
+    !Number.isFinite(maxDamage)
+  ) {
+    return undefined;
+  }
+  return {
+    spellId: Math.max(1, spellId),
+    cooldownMs: Math.max(500, cooldownMs),
+    minDamage: Math.max(0, Math.min(minDamage, maxDamage)),
+    maxDamage: Math.max(0, Math.max(minDamage, maxDamage)),
+  };
 }
 
 export type MapMobSpawnConfig = {
@@ -339,6 +401,7 @@ export const MOB_DEFINITIONS: Record<MobId, MobDefinitionConfig> = Object.fromEn
   mobsRaw.mobs.map((mob) => {
     const entry = mob as MobJsonEntry;
     const hits = parseMobCombatStats(entry);
+    const caster = parseMobCasterConfig(entry);
     return [
     asMobId(mob.mobId),
     {
@@ -365,6 +428,7 @@ export const MOB_DEFINITIONS: Record<MobId, MobDefinitionConfig> = Object.fromEn
         chancePercent: Math.min(100, Math.max(0, drop.chancePercent)),
       })),
       aquatic: entry.aquatic,
+      caster,
     } satisfies MobDefinitionConfig,
   ];
   })
@@ -430,6 +494,8 @@ export function buildMobSpawnConfigFromDefinition(
     gold: def.gold,
     npcId: def.npcId,
     drops: def.drops,
+    aquatic: def.aquatic,
+    caster: def.caster,
   };
 }
 
@@ -501,6 +567,8 @@ export const MOB_SPAWNS: MobSpawnConfig[] = MAP_MOB_SPAWNS.flatMap((entry) => {
     gold: base.gold,
     npcId: base.npcId,
     drops: base.drops,
+    aquatic: base.aquatic,
+    caster: base.caster,
   }));
 });
 

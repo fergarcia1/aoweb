@@ -97,3 +97,13 @@ export type CharacterRow = {
   attr_agility_bonus: number;
   attr_buffs_expires_at_ms: number;
 };
+
+export type AuctionSnapshot = {
+  id: string;
+  sellerId: string;
+  sellerName: string;
+  itemId: string;
+  amount: number;
+  price: number;
+  expiresAtMs: number;
+};

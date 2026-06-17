@@ -7,7 +7,7 @@ import {
 } from "./aowebSkinLayout";
 import { registerPlayerHudAssets, setupPlayerHudTextures } from "./playerHudFrame";
 
-const INVENTORY_UI_PATH = "/assets/ao/uiGrafica/";
+const INVENTORY_UI_PATH = "assets/ao/uiGrafica/";
 
 const INVENTORY_UI_KEYS = {
   cornerTopLeft: "inventory_corner_top_left",

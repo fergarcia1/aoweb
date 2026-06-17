@@ -100,8 +100,10 @@ export type GameSceneMultiplayerDeps = {
   handleServerPlayerUpdated: (state: NetPlayerState) => void;
   handleServerPartyUpdate: (message: import("../../../shared/protocol").ServerPartyUpdateMessage) => void;
   handleServerPartyInviteRequest: (message: import("../../../shared/protocol").ServerPartyInviteRequestMessage) => void;
+  onAuctionCatalog: (auctions: import("../../../shared/types").NetAuctionState[]) => void;
 
   applyServerPlayerRole: (serverRole?: PlayerRole) => void;
+
   isAdminCharacterName: (name: string) => boolean;
 
   snapLocalPlayerToTile: (state: NetPlayerState) => void;
@@ -192,6 +194,7 @@ export type GameSceneMultiplayerDeps = {
 export class GameSceneMultiplayerController {
   private bridge: MultiplayerBridge | null = null;
   private networkMovePending = false;
+  private syncInventoryTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(private readonly deps: GameSceneMultiplayerDeps) {}
 
@@ -283,7 +286,11 @@ export class GameSceneMultiplayerController {
           this.deps.onCharacterAlreadyOnline(message),
         onLogoutComplete: () => this.deps.onLogoutComplete(),
         onUseItemAck: (ack) => this.deps.handleServerUseItemAck(ack),
+        onAuctionCatalog: (auctions) => {
+          this.deps.onAuctionCatalog(auctions);
+        },
         onInventoryUpdated: (inventory, gold) => {
+
           this.deps.syncLocalInventoryFromServer(inventory, { slotUiOnly: true });
           this.deps.syncLocalGoldFromServer(gold);
         },
@@ -353,7 +360,14 @@ export class GameSceneMultiplayerController {
     if (!this.bridge?.isActive()) {
       return;
     }
-    this.bridge.sendSyncInventory(buildJoinInventorySlots(this.deps.getInventory()));
+    if (this.syncInventoryTimer) {
+      clearTimeout(this.syncInventoryTimer);
+    }
+    this.syncInventoryTimer = setTimeout(() => {
+      this.syncInventoryTimer = null;
+      if (!this.bridge?.isActive()) return;
+      this.bridge.sendSyncInventory(buildJoinInventorySlots(this.deps.getInventory()));
+    }, 150);
   }
 
   syncServerBankIfActive(): void {
@@ -573,7 +587,12 @@ export class GameSceneMultiplayerController {
     this.bridge?.sendRequestLogout();
   }
 
+  onAuctionCatalog(auctions: import("../../../shared/types").NetAuctionState[]): void {
+    this.deps.onAuctionCatalog(auctions);
+  }
+
   onPlayerMoved(player: NetPlayerState): void {
+
     const localId = this.bridge?.getPlayerId();
     if (!localId) return;
     if (player.id === localId) {

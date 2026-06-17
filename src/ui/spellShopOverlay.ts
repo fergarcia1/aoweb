@@ -23,23 +23,30 @@ type SpellShopOverlayHandlers = {
 };
 
 const COLORS = {
-  panelBg: 0x141c28,
-  panelBorder: 0xc9a227,
-  btnBg: 0x3d4555,
-  btnHover: 0x4f596d,
-  closeBg: 0xb83232,
-  closeHover: 0xd04040,
+  overlay: 0x0a0c10,
+  panelBg: 0x120d0b,
+  panelBorder: 0x9b1d16,
+  panelAccent: 0xd4a72c,
+  divider: 0x5d241d,
+  btnBg: 0x4b1714,
+  btnHover: 0x6f211d,
+  btnDisabled: 0x24100e,
   slotBg: 0x0e1218,
-  slotBorder: 0x4a5568,
-  slotSelected: 0x6b5428,
-  title: "#d4af37",
-  body: "#e6edf3",
-  muted: "#9aa3b2",
+  slotBorder: 0x5d241d,
+  slotSelected: 0xd4a72c,
+  scrollTrack: 0x3a1a16,
+  scrollThumb: 0xd4a72c,
+  title: "#f1c44d",
+  body: "#f4ead0",
+  muted: "#bda98a",
   gold: "#f1c40f",
   disabled: "#ff6666",
+  buttonText: "#fff3d2",
 };
 
 const CATALOG_COLS = 6;
+const CATALOG_ROWS = 4;
+const CATALOG_PAGE_SIZE = CATALOG_COLS * CATALOG_ROWS;
 const SLOT_SIZE = 32;
 const SLOT_GAP = 2;
 const ICON_SCALE = SHOP_SLOT_ICON_SCALE;
@@ -48,6 +55,12 @@ type SlotUi = {
   bg: Phaser.GameObjects.Rectangle;
   icon: Phaser.GameObjects.Image;
   badge: Phaser.GameObjects.Text;
+  spellIndex: number;
+};
+
+type ActionButton = {
+  bg: Phaser.GameObjects.Rectangle;
+  label: Phaser.GameObjects.Text;
 };
 
 export class SpellShopOverlay {
@@ -62,18 +75,23 @@ export class SpellShopOverlay {
   private readonly detailMeta: Phaser.GameObjects.Text;
   private readonly detailPrice: Phaser.GameObjects.Text;
   private readonly hintText: Phaser.GameObjects.Text;
-  private readonly closeBtn: Phaser.GameObjects.Rectangle;
-  private readonly closeLabel: Phaser.GameObjects.Text;
-  private readonly buyBtnBg: Phaser.GameObjects.Rectangle;
-  private readonly buyBtnLabel: Phaser.GameObjects.Text;
+  private readonly divider: Phaser.GameObjects.Rectangle;
+  private readonly closeBtn: ActionButton;
+  private readonly buyBtn: ActionButton;
+  private readonly scrollUpBtn: ActionButton;
+  private readonly scrollDownBtn: ActionButton;
+  private readonly scrollTrack: Phaser.GameObjects.Rectangle;
+  private readonly scrollThumb: Phaser.GameObjects.Rectangle;
 
   private readonly catalogSlots: SlotUi[] = [];
+  private readonly loadingSpellTextureKeys = new Set<string>();
 
   private open = false;
   private lastViewport: GameViewportRect = { x: 0, y: 0, width: 800, height: 600 };
   private catalog: SpellDefinition[] = [];
   private lastState: SpellShopViewState | null = null;
   private selectedIndex: number | null = null;
+  private scrollOffset = 0;
 
   constructor(
     scene: Phaser.Scene,
@@ -82,7 +100,7 @@ export class SpellShopOverlay {
     this.container = scene.add.container(0, 0).setDepth(50_100).setScrollFactor(0);
     this.catalogGroup = scene.add.container(0, 0);
     this.backdrop = scene.add
-      .rectangle(0, 0, 10, 10, 0x05070c, 0.62)
+      .rectangle(0, 0, 10, 10, COLORS.overlay, 0.62)
       .setOrigin(0, 0)
       .setScrollFactor(0);
 
@@ -94,31 +112,39 @@ export class SpellShopOverlay {
     this.titleText = this.createTitle(scene, "Vendedor de Magia");
     this.goldText = this.createBodyText(scene, "");
     this.catalogTitle = this.createMutedText(scene, "Hechizos");
-    this.detailName = this.createBodyText(scene, "Seleccioná un hechizo");
+    this.detailName = this.createBodyText(scene, "Selecciona un hechizo");
     this.detailMeta = this.createMutedText(scene, "");
     this.detailPrice = this.createMutedText(scene, "");
-    this.hintText = this.createMutedText(scene, "Comprar enseña el hechizo al instante.");
-
-    const close = this.createCloseButton(scene, () => this.handlers.onClose());
-    this.closeBtn = close.bg;
-    this.closeLabel = close.label;
-
-    this.buyBtnBg = scene.add
-      .rectangle(0, 0, 100, 28, COLORS.btnBg, 1)
-      .setOrigin(0.5, 0.5)
-      .setStrokeStyle(1, COLORS.panelBorder, 1)
-      .setInteractive({ useHandCursor: true });
-    this.buyBtnLabel = scene.add
-      .text(0, 0, "Aprender", {
+    this.hintText = scene.add
+      .text(0, 0, "Aprender incorpora el hechizo al libro al instante.", {
         fontFamily: GAME_FONT,
-        fontSize: "11px",
-        color: COLORS.body,
+        fontSize: "10px",
+        color: COLORS.muted,
+        align: "center",
+        wordWrap: { width: 248 },
         resolution: GAME_TEXT_RESOLUTION,
       })
-      .setOrigin(0.5, 0.5);
-    this.buyBtnBg.on("pointerover", () => this.buyBtnBg.setFillStyle(COLORS.btnHover));
-    this.buyBtnBg.on("pointerout", () => this.buyBtnBg.setFillStyle(COLORS.btnBg));
-    this.buyBtnBg.on("pointerdown", () => this.confirmBuy());
+      .setOrigin(0.5, 0);
+    this.divider = scene.add.rectangle(0, 0, 10, 1, COLORS.divider, 1).setOrigin(0.5, 0);
+
+    this.closeBtn = this.createButton(scene, "Volver", () => this.handlers.onClose(), 58, 20);
+    this.buyBtn = this.createButton(scene, "Aprender", () => this.confirmBuy(), 112, 28);
+    this.scrollUpBtn = this.createButton(scene, "^", () => this.scrollCatalog(-CATALOG_COLS), 30, 24);
+    this.scrollDownBtn = this.createButton(scene, "v", () => this.scrollCatalog(CATALOG_COLS), 30, 24);
+    this.scrollTrack = scene.add
+      .rectangle(0, 0, 12, 10, COLORS.scrollTrack, 1)
+      .setStrokeStyle(1, COLORS.panelAccent, 0.8)
+      .setOrigin(0.5, 0);
+    this.scrollThumb = scene.add
+      .rectangle(0, 0, 10, 18, COLORS.scrollThumb, 1)
+      .setOrigin(0.5, 0);
+
+    scene.input.on("wheel", (pointer: Phaser.Input.Pointer, _objects: unknown, _dx: number, dy: number) => {
+      if (!this.open || !this.isPointerInsideCatalog(pointer.x, pointer.y)) {
+        return;
+      }
+      this.scrollCatalog(dy > 0 ? CATALOG_COLS : -CATALOG_COLS);
+    });
 
     this.container.add([
       this.backdrop,
@@ -127,14 +153,21 @@ export class SpellShopOverlay {
       this.goldText,
       this.catalogTitle,
       this.catalogGroup,
+      this.scrollUpBtn.bg,
+      this.scrollUpBtn.label,
+      this.scrollTrack,
+      this.scrollThumb,
+      this.scrollDownBtn.bg,
+      this.scrollDownBtn.label,
+      this.divider,
       this.detailName,
       this.detailMeta,
       this.detailPrice,
       this.hintText,
-      this.buyBtnBg,
-      this.buyBtnLabel,
-      this.closeBtn,
-      this.closeLabel,
+      this.buyBtn.bg,
+      this.buyBtn.label,
+      this.closeBtn.bg,
+      this.closeBtn.label,
     ]);
     this.container.setVisible(false);
   }
@@ -173,28 +206,34 @@ export class SpellShopOverlay {
       .setOrigin(0.5, 0);
   }
 
-  private createCloseButton(scene: Phaser.Scene, onClick: () => void) {
-    const size = 18;
+  private createButton(
+    scene: Phaser.Scene,
+    label: string,
+    onClick: () => void,
+    width: number,
+    height: number
+  ): ActionButton {
     const bg = scene.add
-      .rectangle(0, 0, size, size, COLORS.closeBg, 1)
+      .rectangle(0, 0, width, height, COLORS.btnBg, 1)
       .setOrigin(0.5, 0.5)
+      .setStrokeStyle(1, COLORS.panelAccent, 0.95)
       .setInteractive({ useHandCursor: true });
-    const label = scene.add
-      .text(0, 0, "X", {
+    const text = scene.add
+      .text(0, 0, label, {
         fontFamily: GAME_FONT,
         fontSize: "11px",
-        color: "#ffffff",
+        color: COLORS.buttonText,
         fontStyle: "bold",
         resolution: GAME_TEXT_RESOLUTION,
       })
       .setOrigin(0.5, 0.5);
-    bg.on("pointerover", () => bg.setFillStyle(COLORS.closeHover));
-    bg.on("pointerout", () => bg.setFillStyle(COLORS.closeBg));
+    bg.on("pointerover", () => bg.setFillStyle(COLORS.btnHover));
+    bg.on("pointerout", () => bg.setFillStyle(COLORS.btnBg));
     bg.on("pointerdown", onClick);
-    return { bg, label };
+    return { bg, label: text };
   }
 
-  private createSlotUi(scene: Phaser.Scene, onClick: () => void): SlotUi {
+  private createSlotUi(scene: Phaser.Scene, spellIndex: number, onClick: () => void): SlotUi {
     const bg = scene.add
       .rectangle(0, 0, SLOT_SIZE, SLOT_SIZE, COLORS.slotBg, 1)
       .setOrigin(0, 0)
@@ -210,15 +249,21 @@ export class SpellShopOverlay {
       })
       .setOrigin(1, 1);
     bg.on("pointerdown", onClick);
-    return { bg, icon, badge };
+    return { bg, icon, badge, spellIndex };
   }
 
   private rebuildCatalog(scene: Phaser.Scene, state: SpellShopViewState) {
     this.catalogGroup.removeAll(true);
     this.catalogSlots.length = 0;
 
-    state.catalog.forEach((spell, index) => {
-      const slot = this.createSlotUi(scene, () => this.selectSpell(index));
+    const visibleSpells = state.catalog.slice(
+      this.scrollOffset,
+      this.scrollOffset + CATALOG_PAGE_SIZE
+    );
+
+    visibleSpells.forEach((spell, visibleIndex) => {
+      const spellIndex = this.scrollOffset + visibleIndex;
+      const slot = this.createSlotUi(scene, spellIndex, () => this.selectSpell(spellIndex));
       this.catalogSlots.push(slot);
       const texKey = macroSpellTextureKey(spell.idSpell);
       if (scene.textures.exists(texKey)) {
@@ -232,10 +277,29 @@ export class SpellShopOverlay {
         } else {
           slot.icon.clearTint();
         }
+      } else if (spell.iconAssetPath) {
+        this.queueSpellIcon(scene, texKey, spell.iconAssetPath);
       }
       slot.badge.setText(spell.nivelRequerido > 0 ? String(spell.nivelRequerido) : "");
       this.catalogGroup.add([slot.bg, slot.icon, slot.badge]);
     });
+  }
+
+  private queueSpellIcon(scene: Phaser.Scene, textureKey: string, assetPath: string) {
+    if (this.loadingSpellTextureKeys.has(textureKey) || scene.textures.exists(textureKey)) {
+      return;
+    }
+    this.loadingSpellTextureKeys.add(textureKey);
+    scene.load.image(textureKey, assetPath);
+    scene.load.once(`filecomplete-image-${textureKey}`, () => {
+      this.loadingSpellTextureKeys.delete(textureKey);
+      if (this.open && this.lastState) {
+        this.refresh(this.lastState);
+      }
+    });
+    if (!scene.load.isLoading()) {
+      scene.load.start();
+    }
   }
 
   private isSpellLearned(spell: SpellDefinition, state: SpellShopViewState): boolean {
@@ -252,9 +316,18 @@ export class SpellShopOverlay {
 
   private selectSpell(index: number) {
     this.selectedIndex = index;
+    this.ensureSelectedSpellVisible();
     this.refreshDetails();
-    this.catalogSlots.forEach((slot, i) => {
-      slot.bg.setStrokeStyle(1, i === index ? COLORS.slotSelected : COLORS.slotBorder, 1);
+    this.refreshSelectionHighlight();
+  }
+
+  private refreshSelectionHighlight() {
+    this.catalogSlots.forEach((slot) => {
+      slot.bg.setStrokeStyle(
+        slot.spellIndex === this.selectedIndex ? 2 : 1,
+        slot.spellIndex === this.selectedIndex ? COLORS.slotSelected : COLORS.slotBorder,
+        1
+      );
     });
   }
 
@@ -268,8 +341,8 @@ export class SpellShopOverlay {
 
     this.detailName.setText(spell.nombre);
     this.detailMeta.setText(
-      `Nv ${spell.nivelRequerido} · ${spell.manaCost} mana` +
-        (state.learnedSpellIds.has(spell.idSpell) ? " · Ya aprendido" : "")
+      `Nv ${spell.nivelRequerido} - ${spell.manaCost} mana` +
+        (state.learnedSpellIds.has(spell.idSpell) ? " - Ya aprendido" : "")
     );
     const learned = this.isSpellLearned(spell, state);
     if (learned) {
@@ -292,14 +365,14 @@ export class SpellShopOverlay {
         (!spell.usableBy.includes(state.playerClass) ||
           spell.nivelRequerido > state.playerLevel));
     if (blocked) {
-      this.buyBtnBg.disableInteractive();
-      this.buyBtnBg.setAlpha(0.45);
-      this.buyBtnLabel.setAlpha(0.45);
+      this.buyBtn.bg.disableInteractive();
+      this.buyBtn.bg.setAlpha(0.45);
+      this.buyBtn.label.setAlpha(0.45);
       return;
     }
-    this.buyBtnBg.setInteractive({ useHandCursor: true });
-    this.buyBtnBg.setAlpha(1);
-    this.buyBtnLabel.setAlpha(1);
+    this.buyBtn.bg.setInteractive({ useHandCursor: true });
+    this.buyBtn.bg.setAlpha(1);
+    this.buyBtn.label.setAlpha(1);
   }
 
   private confirmBuy() {
@@ -317,6 +390,7 @@ export class SpellShopOverlay {
     this.lastState = state;
     this.catalog = state.catalog;
     this.selectedIndex = state.catalog.length > 0 ? 0 : null;
+    this.scrollOffset = 0;
     this.lastViewport = rect;
     this.container.setVisible(true);
     this.titleText.setText(state.title);
@@ -332,13 +406,14 @@ export class SpellShopOverlay {
     this.lastState = state;
     this.catalog = state.catalog;
     this.goldText.setText(`Oro: ${state.playerGold.toLocaleString("es-AR")}`);
-    this.rebuildCatalog(this.container.scene, state);
     if (
       this.selectedIndex !== null &&
       this.selectedIndex >= state.catalog.length
     ) {
       this.selectedIndex = state.catalog.length > 0 ? 0 : null;
     }
+    this.ensureSelectedSpellVisible();
+    this.rebuildCatalog(this.container.scene, state);
     this.layout(this.lastViewport);
     if (this.selectedIndex !== null) {
       this.selectSpell(this.selectedIndex);
@@ -366,33 +441,43 @@ export class SpellShopOverlay {
     const cx = rect.x + rect.width / 2;
     const cy = rect.y + rect.height / 2;
 
-    const catalogRows = Math.max(1, Math.ceil(this.catalog.length / CATALOG_COLS));
     const gridW = CATALOG_COLS * SLOT_SIZE + Math.max(0, CATALOG_COLS - 1) * SLOT_GAP;
-    const gridH = catalogRows * SLOT_SIZE + Math.max(0, catalogRows - 1) * SLOT_GAP;
-    const panelW = Math.min(Math.max(280, gridW + 56), rect.width - 24);
-    const panelH = Math.min(gridH + 168, rect.height - 24);
+    const gridH = CATALOG_ROWS * SLOT_SIZE + Math.max(0, CATALOG_ROWS - 1) * SLOT_GAP;
+    const panelW = Math.min(Math.max(340, gridW + 112), rect.width - 24);
+    const panelH = Math.min(384, rect.height - 24);
 
     this.panel.setSize(panelW, panelH);
     this.panel.setPosition(cx, cy);
 
-    this.titleText.setPosition(cx, cy - panelH / 2 + 12);
-    this.goldText.setPosition(cx, cy - panelH / 2 + 30);
-    this.closeBtn.setPosition(cx + panelW / 2 - 16, cy - panelH / 2 + 12);
-    this.closeLabel.setPosition(cx + panelW / 2 - 16, cy - panelH / 2 + 12);
+    this.titleText.setPosition(cx, cy - panelH / 2 + 16);
+    this.goldText.setPosition(cx, cy - panelH / 2 + 36);
+    this.closeBtn.bg.setPosition(cx + panelW / 2 - 40, cy - panelH / 2 + 20);
+    this.closeBtn.label.setPosition(cx + panelW / 2 - 40, cy - panelH / 2 + 20);
 
     const gridLeft = cx - gridW / 2;
-    const gridTop = cy - panelH / 2 + 52;
-    this.catalogTitle.setPosition(cx, cy - panelH / 2 + 44);
+    const gridTop = cy - panelH / 2 + 70;
+    this.catalogTitle.setPosition(cx, cy - panelH / 2 + 58);
     this.catalogGroup.setPosition(gridLeft, gridTop);
     this.layoutCatalogGrid(0, 0);
 
+    const scrollX = gridLeft + gridW + 24;
+    this.scrollUpBtn.bg.setPosition(scrollX, gridTop + 12);
+    this.scrollUpBtn.label.setPosition(scrollX, gridTop + 12);
+    this.scrollTrack.setPosition(scrollX, gridTop + 34);
+    this.scrollTrack.setSize(12, Math.max(28, gridH - 68));
+    this.scrollDownBtn.bg.setPosition(scrollX, gridTop + gridH - 12);
+    this.scrollDownBtn.label.setPosition(scrollX, gridTop + gridH - 12);
+    this.updateScrollControls();
+
     const detailY = gridTop + gridH + 14;
+    this.divider.setPosition(cx, detailY - 8);
+    this.divider.setSize(panelW - 54, 1);
     this.detailName.setPosition(cx, detailY);
     this.detailMeta.setPosition(cx, detailY + 16);
     this.detailPrice.setPosition(cx, detailY + 32);
-    this.hintText.setPosition(cx, detailY + 50);
-    this.buyBtnBg.setPosition(cx, detailY + 72);
-    this.buyBtnLabel.setPosition(cx, detailY + 72);
+    this.hintText.setPosition(cx, detailY + 52);
+    this.buyBtn.bg.setPosition(cx, detailY + 88);
+    this.buyBtn.label.setPosition(cx, detailY + 88);
   }
 
   private layoutCatalogGrid(startX: number, startY: number) {
@@ -405,6 +490,82 @@ export class SpellShopOverlay {
       slot.icon.setPosition(x + SLOT_SIZE / 2, y + SLOT_SIZE / 2);
       slot.badge.setPosition(x + SLOT_SIZE - 2, y + SLOT_SIZE - 1);
     });
+  }
+
+  private scrollCatalog(delta: number) {
+    const maxOffset = this.getMaxScrollOffset();
+    const next = Phaser.Math.Clamp(this.scrollOffset + delta, 0, maxOffset);
+    if (next === this.scrollOffset) {
+      return;
+    }
+    this.scrollOffset = next - (next % CATALOG_COLS);
+    if (this.lastState) {
+      this.rebuildCatalog(this.container.scene, this.lastState);
+      this.layout(this.lastViewport);
+      this.refreshSelectionHighlight();
+      this.refreshDetails();
+    }
+  }
+
+  private ensureSelectedSpellVisible() {
+    if (this.selectedIndex === null) return;
+    if (this.selectedIndex < this.scrollOffset) {
+      this.scrollOffset = this.selectedIndex - (this.selectedIndex % CATALOG_COLS);
+    } else if (this.selectedIndex >= this.scrollOffset + CATALOG_PAGE_SIZE) {
+      const rowStart = this.selectedIndex - (this.selectedIndex % CATALOG_COLS);
+      this.scrollOffset = Math.max(0, rowStart - (CATALOG_ROWS - 1) * CATALOG_COLS);
+    }
+    this.scrollOffset = Phaser.Math.Clamp(this.scrollOffset, 0, this.getMaxScrollOffset());
+  }
+
+  private getMaxScrollOffset(): number {
+    if (this.catalog.length <= CATALOG_PAGE_SIZE) {
+      return 0;
+    }
+    const lastPageStart = this.catalog.length - CATALOG_PAGE_SIZE;
+    return Math.ceil(lastPageStart / CATALOG_COLS) * CATALOG_COLS;
+  }
+
+  private updateScrollControls() {
+    const canScroll = this.catalog.length > CATALOG_PAGE_SIZE;
+    this.scrollUpBtn.bg.setVisible(canScroll);
+    this.scrollUpBtn.label.setVisible(canScroll);
+    this.scrollTrack.setVisible(canScroll);
+    this.scrollThumb.setVisible(canScroll);
+    this.scrollDownBtn.bg.setVisible(canScroll);
+    this.scrollDownBtn.label.setVisible(canScroll);
+    if (!canScroll) return;
+
+    const canScrollUp = this.scrollOffset > 0;
+    const canScrollDown = this.scrollOffset < this.getMaxScrollOffset();
+    this.setButtonEnabled(this.scrollUpBtn, canScrollUp);
+    this.setButtonEnabled(this.scrollDownBtn, canScrollDown);
+
+    const trackTop = this.scrollTrack.y;
+    const trackH = this.scrollTrack.height;
+    const maxOffset = Math.max(1, this.getMaxScrollOffset());
+    const thumbH = Math.max(18, Math.floor(trackH * (CATALOG_PAGE_SIZE / this.catalog.length)));
+    const travel = Math.max(1, trackH - thumbH);
+    const progress = this.scrollOffset / maxOffset;
+    this.scrollThumb.setSize(10, thumbH);
+    this.scrollThumb.setPosition(this.scrollTrack.x, trackTop + travel * progress);
+  }
+
+  private setButtonEnabled(button: ActionButton, enabled: boolean) {
+    button.bg.setFillStyle(enabled ? COLORS.btnBg : COLORS.btnDisabled);
+    button.bg.setAlpha(enabled ? 1 : 0.55);
+    button.label.setAlpha(enabled ? 1 : 0.55);
+    if (enabled) {
+      button.bg.setInteractive({ useHandCursor: true });
+    } else {
+      button.bg.disableInteractive();
+    }
+  }
+
+  private isPointerInsideCatalog(x: number, y: number): boolean {
+    const bounds = this.catalogGroup.getBounds();
+    const scrollBounds = this.scrollTrack.getBounds();
+    return bounds.contains(x, y) || scrollBounds.contains(x, y);
   }
 
   getContainer(): Phaser.GameObjects.Container {

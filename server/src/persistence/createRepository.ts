@@ -1,10 +1,11 @@
 import { MemoryCharacterRepository } from "./memoryRepository";
-import type { CharacterRepository } from "./repository";
+import type { AuctionRepository, CharacterRepository } from "./repository";
 import { SqlCharacterRepository } from "./sqlRepository";
 
-export type CharacterRepositoryRuntime = CharacterRepository & {
-  close?: () => Promise<void>;
-};
+export type CharacterRepositoryRuntime = CharacterRepository &
+  AuctionRepository & {
+    close?: () => Promise<void>;
+  };
 
 export function createCharacterRepositoryFromEnv(): CharacterRepositoryRuntime {
   const connectionString = process.env.DATABASE_URL?.trim();
@@ -15,4 +16,5 @@ export function createCharacterRepositoryFromEnv(): CharacterRepositoryRuntime {
   console.log("[persistence] Using PostgreSQL repository.");
   return new SqlCharacterRepository(connectionString);
 }
+
 

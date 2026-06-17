@@ -33,11 +33,27 @@ export function doorWalkabilityTile(isOpen: boolean): number {
   return isOpen ? TILE.GRASS : TILE.GRASS_BLOCKED;
 }
 
+const DOUBLE_DOORS: Record<string, string> = {
+  "63,66": "62,66",
+  "62,66": "63,66",
+  "73,36": "72,36",
+  "72,36": "73,36",
+  "81,36": "80,36",
+  "80,36": "81,36",
+};
+
 export function setDoorTileOverride(
   overrides: Map<string, number>,
   tileX: number,
   tileY: number,
   isOpen: boolean
 ): void {
-  overrides.set(mapTileOverrideKey(tileX, tileY), doorWalkabilityTile(isOpen));
+  const key = mapTileOverrideKey(tileX, tileY);
+  const val = doorWalkabilityTile(isOpen);
+  overrides.set(key, val);
+
+  const partnerKey = DOUBLE_DOORS[key];
+  if (partnerKey) {
+    overrides.set(partnerKey, val);
+  }
 }

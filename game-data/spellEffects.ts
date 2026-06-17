@@ -483,6 +483,19 @@ export const SPELL_EFFECTS: SpellEffectConfig[] = [
     originY: 1,
     tint: 0xffffcc,
   },
+  {
+    idSpell: 75,
+    sheetKey: "spell_circulo_curativo_fx",
+    path: "/assets/ao/spells/circuloCurativoAnimation.png",
+    ...FX_128,
+    frameCount: 16,
+    frameRate: 14,
+    scale: 1.1,
+    offsetY: 0,
+    originX: 0.5,
+    originY: 0.5,
+    tint: 0x44ff88,
+  },
 ].map(enrichSpellEffectWithCastMeta);
 
 function enrichSpellEffectWithCastMeta(

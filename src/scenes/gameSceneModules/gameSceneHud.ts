@@ -42,9 +42,6 @@ export function refreshGameSceneMinimap(deps: GameSceneHudDeps): void {
 export function refreshGameSceneHud(deps: GameSceneHudDeps): void {
   const ui = deps.getGameUi();
   if (!ui) return;
-  refreshGameSceneMapLocation(deps);
-  refreshGameSceneMinimap(deps);
-  deps.getMapController().updateWorldMapMarker();
   deps.refreshStatsOverlay();
   const p = deps.getPlayerProgress();
   ui.setStats({

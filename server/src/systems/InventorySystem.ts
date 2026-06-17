@@ -119,6 +119,15 @@ export class InventorySystem {
     if (result.attributeBuffs) {
       session.attributeBuffs = result.attributeBuffs;
     }
+    if (typeof result.hp === "number" || result.attributeBuffs) {
+      this.world.broadcastToAoi(session.mapId, session.tileX, session.tileY, {
+        type: "player_updated",
+        player: session.toNetState(),
+      });
+      if (typeof result.hp === "number") {
+        this.world.notifyPartyOfHpChange(session.id);
+      }
+    }
     this.consumeInventorySlot(session, slot.slotIndex);
 
     this.world.send(session, {
@@ -300,7 +309,7 @@ export class InventorySystem {
       session.recalcDefenseStats();
       session.recalcAttackStats();
       this.world.sendCombatLog(session, `Equipaste ${item.name}.`);
-      this.world.sendPlayerState(session);
+      this.world.broadcastPlayerState(session);
       void this.world.persistSession(session);
       return;
     }
@@ -321,7 +330,7 @@ export class InventorySystem {
     session.recalcDefenseStats();
     session.recalcAttackStats();
     this.world.sendCombatLog(session, `Te quitaste ${item.name}.`);
-    this.world.sendPlayerState(session);
+    this.world.broadcastPlayerState(session);
     void this.world.persistSession(session);
   }
 
@@ -412,7 +421,7 @@ export class InventorySystem {
     this.syncInventoryEquippedFlags(session);
     
     if (unequipped) {
-      this.world.sendPlayerState(session);
+      this.world.broadcastPlayerState(session);
       this.world.broadcastPlayerMoved(session);
     }
 

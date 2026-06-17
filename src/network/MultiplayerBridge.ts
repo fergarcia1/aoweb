@@ -55,7 +55,9 @@ export type MultiplayerBridgeCallbacks = {
   onWorldItemRemoved: (mapId: string, worldItemId: string) => void;
   onPartyUpdate?: (message: import("../../shared/protocol").ServerPartyUpdateMessage) => void;
   onPartyInviteRequest?: (message: import("../../shared/protocol").ServerPartyInviteRequestMessage) => void;
+  onAuctionCatalog?: (auctions: import("../../shared/types").NetAuctionState[]) => void;
   getJoinPayload: () => MultiplayerJoinPayload;
+
   getWorldInteractiveCursor?: () => string;
   onCharacterAlreadyOnline?: (message: string) => void;
   onLogoutComplete?: () => void;
@@ -375,9 +377,26 @@ export class MultiplayerBridge {
     this.networkClient?.sendMeditation(active);
   }
 
+  sendAuctionFetch() {
+    this.networkClient?.sendAuctionFetch();
+  }
+
+  sendAuctionList(inventorySlot: number, amount: number, price: number, durationHours: number) {
+    this.networkClient?.sendAuctionList(inventorySlot, amount, price, durationHours);
+  }
+
+  sendAuctionBuy(auctionId: string) {
+    this.networkClient?.sendAuctionBuy(auctionId);
+  }
+
+  sendAuctionCancel(auctionId: string) {
+    this.networkClient?.sendAuctionCancel(auctionId);
+  }
+
   sendRequestLogout() {
     this.networkClient?.sendRequestLogout();
   }
+
 
   sendPartyAction(
     action: Extract<import("../../shared/protocol").ClientMessage, { type: "party_action" }>["action"],

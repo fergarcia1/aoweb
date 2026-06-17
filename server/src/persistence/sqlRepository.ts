@@ -1,5 +1,5 @@
-import type { CharacterRepository } from "./repository";
-import type { PersistedCharacterSnapshot } from "./types";
+import type { AuctionRepository, CharacterRepository } from "./repository";
+import type { AuctionSnapshot, PersistedCharacterSnapshot } from "./types";
 import { Pool, type PoolClient } from "pg";
 import {
   mapCharacterRowToSnapshot,
@@ -10,14 +10,51 @@ import type { CharacterRow } from "./types";
 /**
  * PostgreSQL-backed repository.
  */
-export class SqlCharacterRepository implements CharacterRepository {
+export class SqlCharacterRepository
+  implements CharacterRepository, AuctionRepository
+{
   private readonly pool: Pool;
 
   constructor(private readonly connectionString: string) {
     this.pool = new Pool({ connectionString: this.connectionString });
   }
 
+  async getAll(): Promise<AuctionSnapshot[]> {
+    const result = await this.pool.query<AuctionSnapshot>(
+      `SELECT id, seller_id AS "sellerId", seller_name AS "sellerName", item_id AS "itemId", amount, price, expires_at_ms AS "expiresAtMs" FROM auctions`
+    );
+    return result.rows;
+  }
+
+  async getById(id: string): Promise<AuctionSnapshot | null> {
+    const result = await this.pool.query<AuctionSnapshot>(
+      `SELECT id, seller_id AS "sellerId", seller_name AS "sellerName", item_id AS "itemId", amount, price, expires_at_ms AS "expiresAtMs" FROM auctions WHERE id = $1`,
+      [id]
+    );
+    return result.rows[0] || null;
+  }
+
+  async add(auction: AuctionSnapshot): Promise<void> {
+    await this.pool.query(
+      `INSERT INTO auctions (id, seller_id, seller_name, item_id, amount, price, expires_at_ms) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+      [
+        auction.id,
+        auction.sellerId,
+        auction.sellerName,
+        auction.itemId,
+        auction.amount,
+        auction.price,
+        auction.expiresAtMs,
+      ]
+    );
+  }
+
+  async remove(id: string): Promise<void> {
+    await this.pool.query(`DELETE FROM auctions WHERE id = $1`, [id]);
+  }
+
   async getByName(name: string): Promise<PersistedCharacterSnapshot | null> {
+
     const normalized = name.trim();
     if (!normalized) return null;
 

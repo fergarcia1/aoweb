@@ -148,6 +148,57 @@ export function queueItemAssetsById(
   return queueItemDefinitionAssets(scene, item, options);
 }
 
+export function queueEquippableVisualAssets(scene: Phaser.Scene): number {
+  let queued = 0;
+
+  for (const item of Object.values(ITEM_DEFINITIONS)) {
+    if (!item.equipSlot) {
+      continue;
+    }
+
+    if (item.equippedTextureKey && item.equippedAssetPath) {
+      if (item.equippedFrameWidth && item.equippedFrameHeight) {
+        if (
+          queueSpritesheetIfMissing(
+            scene,
+            item.equippedTextureKey,
+            item.equippedAssetPath,
+            item.equippedFrameWidth,
+            item.equippedFrameHeight
+          )
+        ) {
+          queued += 1;
+        }
+      } else if (queueImageIfMissing(scene, item.equippedTextureKey, item.equippedAssetPath)) {
+        queued += 1;
+      }
+    }
+
+    if (item.type !== "armor") {
+      continue;
+    }
+
+    const armorPaths = new Set<string>();
+    if (item.spritesheetStdPath) armorPaths.add(item.spritesheetStdPath);
+    if (item.spritesheetBajosPath) armorPaths.add(item.spritesheetBajosPath);
+    if (item.spritesheetPathsByRace) {
+      for (const path of Object.values(item.spritesheetPathsByRace)) {
+        if (path) armorPaths.add(path);
+      }
+    }
+
+    for (const sheetPath of armorPaths) {
+      const key = textureKeyFromAssetPath(sheetPath);
+      if (!scene.textures.exists(key)) {
+        registerArmorSpritesheet(scene, key, sheetPath);
+        queued += 1;
+      }
+    }
+  }
+
+  return queued;
+}
+
 export function startQueuedLoads(scene: Phaser.Scene): Promise<void> {
   if (scene.load.totalToLoad === 0) {
     return Promise.resolve();
@@ -158,4 +209,50 @@ export function startQueuedLoads(scene: Phaser.Scene): Promise<void> {
       scene.load.start();
     }
   });
+}
+
+export function ensureItemAssetsLoaded(
+  scene: Phaser.Scene,
+  itemId: ItemId,
+  options?: { raceId?: CharacterRaceId; onComplete?: () => void }
+): void {
+  const item = ITEM_DEFINITIONS[itemId];
+  if (!item) {
+    options?.onComplete?.();
+    return;
+  }
+
+  const hasTexture = scene.textures.exists(item.textureKey);
+  const hasEquipped = !item.equippedTextureKey || scene.textures.exists(item.equippedTextureKey);
+  
+  let hasArmor = true;
+  if (item.type === "armor") {
+    const stdPath = item.spritesheetStdPath;
+    if (stdPath && !scene.textures.exists(textureKeyFromAssetPath(stdPath))) {
+      hasArmor = false;
+    }
+    const racePath = options?.raceId && item.spritesheetPathsByRace ? item.spritesheetPathsByRace[options.raceId] : undefined;
+    if (racePath && !scene.textures.exists(textureKeyFromAssetPath(racePath))) {
+      hasArmor = false;
+    }
+  }
+
+  if (hasTexture && hasEquipped && hasArmor) {
+    options?.onComplete?.();
+    return;
+  }
+
+  const queuedCount = queueItemAssetsById(scene, itemId, { raceId: options?.raceId });
+  if (queuedCount === 0) {
+    options?.onComplete?.();
+    return;
+  }
+
+  if (options?.onComplete) {
+    scene.load.once(Phaser.Loader.Events.COMPLETE, options.onComplete);
+  }
+
+  if (!scene.load.isLoading()) {
+    scene.load.start();
+  }
 }

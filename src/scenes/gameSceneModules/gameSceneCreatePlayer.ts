@@ -57,6 +57,7 @@ export type CreateGameScenePlayerParams = {
   selectedFaction: CharacterFactionId;
   playerRole: PlayerRole;
   uiCamera?: Phaser.Cameras.Scene2D.Camera;
+  worldLayer?: Phaser.GameObjects.Container;
   setupHitbox: (player: Phaser.GameObjects.Sprite) => void;
   onPlayerPointerDown: () => void;
 };
@@ -81,6 +82,7 @@ export function createGameScenePlayer(params: CreateGameScenePlayerParams): Game
     selectedFaction,
     playerRole,
     uiCamera,
+    worldLayer,
     setupHitbox,
     onPlayerPointerDown,
   } = params;
@@ -134,7 +136,8 @@ export function createGameScenePlayer(params: CreateGameScenePlayerParams): Game
         depth: player.depth + 3,
       };
     },
-    uiCamera
+    uiCamera,
+    worldLayer
   );
 
   setupHitbox(player);

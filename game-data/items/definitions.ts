@@ -400,6 +400,7 @@ export const ITEM_DEFINITIONS: Record<ItemId, ItemDefinition> = {
 /** IDs legacy → id actual del catálogo. */
 const ITEM_ID_ALIASES: Record<string, ItemId> = {
   armor_citizen_bajos: "armor_citizen",
+  weapon_baculo_lazull: "weapon_baculo_lazurt",
 };
 
 export function normalizeItemId(itemId: string): ItemId | null {

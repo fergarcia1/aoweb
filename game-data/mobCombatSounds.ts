@@ -18,6 +18,9 @@ export const HEAVY_MOB_FOOTSTEP_MODELS: ReadonlySet<MobModelId> = new Set([
   "golem_plata",
   "golem_bronce",
   "golem_hielo",
+  "golem_infernal",
+  "golem_piedra",
+  "yeti",
   "dragon_rojo",
 ]);
 

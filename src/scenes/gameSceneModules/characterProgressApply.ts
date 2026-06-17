@@ -46,8 +46,7 @@ export function applySavedProgressToSceneState(input: {
     }
   }
   input.setEquipment(equipment);
-  input.setEquippedOutfit("base");
-  input.clearEquippedArmorVisual();
+  input.setEquippedOutfit(normalizeOutfit(progress.equippedOutfit));
   input.setPlayerProgress({ ...progress.playerProgress });
   input.setLearnedSpellIds([...progress.learnedSpellIds]);
   input.setMacroBindings(progress.macroBindings.map((b) => ({ ...b })));

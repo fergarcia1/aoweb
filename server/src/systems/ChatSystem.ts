@@ -11,6 +11,7 @@ import {
   isMapTileWalkable,
 } from "../../../shared/mapWalkability";
 import { getMap } from "../../../shared/maps";
+import { isWaterTile } from "../../../shared/navigation";
 import { addToServerInventory } from "../../../shared/serverInventory";
 import { getItemDefinition, type ItemId } from "../../../game-data/items/definitions";
 import { isKnownItemId } from "../../../game-data/items/registry";
@@ -208,6 +209,7 @@ export class ChatSystem {
     };
     this.world.send(session, update);
     this.world.broadcastToAoi(session.mapId, session.tileX, session.tileY, update, session.id);
+    this.world.notifyPartyOfHpChange(session.id);
     this.world.schedulePersistSessionDebounced(session);
     this.world.sendCombatLog(
       session,
@@ -224,7 +226,11 @@ export class ChatSystem {
       return;
     }
 
-    if (!isMapTileWalkable(session.mapId, x, y, this.world.getMapTileOverrides(session.mapId))) {
+    const overrides = this.world.getMapTileOverrides(session.mapId);
+    const isWalkable = isMapTileWalkable(session.mapId, x, y, overrides);
+    const isWater = isMapTileWalkable(session.mapId, x, y, overrides, true);
+
+    if (!isWalkable && !isWater) {
       this.world.sendCombatLog(session, `Tile (${x}, ${y}) no es caminable.`);
       return;
     }
@@ -274,7 +280,11 @@ export class ChatSystem {
       return;
     }
 
-    if (!isMapTileWalkable(mapId, x, y, this.world.getMapTileOverrides(mapId))) {
+    const overrides = this.world.getMapTileOverrides(mapId);
+    const isWalkable = isMapTileWalkable(mapId, x, y, overrides);
+    const isWater = isMapTileWalkable(mapId, x, y, overrides, true);
+
+    if (!isWalkable && !isWater) {
       this.world.sendCombatLog(session, `Tile (${x}, ${y}) no es caminable en ${mapId}. No fuiste teletransportado.`);
       return;
     }

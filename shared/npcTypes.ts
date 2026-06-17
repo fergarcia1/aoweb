@@ -10,7 +10,14 @@ export type NpcRole =
   | "alchemist"
   | "mage"
   | "general"
-  | "banker";
+  | "banker"
+  | "auctioneer"
+  | "test_blacksmith"
+  | "test_armorer"
+  | "test_tailor"
+  | "test_alchemist"
+  | "test_mage"
+  | "test_general";
 
 export type StaticNpcDefinition = {
   id: string;

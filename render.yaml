@@ -5,7 +5,7 @@ services:
     plan: free
     buildCommand: npm install --prefix server && npm run build --prefix server
     startCommand: npm start --prefix server
-    healthCheckPath: /
+    healthCheckPath: /health
     envVars:
       - key: NODE_VERSION
         value: 22

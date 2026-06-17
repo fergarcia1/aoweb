@@ -1,4 +1,5 @@
 import Phaser from "phaser";
+import { BANK_SLOT_COUNT, INVENTORY_SLOT_COUNT } from "../../game-data/constants";
 import { getItemDefinition } from "../items/itemDefinitions";
 import type { InventorySlot } from "../items/inventoryStack";
 import { GAME_FONT, GAME_TEXT_RESOLUTION } from "./fonts";
@@ -23,25 +24,27 @@ type BankOverlayHandlers = {
 type BankScreen = "menu" | "vault" | "goldDeposit" | "goldWithdraw";
 
 const COLORS = {
-  panelBg: 0x141c28,
-  panelBorder: 0xc9a227,
-  divider: 0xc9a227,
-  btnBg: 0x3d4555,
-  btnHover: 0x4f596d,
-  btnActive: 0x6b5428,
-  closeBg: 0xb83232,
-  closeHover: 0xd04040,
+  overlay: 0x0a0c10,
+  panelBg: 0x120d0b,
+  panelBorder: 0x9b1d16,
+  panelAccent: 0xd4a72c,
+  divider: 0x5d241d,
+  btnBg: 0x4b1714,
+  btnHover: 0x6f211d,
+  closeBg: 0x4b1714,
+  closeHover: 0x6f211d,
   slotBg: 0x0e1218,
-  slotBorder: 0x4a5568,
-  title: "#d4af37",
-  body: "#e6edf3",
-  muted: "#9aa3b2",
+  slotBorder: 0x5d241d,
+  title: "#f1c44d",
+  body: "#f4ead0",
+  muted: "#bda98a",
   gold: "#f1c40f",
+  buttonText: "#fff3d2",
 };
 
 const SLOT_COLS = 5;
-const SLOT_ROWS = 4;
-const SLOT_COUNT = SLOT_COLS * SLOT_ROWS;
+const INVENTORY_SLOT_ROWS = 4;
+const BANK_SLOT_ROWS = Math.ceil(BANK_SLOT_COUNT / SLOT_COLS);
 const SLOT_SIZE = 32;
 const SLOT_GAP = 2;
 const ICON_SCALE = SHOP_SLOT_ICON_SCALE;
@@ -105,6 +108,8 @@ export class BankOverlay {
   private screen: BankScreen = "menu";
   private open = false;
   private lastViewport: GameViewportRect = { x: 0, y: 0, width: 800, height: 600 };
+  private lastState: BankViewState | null = null;
+  private loadingItemTextureKeys = new Set<string>();
 
   constructor(
     scene: Phaser.Scene,
@@ -112,7 +117,7 @@ export class BankOverlay {
   ) {
     this.container = scene.add.container(0, 0).setDepth(50_100).setScrollFactor(0);
     this.backdrop = scene.add
-      .rectangle(0, 0, 10, 10, 0x05070c, 0.62)
+      .rectangle(0, 0, 10, 10, COLORS.overlay, 0.6)
       .setOrigin(0, 0)
       .setScrollFactor(0);
 
@@ -156,6 +161,8 @@ export class BankOverlay {
     const menuClose = this.createCloseButton(scene, () => this.handlers.onClose());
     this.menuCloseBtn = menuClose.bg;
     this.menuCloseLabel = menuClose.label;
+    this.menuCloseBtn.setVisible(false);
+    this.menuCloseLabel.setVisible(false);
     this.menuGroup.add([
       this.menuPanel,
       this.menuTitle,
@@ -168,8 +175,6 @@ export class BankOverlay {
       this.menuWithdrawBtn.label,
       this.menuVaultBtn.bg,
       this.menuVaultBtn.label,
-      this.menuCloseBtn,
-      this.menuCloseLabel,
     ]);
 
     this.vaultPanel = this.createPanel(scene);
@@ -211,13 +216,17 @@ export class BankOverlay {
     const vaultInput = this.createNumericInput("Ej: 10");
     this.vaultInputEl = vaultInput.el;
     this.vaultInputDom = vaultInput.dom;
-    this.vaultBackBtn = this.createMenuButton(scene, "Volver", () => this.setScreen("menu"));
+    this.vaultBackBtn = this.createMenuButton(scene, "Volver", () => this.setScreen("menu"), 58, 20);
     const vaultClose = this.createCloseButton(scene, () => this.handlers.onClose());
     this.vaultCloseBtn = vaultClose.bg;
     this.vaultCloseLabel = vaultClose.label;
+    this.vaultCloseBtn.setVisible(false);
+    this.vaultCloseLabel.setVisible(false);
 
-    for (let i = 0; i < SLOT_COUNT; i += 1) {
+    for (let i = 0; i < BANK_SLOT_COUNT; i += 1) {
       this.vaultSlots.push(this.createSlot(scene, i, "bank"));
+    }
+    for (let i = 0; i < INVENTORY_SLOT_COUNT; i += 1) {
       this.inventorySlots.push(this.createSlot(scene, i, "inventory"));
     }
 
@@ -232,8 +241,6 @@ export class BankOverlay {
       this.vaultBackBtn.label,
       ...this.vaultSlots.flatMap((s) => [s.bg, s.icon, s.countLabel]),
       ...this.inventorySlots.flatMap((s) => [s.bg, s.icon, s.countLabel]),
-      this.vaultCloseBtn,
-      this.vaultCloseLabel,
     ]);
 
     this.goldPanel = this.createPanel(scene);
@@ -277,10 +284,12 @@ export class BankOverlay {
     this.goldConfirmBtn = this.createMenuButton(scene, "Confirmar", () => {
       this.confirmGoldAction();
     });
-    this.goldBackBtn = this.createMenuButton(scene, "Volver", () => this.setScreen("menu"));
+    this.goldBackBtn = this.createMenuButton(scene, "Volver", () => this.setScreen("menu"), 58, 20);
     const goldClose = this.createCloseButton(scene, () => this.handlers.onClose());
     this.goldCloseBtn = goldClose.bg;
     this.goldCloseLabel = goldClose.label;
+    this.goldCloseBtn.setVisible(false);
+    this.goldCloseLabel.setVisible(false);
 
     this.goldGroup.add([
       this.goldPanel,
@@ -292,8 +301,6 @@ export class BankOverlay {
       this.goldConfirmBtn.label,
       this.goldBackBtn.bg,
       this.goldBackBtn.label,
-      this.goldCloseBtn,
-      this.goldCloseLabel,
     ]);
 
     this.container.add([this.backdrop, this.menuGroup, this.vaultGroup, this.goldGroup]);
@@ -312,18 +319,25 @@ export class BankOverlay {
     input.maxLength = 12;
     input.placeholder = placeholder;
     input.value = "1";
-    input.style.width = "140px";
+    input.style.width = "72px";
     input.style.height = "26px";
     input.style.padding = "2px 8px";
-    input.style.border = "1px solid #c9a227";
-    input.style.borderRadius = "3px";
-    input.style.background = "#0e1218";
-    input.style.color = "#f1c40f";
-    input.style.font = "12px Verdana, Arial, sans-serif";
+    input.style.border = "1px solid #d4a72c";
+    input.style.borderRadius = "0";
+    input.style.background = "#120d0b";
+    input.style.color = "#fff3d2";
+    input.style.font = "bold 12px Verdana, Arial, sans-serif";
     input.style.textAlign = "center";
     input.style.outline = "none";
     input.addEventListener("input", () => {
       input.value = input.value.replace(/\D/g, "");
+    });
+    input.addEventListener("keydown", (event) => {
+      if (event.key !== "Escape") {
+        return;
+      }
+      event.preventDefault();
+      this.handleEscape();
     });
     const dom = this.container.scene.add
       .dom(0, 0, input)
@@ -338,7 +352,7 @@ export class BankOverlay {
     return scene.add
       .rectangle(0, 0, 10, 10, COLORS.panelBg, 0.98)
       .setOrigin(0.5, 0.5)
-      .setStrokeStyle(+2, COLORS.panelBorder, 1);
+      .setStrokeStyle(2, COLORS.panelBorder, 0.95);
   }
 
   private createTitle(scene: Phaser.Scene, text: string) {
@@ -358,13 +372,13 @@ export class BankOverlay {
     const bg = scene.add
       .rectangle(0, 0, size, size, COLORS.closeBg, 1)
       .setOrigin(0.5, 0.5)
-      .setStrokeStyle(1, 0x7a2020, 1)
+      .setStrokeStyle(1, COLORS.panelBorder, 0.95)
       .setInteractive({ useHandCursor: true });
     const label = scene.add
       .text(0, 0, "X", {
         fontFamily: GAME_FONT,
         fontSize: "11px",
-        color: "#ffffff",
+        color: COLORS.buttonText,
         fontStyle: "bold",
         resolution: GAME_TEXT_RESOLUTION,
       })
@@ -387,19 +401,24 @@ export class BankOverlay {
     return { bg, label };
   }
 
-  private createMenuButton(scene: Phaser.Scene, label: string, onClick: () => void): MenuButton {
-    const w = 148;
-    const h = 28;
+  private createMenuButton(
+    scene: Phaser.Scene,
+    label: string,
+    onClick: () => void,
+    width = 148,
+    height = 28
+  ): MenuButton {
     const bg = scene.add
-      .rectangle(0, 0, w, h, COLORS.btnBg, 1)
+      .rectangle(0, 0, width, height, COLORS.btnBg, 1)
       .setOrigin(0.5, 0.5)
-      .setStrokeStyle(1, 0x5c677a, 1)
+      .setStrokeStyle(1, COLORS.panelAccent, 0.95)
       .setInteractive({ useHandCursor: true });
     const text = scene.add
       .text(0, 0, label, {
         fontFamily: GAME_FONT,
         fontSize: "11px",
-        color: COLORS.body,
+        color: COLORS.buttonText,
+        fontStyle: "bold",
         resolution: GAME_TEXT_RESOLUTION,
       })
       .setOrigin(0.5, 0.5);
@@ -429,7 +448,7 @@ export class BankOverlay {
     const bg = scene.add
       .rectangle(0, 0, SLOT_SIZE, SLOT_SIZE, COLORS.slotBg, 1)
       .setOrigin(0, 0)
-      .setStrokeStyle(1, COLORS.slotBorder, 1)
+      .setStrokeStyle(1, COLORS.slotBorder, 0.95)
       .setInteractive({ useHandCursor: true });
     const icon = scene.add
       .image(SLOT_SIZE / 2, SLOT_SIZE / 2, "__MISSING")
@@ -439,8 +458,8 @@ export class BankOverlay {
       .text(SLOT_SIZE - 2, SLOT_SIZE - 1, "", {
         fontFamily: GAME_FONT,
         fontSize: "8px",
-        color: "#ffffff",
-        stroke: "#000000",
+        color: COLORS.buttonText,
+        stroke: "#120d0b",
         strokeThickness: 2,
         resolution: GAME_TEXT_RESOLUTION,
       })
@@ -567,6 +586,7 @@ export class BankOverlay {
   }
 
   refresh(state: BankViewState) {
+    this.lastState = state;
     this.menuStatus.setText(
       `Oro en boveda: ${state.bankGold.toLocaleString("es-AR")}  |  Oro: ${state.playerGold.toLocaleString("es-AR")}`
     );
@@ -588,11 +608,41 @@ export class BankOverlay {
         return;
       }
       const item = getItemDefinition(stack.itemId);
+      if (!item || !this.container.scene.textures.exists(item.textureKey)) {
+        if (item) {
+          this.loadMissingItemIcon(item.textureKey, item.assetPath);
+        }
+        slotUi.icon.setVisible(false);
+        slotUi.countLabel.setText(stack.count > 1 ? String(stack.count) : "");
+        return;
+      }
       slotUi.icon.setTexture(item.textureKey);
       slotUi.icon.setScale(ICON_SCALE);
       slotUi.icon.setVisible(true);
       slotUi.countLabel.setText(stack.count > 1 ? String(stack.count) : "");
     });
+  }
+
+  private loadMissingItemIcon(textureKey: string, assetPath: string) {
+    const scene = this.container.scene;
+    if (!assetPath || scene.textures.exists(textureKey) || this.loadingItemTextureKeys.has(textureKey)) {
+      return;
+    }
+
+    this.loadingItemTextureKeys.add(textureKey);
+    scene.load.image(textureKey, assetPath);
+    scene.load.once(`filecomplete-image-${textureKey}`, () => {
+      this.loadingItemTextureKeys.delete(textureKey);
+      if (this.open && this.lastState) {
+        this.refresh(this.lastState);
+      }
+    });
+    scene.load.once("loaderror", () => {
+      this.loadingItemTextureKeys.delete(textureKey);
+    });
+    if (!scene.load.isLoading()) {
+      scene.load.start();
+    }
   }
 
   layout(viewport: GameViewportRect) {
@@ -616,7 +666,7 @@ export class BankOverlay {
 
   private layoutMenu(cx: number, cy: number) {
     const w = 340;
-    const h = 300;
+    const h = 250;
     this.menuPanel.setSize(w, h);
     this.menuPanel.setPosition(cx, cy);
     this.menuTitle.setPosition(cx, cy - h / 2 + 12);
@@ -629,7 +679,6 @@ export class BankOverlay {
     const rightX = cx + btnW / 2 + 6;
     const row1Y = cy - h / 2 + 132;
     const row2Y = row1Y + 38;
-    const row3Y = row2Y + 38;
 
     this.menuDepositBtn.bg.setPosition(leftX, row1Y);
     this.menuDepositBtn.label.setPosition(leftX, row1Y);
@@ -644,36 +693,36 @@ export class BankOverlay {
 
   private layoutVault(cx: number, cy: number) {
     const gridW = SLOT_COLS * SLOT_SIZE + (SLOT_COLS - 1) * SLOT_GAP;
-    const gridH = SLOT_ROWS * SLOT_SIZE + (SLOT_ROWS - 1) * SLOT_GAP;
-    const w = gridW * 2 + 56;
-    const h = gridH + 118;
+    const bankGridH = BANK_SLOT_ROWS * SLOT_SIZE + (BANK_SLOT_ROWS - 1) * SLOT_GAP;
+    const inventoryGridH = INVENTORY_SLOT_ROWS * SLOT_SIZE + (INVENTORY_SLOT_ROWS - 1) * SLOT_GAP;
+    const w = gridW * 2 + 86;
+    const h = bankGridH + 82;
     this.vaultPanel.setSize(w, h);
     this.vaultPanel.setPosition(cx, cy);
     this.vaultTitle.setPosition(cx, cy - h / 2 + 12);
 
     const leftX = cx - w / 2 + 20;
-    const rightX = leftX + gridW + 16;
-    const gridY = cy - h / 2 + 38;
+    const rightX = leftX + gridW + 46;
+    const gridY = cy - h / 2 + 44;
 
     this.layoutGrid(this.vaultSlots, leftX, gridY);
-    this.vaultInvTitle.setPosition(rightX + gridW / 2, cy - h / 2 + 28);
+    this.vaultInvTitle.setPosition(rightX + gridW / 2, cy - h / 2 + 30);
     this.layoutGrid(this.inventorySlots, rightX, gridY);
 
-    const qtyY = gridY + gridH + 14;
-    this.vaultQtyLabel.setPosition(cx - 84, qtyY);
-    this.vaultInputDom.setPosition(cx + 12, qtyY);
-    this.vaultHint.setPosition(cx, qtyY + 22);
-    this.vaultGoldText.setPosition(cx - w / 2 + 20, cy + h / 2 - 18);
-    this.vaultBackBtn.bg.setPosition(cx, cy + h / 2 - 18);
-    this.vaultBackBtn.label.setPosition(cx, cy + h / 2 - 18);
+    const qtyY = gridY + inventoryGridH + 22;
+    const qtyCenterX = rightX + gridW / 2;
+    this.vaultQtyLabel.setPosition(qtyCenterX - 54, qtyY);
+    this.vaultInputDom.setPosition(qtyCenterX + 26, qtyY);
+    this.vaultHint.setPosition(qtyCenterX, qtyY + 26);
+    this.vaultGoldText.setPosition(leftX, cy + h / 2 - 18);
 
-    this.vaultCloseBtn.setPosition(cx + w / 2 - 16, cy - h / 2 + 12);
-    this.vaultCloseLabel.setPosition(cx + w / 2 - 16, cy - h / 2 + 12);
+    this.vaultBackBtn.bg.setPosition(cx + w / 2 - 42, cy - h / 2 + 18);
+    this.vaultBackBtn.label.setPosition(cx + w / 2 - 42, cy - h / 2 + 18);
   }
 
   private layoutGold(cx: number, cy: number) {
     const w = 320;
-    const h = 210;
+    const h = 190;
     this.goldPanel.setSize(w, h);
     this.goldPanel.setPosition(cx, cy);
     this.goldTitle.setPosition(cx, cy - h / 2 + 12);
@@ -686,11 +735,8 @@ export class BankOverlay {
 
     this.goldConfirmBtn.bg.setPosition(cx - 78, cy + h / 2 - 28);
     this.goldConfirmBtn.label.setPosition(cx - 78, cy + h / 2 - 28);
-    this.goldBackBtn.bg.setPosition(cx + 78, cy + h / 2 - 28);
-    this.goldBackBtn.label.setPosition(cx + 78, cy + h / 2 - 28);
-
-    this.goldCloseBtn.setPosition(cx + w / 2 - 16, cy - h / 2 + 12);
-    this.goldCloseLabel.setPosition(cx + w / 2 - 16, cy - h / 2 + 12);
+    this.goldBackBtn.bg.setPosition(cx + w / 2 - 42, cy - h / 2 + 18);
+    this.goldBackBtn.label.setPosition(cx + w / 2 - 42, cy - h / 2 + 18);
   }
 
   private layoutGrid(slots: SlotUi[], startX: number, startY: number) {

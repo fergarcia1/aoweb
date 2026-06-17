@@ -5,6 +5,10 @@ function createSyncHarness() {
   const calls = {
     setBuffs: [] as Array<{ strength: number; agility: number }>,
     setExpiresAt: [] as number[],
+    setPlayerHp: vi.fn(),
+    onLocalPlayerDeath: vi.fn(),
+    refreshHud: vi.fn(),
+    setPlayerProgressFromServer: vi.fn(),
   };
 
   const sync = new GameSceneLocalPlayerSync({
@@ -22,6 +26,12 @@ function createSyncHarness() {
     setInvisibleUntilMs: vi.fn(),
     setNavigatingFromServer: vi.fn(),
     setEquipmentFromServer: vi.fn(),
+    getEquipment: () => ({ weapon: null, shield: null, helmet: null, armor: null }),
+    syncEquippedArmorOutfit: vi.fn(),
+    syncEquippedHeldItemVisuals: vi.fn(),
+    setEquippedItemIdsOnUi: vi.fn(),
+    refreshInventoryUi: vi.fn(),
+    refreshInventorySlotsUi: vi.fn(),
     applyLocalFaction: vi.fn(),
     getDeathPhase: () => "alive" as const,
     getPlayerProgress: () => ({
@@ -34,12 +44,12 @@ function createSyncHarness() {
       expToNext: 100,
       gold: 0,
     }),
-    setPlayerProgressFromServer: vi.fn(),
-    refreshHud: vi.fn(),
+    setPlayerProgressFromServer: calls.setPlayerProgressFromServer,
+    refreshHud: calls.refreshHud,
     isServerReviveSyncPending: () => false,
     clearServerReviveSyncPending: vi.fn(),
-    setPlayerHp: vi.fn(),
-    onLocalPlayerDeath: vi.fn(),
+    setPlayerHp: calls.setPlayerHp,
+    onLocalPlayerDeath: calls.onLocalPlayerDeath,
   });
 
   return { sync, calls };
@@ -107,5 +117,45 @@ describe("GameSceneLocalPlayerSync.syncLocalEphemeralStateFromServer", () => {
 
     expect(calls.setBuffs).toEqual([{ strength: 8, agility: 8 }]);
     expect(calls.setExpiresAt).toEqual([expiresAt]);
+  });
+});
+
+describe("GameSceneLocalPlayerSync.handleServerPlayerUpdated", () => {
+  it("dispara muerte local si el servidor confirma hp 0", () => {
+    const { sync, calls } = createSyncHarness();
+
+    sync.handleServerPlayerUpdated({
+      id: "p1",
+      name: "Hero",
+      mapId: "mapa1",
+      tileX: 1,
+      tileY: 2,
+      facing: "down",
+      raceId: "human",
+      genderId: "male",
+      classId: "mago",
+      factionId: "imperial",
+      faceIndex: 0,
+      hp: 0,
+      hpMax: 100,
+      mp: 50,
+      mpMax: 100,
+      level: 10,
+      role: "player",
+      equipment: {},
+      isMeditating: false,
+      invisibleUntilMs: 0,
+    });
+
+    expect(calls.setPlayerHp).toHaveBeenCalledWith(0);
+    expect(calls.onLocalPlayerDeath).toHaveBeenCalledTimes(1);
+    expect(calls.setPlayerProgressFromServer).toHaveBeenCalledWith({
+      hp: 0,
+      hpMax: 100,
+      mp: 50,
+      mpMax: 100,
+      level: 10,
+    });
+    expect(calls.refreshHud).toHaveBeenCalled();
   });
 });

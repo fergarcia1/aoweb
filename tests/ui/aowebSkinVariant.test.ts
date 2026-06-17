@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { getAccountScopedStorageKey } from "../../src/config/accountScopedStorage";
 import {
   AOWEB_SKIN_FILES,
   AOWEB_SKIN_STORAGE_KEY,
@@ -43,7 +44,7 @@ describe("aowebSkinVariant", () => {
   it("persiste en localStorage", () => {
     setAowebSkinVariant("red");
     expect(getAowebSkinVariant()).toBe("red");
-    expect(localStorage.getItem(AOWEB_SKIN_STORAGE_KEY)).toBe("red");
+    expect(localStorage.getItem(getAccountScopedStorageKey(AOWEB_SKIN_STORAGE_KEY))).toBe("red");
   });
 
   it("usa VITE_UI_SKIN si no hay valor guardado", () => {

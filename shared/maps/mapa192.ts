@@ -126,3 +126,27 @@ export const MAP_MAPA192: GameMap = {
     fileNums: [6000, 6006, 6005, 6007, 7001, 7000, 7002]
   }
 };
+
+// Add T-shaped dock land tiles
+const dockTiles: Array<{ x: number, y: number }> = [];
+for (let y = 26; y <= 29; y++) {
+  for (let x = 22; x <= 35; x++) {
+    dockTiles.push({ x, y });
+  }
+}
+for (let y = 20; y <= 35; y++) {
+  for (let x = 32; x <= 35; x++) {
+    dockTiles.push({ x, y });
+  }
+}
+
+for (const { x, y } of dockTiles) {
+  if (MAP_MAPA192.tiles[y] && MAP_MAPA192.tiles[y][x] !== undefined) {
+    MAP_MAPA192.tiles[y][x] = TILE.DIRT;
+    if (MAP_MAPA192.legacyCsmData) {
+      MAP_MAPA192.legacyCsmData.L1[y][x] = 8994; // Dock wood GRH
+    }
+  }
+}
+
+

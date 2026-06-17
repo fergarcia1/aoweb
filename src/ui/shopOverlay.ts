@@ -22,20 +22,23 @@ type ShopOverlayHandlers = {
 };
 
 const COLORS = {
-  panelBg: 0x141c28,
-  panelBorder: 0xc9a227,
-  btnBg: 0x3d4555,
-  btnHover: 0x4f596d,
-  btnActive: 0x6b5428,
-  closeBg: 0xb83232,
-  closeHover: 0xd04040,
+  overlay: 0x0a0c10,
+  panelBg: 0x120d0b,
+  panelBorder: 0x9b1d16,
+  panelAccent: 0xd4a72c,
+  btnBg: 0x4b1714,
+  btnHover: 0x6f211d,
+  btnActive: 0xd4a72c,
+  closeBg: 0x4b1714,
+  closeHover: 0x6f211d,
   slotBg: 0x0e1218,
-  slotBorder: 0x4a5568,
-  slotSelected: 0x6b5428,
-  title: "#d4af37",
-  body: "#e6edf3",
-  muted: "#9aa3b2",
+  slotBorder: 0x5d241d,
+  slotSelected: 0xd4a72c,
+  title: "#f1c44d",
+  body: "#f4ead0",
+  muted: "#bda98a",
   gold: "#f1c40f",
+  buttonText: "#fff3d2",
 };
 
 const INV_COLS = 5;
@@ -79,6 +82,7 @@ export class ShopOverlay {
 
   private readonly catalogSlots: SlotUi[] = [];
   private readonly inventorySlots: SlotUi[] = [];
+  private readonly loadingItemTextureKeys = new Set<string>();
 
   private open = false;
   private lastViewport: GameViewportRect = { x: 0, y: 0, width: 800, height: 600 };
@@ -93,19 +97,19 @@ export class ShopOverlay {
     this.container = scene.add.container(0, 0).setDepth(50_100).setScrollFactor(0);
     this.catalogGroup = scene.add.container(0, 0);
     this.backdrop = scene.add
-      .rectangle(0, 0, 10, 10, 0x05070c, 0.62)
+      .rectangle(0, 0, 10, 10, COLORS.overlay, 0.6)
       .setOrigin(0, 0)
       .setScrollFactor(0);
 
     this.panel = scene.add
       .rectangle(0, 0, 10, 10, COLORS.panelBg, 0.98)
       .setOrigin(0.5, 0.5)
-      .setStrokeStyle(+2, COLORS.panelBorder, 1);
+      .setStrokeStyle(2, COLORS.panelBorder, 0.95);
 
     this.titleText = this.createTitle(scene, "Comerciante");
     this.goldText = this.createBodyText(scene, "");
     this.catalogTitle = this.createMutedText(scene, "Catalogo");
-    this.inventoryTitle = this.createMutedText(scene, "Tu inventario");
+    this.inventoryTitle = this.createMutedText(scene, "Inventario");
     this.detailName = this.createBodyText(scene, "Selecciona un item");
     this.detailPrice = this.createMutedText(scene, "");
     this.qtyLabel = this.createMutedText(scene, "Cantidad");
@@ -164,15 +168,22 @@ export class ShopOverlay {
     input.style.width = "72px";
     input.style.height = "26px";
     input.style.padding = "2px 8px";
-    input.style.border = "1px solid #c9a227";
-    input.style.borderRadius = "3px";
-    input.style.background = "#0e1218";
-    input.style.color = "#f1c40f";
-    input.style.font = "12px Verdana, Arial, sans-serif";
+    input.style.border = "1px solid #d4a72c";
+    input.style.borderRadius = "0";
+    input.style.background = "#120d0b";
+    input.style.color = "#fff3d2";
+    input.style.font = "bold 12px Verdana, Arial, sans-serif";
     input.style.textAlign = "center";
     input.style.outline = "none";
     input.addEventListener("input", () => {
       input.value = input.value.replace(/\D/g, "");
+    });
+    input.addEventListener("keydown", (event) => {
+      if (event.key !== "Escape") {
+        return;
+      }
+      event.preventDefault();
+      this.handleEscape();
     });
     const dom = this.container.scene.add
       .dom(0, 0, input)
@@ -221,13 +232,14 @@ export class ShopOverlay {
     const bg = scene.add
       .rectangle(0, 0, 88, 28, COLORS.btnBg, 1)
       .setOrigin(0.5, 0.5)
-      .setStrokeStyle(1, COLORS.panelBorder, 1)
+      .setStrokeStyle(1, COLORS.panelAccent, 0.95)
       .setInteractive({ useHandCursor: true });
     const text = scene.add
       .text(0, 0, label, {
         fontFamily: GAME_FONT,
         fontSize: "11px",
-        color: COLORS.body,
+        color: COLORS.buttonText,
+        fontStyle: "bold",
         resolution: GAME_TEXT_RESOLUTION,
       })
       .setOrigin(0.5, 0.5);
@@ -238,16 +250,18 @@ export class ShopOverlay {
   }
 
   private createCloseButton(scene: Phaser.Scene, onClick: () => void) {
-    const size = 18;
+    const width = 58;
+    const height = 20;
     const bg = scene.add
-      .rectangle(0, 0, size, size, COLORS.closeBg, 1)
+      .rectangle(0, 0, width, height, COLORS.closeBg, 1)
       .setOrigin(0.5, 0.5)
+      .setStrokeStyle(1, COLORS.panelAccent, 0.95)
       .setInteractive({ useHandCursor: true });
     const label = scene.add
-      .text(0, 0, "X", {
+      .text(0, 0, "Volver", {
         fontFamily: GAME_FONT,
-        fontSize: "11px",
-        color: "#ffffff",
+        fontSize: "10px",
+        color: COLORS.buttonText,
         fontStyle: "bold",
         resolution: GAME_TEXT_RESOLUTION,
       })
@@ -262,7 +276,7 @@ export class ShopOverlay {
     const bg = scene.add
       .rectangle(0, 0, SLOT_SIZE, SLOT_SIZE, COLORS.slotBg, 1)
       .setOrigin(0, 0)
-      .setStrokeStyle(1, COLORS.slotBorder, 1)
+      .setStrokeStyle(1, COLORS.slotBorder, 0.95)
       .setInteractive({ useHandCursor: true });
     const icon = scene.add
       .image(0, 0, "__MISSING")
@@ -273,6 +287,8 @@ export class ShopOverlay {
         fontFamily: GAME_FONT,
         fontSize: "9px",
         color: COLORS.gold,
+        stroke: "#120d0b",
+        strokeThickness: 2,
         resolution: GAME_TEXT_RESOLUTION,
       })
       .setOrigin(1, 1);
@@ -287,6 +303,9 @@ export class ShopOverlay {
   ): boolean {
     const item = getItemDefinition(itemId);
     if (!item || !scene.textures.exists(item.textureKey)) {
+      if (item) {
+        this.loadMissingItemIcon(item.textureKey, item.assetPath);
+      }
       icon.setVisible(false);
       return false;
     }
@@ -320,6 +339,30 @@ export class ShopOverlay {
     });
   }
 
+  private loadMissingItemIcon(textureKey: string, assetPath: string) {
+    const scene = this.container.scene;
+    if (!assetPath || scene.textures.exists(textureKey) || this.loadingItemTextureKeys.has(textureKey)) {
+      return;
+    }
+
+    this.loadingItemTextureKeys.add(textureKey);
+    scene.load.image(textureKey, assetPath);
+    scene.load.once(`filecomplete-image-${textureKey}`, () => {
+      this.loadingItemTextureKeys.delete(textureKey);
+      if (this.open && this.lastState) {
+        this.rebuildCatalogSlots(scene, this.catalog);
+        this.refresh(this.lastState);
+        this.layout(this.lastViewport);
+      }
+    });
+    scene.load.once("loaderror", () => {
+      this.loadingItemTextureKeys.delete(textureKey);
+    });
+    if (!scene.load.isLoading()) {
+      scene.load.start();
+    }
+  }
+
   private selectCatalogItem(index: number) {
     this.selectedCatalogIndex = index;
     this.selectedInventorySlot = null;
@@ -337,11 +380,11 @@ export class ShopOverlay {
   private highlightSelection() {
     this.catalogSlots.forEach((slot, index) => {
       const selected = this.selectedCatalogIndex === index;
-      slot.bg.setStrokeStyle(1, selected ? COLORS.slotSelected : COLORS.slotBorder, 1);
+      slot.bg.setStrokeStyle(1, selected ? COLORS.slotSelected : COLORS.slotBorder, 0.95);
     });
     this.inventorySlots.forEach((slot, index) => {
       const selected = this.selectedInventorySlot === index;
-      slot.bg.setStrokeStyle(1, selected ? COLORS.slotSelected : COLORS.slotBorder, 1);
+      slot.bg.setStrokeStyle(1, selected ? COLORS.slotSelected : COLORS.slotBorder, 0.95);
     });
   }
 
@@ -475,6 +518,9 @@ export class ShopOverlay {
       }
       const item = getItemDefinition(stack.itemId);
       if (!item || !this.container.scene.textures.exists(item.textureKey)) {
+        if (item) {
+          this.loadMissingItemIcon(item.textureKey, item.assetPath);
+        }
         slotUi.icon.setVisible(false);
         slotUi.countLabel.setText("");
         return;
@@ -504,38 +550,38 @@ export class ShopOverlay {
     const catalogGridW = CATALOG_COLS * SLOT_SIZE + (CATALOG_COLS - 1) * SLOT_GAP;
 
     const w = Math.max(invGridW, catalogGridW) * 2 + 72;
-    const h = Math.max(invGridH, catalogGridH) + 168;
+    const h = Math.max(invGridH, catalogGridH) + 196;
 
     this.panel.setSize(w, h);
     this.panel.setPosition(cx, cy);
 
     this.titleText.setPosition(cx, cy - h / 2 + 12);
     this.goldText.setPosition(cx, cy - h / 2 + 30);
-    this.closeBtn.setPosition(cx + w / 2 - 16, cy - h / 2 + 12);
-    this.closeLabel.setPosition(cx + w / 2 - 16, cy - h / 2 + 12);
+    this.closeBtn.setPosition(cx + w / 2 - 42, cy - h / 2 + 18);
+    this.closeLabel.setPosition(cx + w / 2 - 42, cy - h / 2 + 18);
 
     const leftX = cx - w / 2 + 20;
     const rightX = leftX + Math.max(invGridW, catalogGridW) + 24;
-    const gridTop = cy - h / 2 + 52;
+    const gridTop = cy - h / 2 + 66;
 
-    this.catalogTitle.setPosition(leftX + catalogGridW / 2, cy - h / 2 + 44);
+    this.catalogTitle.setPosition(leftX + catalogGridW / 2, gridTop - 18);
     this.catalogGroup.setPosition(leftX, gridTop);
     this.layoutDynamicGrid(this.catalogSlots, 0, 0, CATALOG_COLS);
 
-    this.inventoryTitle.setPosition(rightX + invGridW / 2, cy - h / 2 + 44);
+    this.inventoryTitle.setPosition(rightX + invGridW / 2, gridTop - 18);
     this.layoutGrid(this.inventorySlots, rightX, gridTop, INV_COLS);
 
-    const detailY = gridTop + Math.max(invGridH, catalogGridH) + 18;
+    const detailY = gridTop + Math.max(invGridH, catalogGridH) + 26;
     this.detailName.setPosition(cx, detailY);
     this.detailPrice.setPosition(cx, detailY + 16);
     this.qtyLabel.setPosition(cx - 58, detailY + 38);
     this.qtyInputDom.setPosition(cx + 8, detailY + 44);
-    this.hintText.setPosition(cx, detailY + 58);
+    this.hintText.setPosition(cx, detailY + 60);
 
-    this.buyBtn.bg.setPosition(cx - 50, detailY + 78);
-    this.buyBtn.label.setPosition(cx - 50, detailY + 78);
-    this.sellBtn.bg.setPosition(cx + 50, detailY + 78);
-    this.sellBtn.label.setPosition(cx + 50, detailY + 78);
+    this.buyBtn.bg.setPosition(cx, detailY + 88);
+    this.buyBtn.label.setPosition(cx, detailY + 88);
+    this.sellBtn.bg.setPosition(cx, detailY + 88);
+    this.sellBtn.label.setPosition(cx, detailY + 88);
   }
 
   private layoutGrid(slots: SlotUi[], startX: number, startY: number, cols: number) {
