@@ -49,10 +49,10 @@ const RACE_FACE_LAYOUT: Record<string, FaceLayout> = {
   dwarf_female: {
     scale: 0.78,
     offset: {
-      down: { x: -0.5, y: 27 },
-      up: { x: -0.5, y: 32 },
-      left: { x: 2, y: 31 },
-      right: { x: -2, y: 31 },
+      down: { x: 1, y: 25 },
+      up: { x: 1, y: 30 },
+      left: { x: 3, y: 29 },
+      right: { x: -0.5, y: 29 },
     },
   },
   gnome_male: layout(0.75, 27),

@@ -1815,7 +1815,7 @@ export class WorldInstance implements WorldContext {
     }
 
     let secondsLeft = UNSAFE_LOGOUT_COUNTDOWN_SECONDS;
-    this.sendCombatLog(session, `Desconectando en ${secondsLeft}...`);
+    this.sendCombatLog(session, `Seras desconectado en ${secondsLeft} segundos.`);
     this.send(session, { type: "logout_countdown", secondsLeft });
 
     const timer = setInterval(() => {

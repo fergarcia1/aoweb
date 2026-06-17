@@ -9,6 +9,7 @@ import {
   FACTION_LABELS,
   getFactionNameColors,
   GENDER_UI_LABELS,
+  loadCharacterSlots,
   RACE_LABELS,
   saveCharacterToSlot,
   type CharacterFactionId,
@@ -40,36 +41,45 @@ import { GAME_FONT, GAME_TEXT_RESOLUTION } from "../ui/fonts";
 import { START_MAP_ID } from "../maps";
 
 const UI = {
-  bg: 0x0a1218,
-  panelFill: 0x0f1a24,
-  panelFillAlpha: 0.92,
-  panelBorder: 0x3d8b72,
-  panelBorderDim: 0x2a5c4a,
-  title: "#d4b65a",
-  label: "#8fa3b0",
-  text: "#e6edf3",
-  muted: "#9aa4b2",
-  accent: 0x5cb88a,
-  accentDim: 0x2d6a4f,
+  bg: 0x080607,
+  backdrop: 0x070607,
+  panelFill: 0x120d0b,
+  panelFillAlpha: 0.96,
+  panelBorder: 0x9b1d16,
+  panelBorderDim: 0x5d241d,
+  title: "#f1c44d",
+  label: "#d8a475",
+  text: "#fff3d2",
+  muted: "#bda98a",
+  accent: 0xd4a72c,
+  accentDim: 0x4b1714,
   danger: "#e07070",
   barHp: 0xc0392b,
   barMana: 0x2980b9,
   barEnergy: 0xc9a227,
-  barTrack: 0x1a2530,
+  barTrack: 0x1a0a08,
   factionImperial: 0x2a4a7a,
-  factionCaos: 0x9b2222,
+  factionCaos: 0x661510,
   factionCaosLabel: "#ff5252",
-  selectorBg: 0x121c26,
+  selectorBg: 0x1a0a08,
+  buttonHover: 0x6f211d,
+  inputBorder: "#8f4737",
+  inputBg: "#1a0a08",
 };
 
 const PANEL = {
-  leftW: 218,
-  centerW: 300,
-  rightW: 218,
-  gap: 10,
+  leftW: 252,
+  centerW: 352,
+  rightW: 252,
+  gap: 14,
   top: 52,
   bottomPad: 16,
 };
+
+const HERO_BACKGROUND_KEY = "aoweb-character-create-bg";
+const HERO_BACKGROUND_URL = "/assets/ui/aoweb-dragon-war-loading.png";
+const IMPERIAL_SHIELD_KEY = "aoweb-imperial-shield";
+const IMPERIAL_SHIELD_URL = "/assets/ao/uiGrafica/imperialEscudo.png";
 
 type CreationSceneData = {
   slotIndex: number;
@@ -103,6 +113,7 @@ export class CharacterCreationScene extends Phaser.Scene {
     {};
   private factionBgs: Partial<Record<CharacterFactionId, Phaser.GameObjects.Graphics>> = {};
   private factionCenters: Partial<Record<CharacterFactionId, { x: number; y: number }>> = {};
+  private factionIcons: Partial<Record<CharacterFactionId, Phaser.GameObjects.Image>> = {};
   private factionLabels: Partial<Record<CharacterFactionId, Phaser.GameObjects.Text>> = {};
   private cycleValueTexts: Phaser.GameObjects.Text[] = [];
   private cycleLabelGetters: Array<() => string> = [];
@@ -118,6 +129,8 @@ export class CharacterCreationScene extends Phaser.Scene {
   }
 
   preload() {
+    this.load.image(HERO_BACKGROUND_KEY, HERO_BACKGROUND_URL);
+    this.load.image(IMPERIAL_SHIELD_KEY, IMPERIAL_SHIELD_URL);
     registerRaceFaces(this);
     registerPlayerSprites(this);
   }
@@ -128,17 +141,28 @@ export class CharacterCreationScene extends Phaser.Scene {
 
     const { width, height } = this.scale;
     this.add.rectangle(width / 2, height / 2, width, height, UI.bg);
+    const bg = this.add.image(width / 2, height / 2, HERO_BACKGROUND_KEY).setOrigin(0.5);
+    const bgScale = Math.max(width / bg.width, height / bg.height);
+    bg.setScale(bgScale);
+    bg.setAlpha(0.38);
+    this.add.rectangle(width / 2, height / 2, width, height, UI.backdrop, 0.68);
 
-    const totalW = PANEL.leftW + PANEL.centerW + PANEL.rightW + PANEL.gap * 2;
+    const baseTotalW = PANEL.leftW + PANEL.centerW + PANEL.rightW + PANEL.gap * 2;
+    const panelScale = Math.min(1, (width - 48) / baseTotalW);
+    const leftW = Math.floor(PANEL.leftW * panelScale);
+    const centerW = Math.floor(PANEL.centerW * panelScale);
+    const rightW = Math.floor(PANEL.rightW * panelScale);
+    const gap = Math.max(8, Math.floor(PANEL.gap * panelScale));
+    const totalW = leftW + centerW + rightW + gap * 2;
     const startX = (width - totalW) / 2;
     const panelH = height - PANEL.top - PANEL.bottomPad;
 
-    this.createStatsPanel(startX, PANEL.top, PANEL.leftW, panelH);
-    this.createCenterPanel(startX + PANEL.leftW + PANEL.gap, PANEL.top, PANEL.centerW, panelH);
+    this.createStatsPanel(startX, PANEL.top, leftW, panelH);
+    this.createCenterPanel(startX + leftW + gap, PANEL.top, centerW, panelH);
     this.createLorePanel(
-      startX + PANEL.leftW + PANEL.centerW + PANEL.gap * 2,
+      startX + leftW + centerW + gap * 2,
       PANEL.top,
-      PANEL.rightW,
+      rightW,
       panelH
     );
 
@@ -161,8 +185,10 @@ export class CharacterCreationScene extends Phaser.Scene {
     const g = this.add.graphics();
     g.fillStyle(UI.panelFill, UI.panelFillAlpha);
     g.fillRoundedRect(x, y, w, h, 4);
-    g.lineStyle(1, UI.panelBorder, 1);
+    g.lineStyle(2, UI.panelBorder, 0.95);
     g.strokeRoundedRect(x, y, w, h, 4);
+    g.lineStyle(1, UI.panelBorderDim, 0.8);
+    g.strokeRoundedRect(x + 4, y + 4, w - 8, h - 8, 2);
     return g;
   }
 
@@ -174,15 +200,15 @@ export class CharacterCreationScene extends Phaser.Scene {
     this.add
       .text(x + w / 2, cy, "ESTADÍSTICAS", {
         fontFamily: "Georgia, serif",
-        fontSize: "15px",
+        fontSize: "16px",
         color: UI.title,
         fontStyle: "bold",
       })
       .setOrigin(0.5, 0);
-    cy += 26;
+    cy += 34;
 
     this.addSectionLabel(x + pad, cy, "ATRIBUTOS");
-    cy += 20;
+    cy += 24;
 
     cy = this.createStatBar(x + pad, cy, w - pad * 2, "Vida", "hp", UI.barHp);
     cy = this.createStatBar(x + pad, cy, w - pad * 2, "Maná", "mana", UI.barMana);
@@ -266,29 +292,23 @@ export class CharacterCreationScene extends Phaser.Scene {
     this.add
       .text(x + w / 2, cy, "CREAR PERSONAJE", {
         fontFamily: "Georgia, serif",
-        fontSize: "16px",
+        fontSize: "18px",
         color: UI.title,
         fontStyle: "bold",
       })
       .setOrigin(0.5, 0);
-    cy += 30;
+    cy += 34;
 
-    const previewW = 118;
-    const previewH = 168;
+    const previewW = 128;
+    const previewH = 156;
     const previewX = x + pad + previewW / 2;
     this.previewCenterX = previewX;
     this.previewFeetY = cy + previewH - 20;
 
     const previewFrame = this.add.graphics();
     previewFrame.lineStyle(1, UI.panelBorderDim, 1);
-    previewFrame.strokeRoundedRect(
-      x + pad,
-      cy,
-      previewW,
-      previewH,
-      4
-    );
-    previewFrame.fillStyle(0x0a1018, 0.6);
+    previewFrame.strokeRoundedRect(x + pad, cy, previewW, previewH, 4);
+    previewFrame.fillStyle(0x090607, 0.78);
     previewFrame.fillRoundedRect(x + pad, cy, previewW, previewH, 4);
 
     this.previewBody = this.add.sprite(previewX, this.previewFeetY, "human_male_base", 0);
@@ -299,7 +319,7 @@ export class CharacterCreationScene extends Phaser.Scene {
     this.previewFace.setOrigin(0.5, 1);
 
     this.previewNameLabel = this.add
-      .text(previewX, cy + previewH + 6, "", {
+      .text(previewX, cy + previewH + 8, "", {
         fontFamily: GAME_FONT,
         fontSize: "13px",
         color: getFactionNameColors(this.factionId).fill,
@@ -310,8 +330,8 @@ export class CharacterCreationScene extends Phaser.Scene {
       })
       .setOrigin(0.5, 0);
 
-    const fieldsX = x + pad + previewW + 10;
-    const fieldW = w - pad * 2 - previewW - 10;
+    const fieldsX = x + pad + previewW + 14;
+    const fieldW = w - pad * 2 - previewW - 14;
     let fy = cy;
 
     fy = this.createNameField(fieldsX, fy, fieldW) + 8;
@@ -352,7 +372,7 @@ export class CharacterCreationScene extends Phaser.Scene {
       }
     );
 
-    const aspectY = cy + previewH + 10;
+    const aspectY = cy + previewH + 34;
     this.createCycleField(
       x + pad,
       aspectY,
@@ -367,7 +387,7 @@ export class CharacterCreationScene extends Phaser.Scene {
       () => String(this.faceIndex + 1)
     );
 
-    const factionY = aspectY + 40;
+    const factionY = aspectY + 46;
     this.add
       .text(x + pad, factionY, "FACCIÓN", {
         fontFamily: "Segoe UI, Tahoma, sans-serif",
@@ -440,14 +460,17 @@ export class CharacterCreationScene extends Phaser.Scene {
     input.style.width = `${width}px`;
     input.style.height = "28px";
     input.style.padding = "4px 8px";
-    input.style.border = "1px solid #2a5c4a";
+    input.style.border = `1px solid ${UI.inputBorder}`;
     input.style.borderRadius = "4px";
-    input.style.background = "#121c26";
-    input.style.color = "#e6edf3";
+    input.style.background = UI.inputBg;
+    input.style.color = "#fff3d2";
     input.style.font = '13px "Segoe UI", Tahoma, sans-serif';
     input.style.outline = "none";
+    input.style.boxSizing = "border-box";
+    input.style.boxShadow = "inset 0 0 0 1px rgba(0, 0, 0, 0.35)";
     input.addEventListener("input", () => {
       this.name = input.value.trim();
+      this.refreshPreviewName();
     });
     input.addEventListener("keydown", (e) => {
       e.stopPropagation();
@@ -561,6 +584,13 @@ export class CharacterCreationScene extends Phaser.Scene {
 
     const btnW = 22;
     const makeArrow = (ax: number, dir: -1 | 1) => {
+      const arrowBg = this.add.graphics();
+      const drawArrowBg = (hover: boolean) => {
+        arrowBg.clear();
+        arrowBg.fillStyle(hover ? UI.buttonHover : UI.accentDim, 1);
+        arrowBg.fillRoundedRect(ax - btnW / 2 + 2, y + 3, btnW - 4, height - 6, 3);
+      };
+      drawArrowBg(false);
       const hit = this.add
         .rectangle(ax, y + height / 2, btnW, height, 0xffffff, 0.001)
         .setInteractive({ useHandCursor: true });
@@ -575,8 +605,14 @@ export class CharacterCreationScene extends Phaser.Scene {
         if (dir < 0) onPrev();
         else onNext();
       });
-      hit.on("pointerover", () => arrow.setColor(UI.text));
-      hit.on("pointerout", () => arrow.setColor(UI.muted));
+      hit.on("pointerover", () => {
+        arrow.setColor(UI.text);
+        drawArrowBg(true);
+      });
+      hit.on("pointerout", () => {
+        arrow.setColor(UI.muted);
+        drawArrowBg(false);
+      });
     };
 
     makeArrow(x + btnW / 2, -1);
@@ -592,6 +628,12 @@ export class CharacterCreationScene extends Phaser.Scene {
     this.factionBgs[faction] = bg;
     this.factionCenters[faction] = { x: cx, y: cy };
     this.drawFactionButton(faction, this.factionId === faction);
+
+    if (faction === "ciudadano") {
+      const icon = this.add.image(cx, cy, IMPERIAL_SHIELD_KEY).setOrigin(0.5);
+      icon.setDisplaySize(36, 36);
+      this.factionIcons[faction] = icon;
+    }
 
     const label = this.add
       .text(cx, cy + size / 2 + 6, FACTION_LABELS[faction], {
@@ -619,10 +661,12 @@ export class CharacterCreationScene extends Phaser.Scene {
     const size = 48;
     const { x: cx, y: cy } = center;
     bg.clear();
-    bg.fillStyle(faction === "ciudadano" ? UI.factionImperial : UI.factionCaos, 1);
+    bg.fillStyle(faction === "ciudadano" ? UI.selectorBg : UI.factionCaos, 1);
     bg.fillRoundedRect(cx - size / 2, cy - size / 2, size, size, 4);
     bg.lineStyle(selected ? 2 : 1, selected ? UI.accent : UI.panelBorderDim, 1);
     bg.strokeRoundedRect(cx - size / 2, cy - size / 2, size, size, 4);
+    bg.lineStyle(1, 0x000000, 0.35);
+    bg.strokeRoundedRect(cx - size / 2 + 4, cy - size / 2 + 4, size - 8, size - 8, 2);
   }
 
   private refreshFactionButtons() {
@@ -645,7 +689,7 @@ export class CharacterCreationScene extends Phaser.Scene {
     const g = this.add.graphics();
     const draw = (hover: boolean) => {
       g.clear();
-      g.fillStyle(primary ? (hover ? 0x3a8f6a : UI.accentDim) : UI.selectorBg, 1);
+      g.fillStyle(primary ? (hover ? UI.buttonHover : UI.accentDim) : UI.selectorBg, 1);
       g.fillRoundedRect(x, y, width, height, 4);
       g.lineStyle(1, primary ? UI.accent : UI.panelBorderDim, 1);
       g.strokeRoundedRect(x, y, width, height, 4);
@@ -656,7 +700,7 @@ export class CharacterCreationScene extends Phaser.Scene {
       .text(cx, cy, label, {
         fontFamily: "Segoe UI, Tahoma, sans-serif",
         fontSize: "13px",
-        color: primary ? "#e8fff4" : UI.text,
+        color: primary ? "#ffffff" : UI.text,
         fontStyle: primary ? "bold" : "normal",
       })
       .setOrigin(0.5);
@@ -682,7 +726,9 @@ export class CharacterCreationScene extends Phaser.Scene {
     if (!this.previewNameLabel) return;
     const trimmed = (this.nameInputEl?.value ?? this.name).trim();
     const colors = getFactionNameColors(this.factionId);
-    this.previewNameLabel.setText(trimmed.length > 0 ? trimmed : "Tu nombre");
+    const displayName =
+      trimmed.length > 14 ? `${trimmed.slice(0, 14)}...` : trimmed;
+    this.previewNameLabel.setText(displayName.length > 0 ? displayName : "Tu nombre");
     this.previewNameLabel.setColor(colors.fill);
     this.previewNameLabel.setStroke(colors.stroke, 3);
   }
@@ -772,6 +818,7 @@ export class CharacterCreationScene extends Phaser.Scene {
 
   private createCharacter() {
     const trimmed = (this.nameInputEl?.value ?? this.name).trim();
+    const normalizedName = trimmed.toLocaleLowerCase("es-AR");
     if (trimmed.length < 3) {
       this.setStatus("El nombre debe tener al menos 3 caracteres.");
       return;
@@ -782,6 +829,17 @@ export class CharacterCreationScene extends Phaser.Scene {
     }
     if (!/^[a-zA-ZáéíóúÁÉÍÓÚñÑ ]+$/.test(trimmed)) {
       this.setStatus("Usá solo letras y espacios en el nombre.");
+      return;
+    }
+
+    const nameAlreadyUsed = loadCharacterSlots().some((slot, index) => {
+      if (!slot || index === this.slotIndex) {
+        return false;
+      }
+      return slot.name.trim().toLocaleLowerCase("es-AR") === normalizedName;
+    });
+    if (nameAlreadyUsed) {
+      this.setStatus("Ese nombre ya existe.");
       return;
     }
 

@@ -1006,7 +1006,6 @@ export class GameScene extends Phaser.Scene {
 
   private requestLogoutViaCommand(): void {
     if (this.isMultiplayerActive() && this.multiplayer?.isConnected()) {
-      this.gameUi.addChatLine("Solicitando desconexión...");
       this.mpController.sendRequestLogout();
       return;
     }
