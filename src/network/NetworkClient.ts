@@ -67,6 +67,7 @@ export type NetworkClientOptions = {
 };
 
 const RECONNECT_DELAYS_MS = [1_000, 2_000, 4_000, 8_000, 15_000];
+const MAX_RECONNECT_ATTEMPTS = 6;
 const NON_RECONNECT_CLOSE_CODES = new Set([4000, 4001, 4002, 4003, 4004]);
 
 export class NetworkClient {
@@ -94,21 +95,29 @@ export class NetworkClient {
     }
 
     this.intentionalClose = false;
-    this.socket = new WebSocket(this.url);
+    const socket = new WebSocket(this.url);
+    this.socket = socket;
 
-    this.socket.addEventListener("open", () => {
+    socket.addEventListener("open", () => {
+      if (this.socket !== socket) {
+        socket.close();
+        return;
+      }
       this.reconnectAttempt = 0;
       this.handlers.onConnected?.();
     });
 
-    this.socket.addEventListener("close", (event) => {
+    socket.addEventListener("close", (event) => {
+      if (this.socket !== socket) {
+        return;
+      }
       this.socket = null;
       this.playerId = null;
       const willReconnect =
         this.autoReconnect &&
         !this.intentionalClose &&
         !NON_RECONNECT_CLOSE_CODES.has(event.code) &&
-        this.reconnectAttempt < 12;
+        this.reconnectAttempt < MAX_RECONNECT_ATTEMPTS;
       this.handlers.onDisconnected?.({
         code: event.code,
         reason: event.reason,
@@ -119,13 +128,22 @@ export class NetworkClient {
       }
     });
 
-    this.socket.addEventListener("message", (event) => {
+    socket.addEventListener("message", (event) => {
+      if (this.socket !== socket) {
+        return;
+      }
       const message = parseServerMessage(String(event.data));
       if (!message) return;
       this.handleServerMessage(message);
     });
 
-    this.socket.addEventListener("error", () => {
+    socket.addEventListener("error", () => {
+      if (this.socket !== socket) {
+        return;
+      }
+      if (this.autoReconnect) {
+        return;
+      }
       this.handlers.onError?.("No se pudo conectar al servidor.");
     });
   }
@@ -154,9 +172,10 @@ export class NetworkClient {
   disconnect() {
     this.intentionalClose = true;
     this.clearReconnectTimer();
-    this.socket?.close();
+    const socket = this.socket;
     this.socket = null;
     this.playerId = null;
+    socket?.close();
   }
 
   isConnected() {

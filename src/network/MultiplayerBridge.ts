@@ -72,6 +72,9 @@ export class MultiplayerBridge {
   private playerId: string | null = null;
   private spawnSynced = false;
   private skipNextDisconnectNotice = false;
+  private joinRetryTimer: ReturnType<typeof setTimeout> | null = null;
+  private joinRetryCount = 0;
+  private hasShownReconnectNotice = false;
 
   constructor(
     private readonly scene: Phaser.Scene,
@@ -102,8 +105,10 @@ export class MultiplayerBridge {
       onConnected: () => {
         this.callbacks.onStatus("Conectando al servidor...");
         this.requestJoin();
+        this.startJoinRetryLoop();
       },
       onDisconnected: ({ code, reason, willReconnect }) => {
+        this.clearJoinRetryLoop();
         this.playerId = null;
         this.spawnSynced = false;
         this.remotePlayers?.clear();
@@ -113,6 +118,10 @@ export class MultiplayerBridge {
         }
         if (willReconnect) {
           this.callbacks.onStatus("Reconectando al servidor...");
+          if (this.hasShownReconnectNotice) {
+            return;
+          }
+          this.hasShownReconnectNotice = true;
           this.callbacks.onChatLine(
             "Perdiste la conexión con el servidor. Reintentando automáticamente..."
           );
@@ -129,6 +138,12 @@ export class MultiplayerBridge {
           return;
         }
         this.callbacks.onStatus("Desconectado del servidor");
+        if (code === 1006 && !reason.trim()) {
+          this.callbacks.onChatLine(
+            "No se pudo reconectar con el servidor. Cuando vuelva a estar online, refresca o reingresa al personaje."
+          );
+          return;
+        }
         const detail =
           code === 4002
             ? " (personaje ya conectado en otra pestaña)"
@@ -140,6 +155,8 @@ export class MultiplayerBridge {
         this.callbacks.onChatLine(`Perdiste la conexión con el servidor${detail}.`);
       },
       onWelcome: (welcome) => {
+        this.clearJoinRetryLoop();
+        this.hasShownReconnectNotice = false;
         this.playerId = welcome.playerId;
         this.callbacks.onWelcome(welcome);
         this.callbacks.onStatus(`Online — ${welcome.mapId}`);
@@ -205,6 +222,7 @@ export class MultiplayerBridge {
   }
 
   disconnect() {
+    this.clearJoinRetryLoop();
     if (this.networkClient) {
       unregisterMultiplayerClient(this.networkClient);
       this.networkClient = null;
@@ -214,6 +232,7 @@ export class MultiplayerBridge {
     this.playerId = null;
     this.spawnSynced = false;
     this.skipNextDisconnectNotice = false;
+    this.hasShownReconnectNotice = false;
   }
 
   isActive() {
@@ -261,6 +280,37 @@ export class MultiplayerBridge {
       );
       this.networkClient.disconnect();
     }
+  }
+
+  private startJoinRetryLoop() {
+    this.clearJoinRetryLoop();
+    this.joinRetryCount = 0;
+
+    const retry = () => {
+      if (!this.networkClient?.isConnected() || this.playerId) {
+        this.clearJoinRetryLoop();
+        return;
+      }
+      if (this.joinRetryCount >= 2) {
+        this.clearJoinRetryLoop();
+        return;
+      }
+
+      this.joinRetryCount += 1;
+      console.info("[multiplayer] retrying join", { attempt: this.joinRetryCount });
+      this.requestJoin();
+      this.joinRetryTimer = setTimeout(retry, 4_000);
+    };
+
+    this.joinRetryTimer = setTimeout(retry, 4_000);
+  }
+
+  private clearJoinRetryLoop() {
+    if (this.joinRetryTimer) {
+      clearTimeout(this.joinRetryTimer);
+      this.joinRetryTimer = null;
+    }
+    this.joinRetryCount = 0;
   }
 
   sendMove(facing: Facing) {
