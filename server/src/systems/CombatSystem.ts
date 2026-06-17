@@ -758,9 +758,9 @@ export class CombatSystem {
       return caster;
     }
 
-    // Sin jugador en el tile: el cast ya pasó validación de auto-cura (tile vacío sobre vos).
+    // Si no hay jugador en el tile y no era sobre el caster (ya filtrado arriba), falla.
     if (!targetPlayer) {
-      return caster;
+      return undefined;
     }
 
     return undefined;
@@ -792,7 +792,7 @@ export class CombatSystem {
     }
 
     if (!targetPlayer) {
-      return caster;
+      return undefined;
     }
 
     return undefined;
@@ -1090,6 +1090,8 @@ export class CombatSystem {
     if (victim.isDead) {
       return;
     }
+    const suicide = killer.id === victim.id;
+    logger.info("combatsystem", `Player ${victim.name} (${victim.id}) killed by ${suicide ? "themselves" : killer.name + " (" + killer.id + ")"}`);
     const shouldDropLoot = !victim.deathLootProcessed;
     victim.isDead = true;
     victim.hp = 0;

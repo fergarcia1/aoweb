@@ -1,3 +1,4 @@
+import { logger } from "./logger";
 import { findTransition } from "../../shared/maps";
 import {
   canStayInNewbieDungeon,
@@ -438,7 +439,7 @@ export class WorldInstance implements WorldContext {
         this.cleanupItems();
       }
     } catch (error) {
-      console.error("[tick] unhandled error:", error);
+      logger.error("worldinstance", "[tick] unhandled error:", error);
     }
   }
 
@@ -482,7 +483,7 @@ export class WorldInstance implements WorldContext {
     for (const player of this.players.values()) {
       if (!player.joined) continue;
       void this.persistSession(player).catch((error) => {
-        console.error("[autosave] persist failed:", error);
+        logger.error("worldinstance", "[autosave] persist failed:", error);
       });
     }
   }
@@ -602,7 +603,7 @@ export class WorldInstance implements WorldContext {
 
         // Anti-Spam: Payload size limit (16KB max)
         if (raw.length > 16384) {
-          console.warn(`[AntiSpam] Payload demasiado grande (${raw.length} bytes). Cortando conexión.`);
+          logger.warn("worldinstance", `[AntiSpam] Payload demasiado grande (${raw.length} bytes). Cortando conexión.`);
           socket.close(4009, "Payload too large");
           return;
         }
@@ -616,7 +617,7 @@ export class WorldInstance implements WorldContext {
         } else {
           state.count++;
           if (state.count > MAX_ACTIONS_PER_SECOND) {
-             console.warn(`[AntiSpam] Límite de acciones excedido (${state.count} msg/s). Cortando conexión.`);
+             logger.warn("worldinstance", `[AntiSpam] Límite de acciones excedido (${state.count} msg/s). Cortando conexión.`);
              tempBanIp((socket as any).realIp || "unknown");
              socket.close(4008, "Rate limit exceeded");
              return;
@@ -626,7 +627,7 @@ export class WorldInstance implements WorldContext {
 
         const message = parseClientMessage(raw);
         if (!message) {
-          console.warn(`[ws] mensaje invalido antes/durante join: ${raw.slice(0, 500)}`);
+          logger.warn("worldinstance", `[ws] mensaje invalido antes/durante join: ${raw.slice(0, 500)}`);
           const session = this.socketSessions.get(socket);
           if (session) {
             this.send(session, { type: "error", message: "Mensaje inválido." });
@@ -655,7 +656,7 @@ export class WorldInstance implements WorldContext {
 
         const session = this.socketSessions.get(socket);
         if (!session) {
-          console.warn(`[join] mensaje ${message.type} recibido antes de join`);
+          logger.warn("worldinstance", `[join] mensaje ${message.type} recibido antes de join`);
           if (Date.now() > joinDeadline) {
             socket.close(4001, "join required");
           }
@@ -663,7 +664,7 @@ export class WorldInstance implements WorldContext {
         }
         this.handleClientMessage(session, message);
       } catch (error) {
-        console.error("[ws] message handler error:", error);
+        logger.error("worldinstance", "[ws] message handler error:", error);
         const session = this.socketSessions.get(socket);
         if (session) {
           this.send(session, { type: "error", message: "Error interno del servidor." });
@@ -672,7 +673,7 @@ export class WorldInstance implements WorldContext {
     });
 
     socket.on("error", (error) => {
-      console.error("[ws] socket error:", error);
+      logger.error("worldinstance", "[ws] socket error:", error);
     });
 
     socket.on("close", () => {
@@ -701,11 +702,11 @@ export class WorldInstance implements WorldContext {
       void this.characterRepo
         .upsert(snapshot)
         .catch((error) => {
-          console.error("[leave] failed to persist session:", error);
+          logger.error("worldinstance", "[leave] failed to persist session:", error);
         })
         .finally(() => {
           if (this.isInSafeZone(session)) {
-            console.log(`[leave] ${session.name} (${session.id.slice(0, 8)}) — zona segura, removiendo al instante`);
+            logger.info("worldinstance", `[leave] ${session.name} (${session.id.slice(0, 8)}) — zona segura, removiendo al instante`);
             this.removePlayer(session.id);
             return;
           }
@@ -924,7 +925,7 @@ export class WorldInstance implements WorldContext {
 
     // Persistir el nuevo orden en la DB
     void this.persistSession(session).catch((error) => {
-      console.error("[sync_inventory] failed to persist session:", error);
+      logger.error("worldinstance", "[sync_inventory] failed to persist session:", error);
     });
   }
 
@@ -959,7 +960,7 @@ export class WorldInstance implements WorldContext {
         ? message.characterId.trim().slice(0, 64)
         : session.id;
     void this.tryHydrateSessionFromRepository(session, message).catch((error) => {
-      console.error("[join] failed to hydrate from repository:", error);
+      logger.error("worldinstance", "[join] failed to hydrate from repository:", error);
       this.applyJoinFallback(session, message);
     });
   }
@@ -1371,7 +1372,7 @@ export class WorldInstance implements WorldContext {
     const timer = setTimeout(() => {
       this.persistDebounceTimers.delete(session.id);
       void this.persistSession(session).catch((error) => {
-        console.error("[move] debounced persist failed:", error);
+        logger.error("worldinstance", "[move] debounced persist failed:", error);
       });
     }, delayMs);
     this.persistDebounceTimers.set(session.id, timer);
@@ -1412,7 +1413,7 @@ export class WorldInstance implements WorldContext {
     this.movementSystem.sendSnapshot(session);
     this.movementSystem.initAoiOnJoin(session);
     void this.persistSession(session).catch((error) => {
-      console.error("[join] persist failed:", error);
+      logger.error("worldinstance", "[join] persist failed:", error);
     });
     console.log(
       `[join] ${session.name} (${session.id.slice(0, 8)}) en ${session.mapId} @ ${session.tileX},${session.tileY}`
@@ -1459,7 +1460,7 @@ export class WorldInstance implements WorldContext {
     try {
       await this.characterRepo.upsert(snapshot);
     } catch (error) {
-      console.error(`[persist] upsert failed (${session.name}/${session.characterId}):`, error);
+      logger.error("worldinstance", `[persist] upsert failed (${session.name}/${session.characterId}):`, error);
     }
   }
 
@@ -1588,7 +1589,7 @@ export class WorldInstance implements WorldContext {
       );
       this.sendInventoryUpdated(recipient);
       void this.persistSession(recipient).catch((error) => {
-        console.error("[mob_kill_gold] persist failed:", error);
+        logger.error("worldinstance", "[mob_kill_gold] persist failed:", error);
       });
     }
   }
@@ -1696,7 +1697,7 @@ export class WorldInstance implements WorldContext {
 
     this.sendPlayerProgressUpdated(session);
     void this.persistSession(session).catch((error) => {
-      console.error("[mob_kill_exp] persist failed:", error);
+      logger.error("worldinstance", "[mob_kill_exp] persist failed:", error);
     });
   }
 
@@ -1788,7 +1789,7 @@ export class WorldInstance implements WorldContext {
     clearInterval(countdown);
     this.pendingLogoutCountdownTimers.delete(session.id);
     this.sendCombatLog(session, "Desconexión cancelada.");
-    console.log(`[logout] cancelado por movimiento — ${session.name} (${session.id.slice(0, 8)})`);
+    logger.info("worldinstance", `[logout] cancelado por movimiento — ${session.name} (${session.id.slice(0, 8)})`);
   }
 
   private scheduleLogoutGraceRemoval(playerId: string): void {
@@ -1803,7 +1804,7 @@ export class WorldInstance implements WorldContext {
   }
 
   private handleRequestLogout(session: PlayerSession): void {
-    console.log(`[logout] ${session.name} (${session.id.slice(0, 8)}) map=${session.mapId}`);
+    logger.info("worldinstance", `[logout] ${session.name} (${session.id.slice(0, 8)}) map=${session.mapId}`);
     if (this.pendingLogoutCountdownTimers.has(session.id)) {
       this.sendCombatLog(session, "Ya estás desconectando...");
       return;
@@ -1841,7 +1842,7 @@ export class WorldInstance implements WorldContext {
     try {
       await this.characterRepo.upsert(snapshot);
     } catch (error) {
-      console.error("[logout] failed to persist session:", error);
+      logger.error("worldinstance", "[logout] failed to persist session:", error);
     }
 
     this.send(session, { type: "logout_complete" });
@@ -1867,7 +1868,7 @@ export class WorldInstance implements WorldContext {
         }
       }
       session.aoiVisiblePlayerIds.clear();
-      console.log(`[leave] ${session.name} (${playerId.slice(0, 8)})`);
+      logger.info("worldinstance", `[leave] ${session.name} (${playerId.slice(0, 8)})`);
     }
 
     this.cancelResurrectForPlayer(playerId);
@@ -1996,7 +1997,7 @@ export class WorldInstance implements WorldContext {
     try {
       session.socket.send(JSON.stringify(message));
     } catch (error) {
-      console.error(`[ws] send failed (${session.name}):`, error);
+      logger.error("worldinstance", `[ws] send failed (${session.name}):`, error);
     }
   }
 

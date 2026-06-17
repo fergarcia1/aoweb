@@ -1,3 +1,4 @@
+import { logger } from "../logger";
 import { WorldContext } from "./WorldContext";
 import { PlayerSession } from "../PlayerSession";
 import {
@@ -343,7 +344,7 @@ export class InteractionSystem {
     this.world.broadcastPlayerMoved(session);
     this.world.notifyPartyOfHpChange(session.id);
     void this.world.persistSession(session).catch((error) => {
-      console.error("[revive] persist failed:", error);
+      logger.error("interactionsystem", "[revive] persist failed:", error);
     });
   }
 

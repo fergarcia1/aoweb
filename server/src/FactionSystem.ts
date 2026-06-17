@@ -1,3 +1,4 @@
+import { logger } from "./logger";
 import type { PlayerSession } from "./PlayerSession";
 import type { ServerMessage } from "../../shared/protocol";
 import {
@@ -52,7 +53,7 @@ export class FactionSystem {
     this.world.send(session, updated);
     this.world.broadcastToAoi(session.mapId, session.tileX, session.tileY, updated, session.id);
     void this.world.persistSession(session).catch((error) => {
-      console.error("[faction] persist failed:", error);
+      logger.error("factionsystem", "[faction] persist failed:", error);
     });
   }
 }

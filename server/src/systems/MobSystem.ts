@@ -210,11 +210,16 @@ export class MobSystem {
       mob.tileY = step.y;
       mob.facing = step.facing;
       mob.nextMoveAt = now + mob.aiMoveCooldownMs;
+      // Delay attack so the client has time to visually animate the mob into the adjacent tile
+      mob.nextAttackAt = Math.max(mob.nextAttackAt, now + Math.min(mob.aiMoveCooldownMs, 400));
       this.world.broadcastMobUpdated(mob);
     }
   }
 
   private tryWanderMob(mob: MobEntity) {
+    if (mob.isAggressive) {
+      return;
+    }
     const dirs: Facing[] = ["up", "down", "left", "right"];
     for (let i = dirs.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
@@ -461,6 +466,7 @@ export class MobSystem {
     if (victim.isDead) {
       return;
     }
+    logger.info("mobsystem", `Player ${victim.name} (${victim.id}) killed by mob ${mob.name} (${mob.id})`);
     const shouldDropLoot = !victim.deathLootProcessed;
     victim.isDead = true;
     victim.hp = 0;

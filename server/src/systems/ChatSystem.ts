@@ -1,3 +1,4 @@
+import { logger } from "../logger";
 import { ADMIN_GM_HP_MAX, ADMIN_GM_MP_MAX } from "../../../game-data/constants";
 import { CLASS_USES_MANA, type CharacterClassId } from "../../../game-data/classes";
 import { expRequiredForLevel } from "../../../game-data/progressFormulas";
@@ -153,7 +154,7 @@ export class ChatSystem {
     this.world.syncInventoryEquippedFlags(target);
     this.world.sendInventoryUpdated(target);
     void this.world.persistSession(target).catch((error) => {
-      console.error("[admin_give] persist failed:", error);
+      logger.error("chatsystem", "[admin_give] persist failed:", error);
     });
 
     const item = getItemDefinition(itemId as ItemId);

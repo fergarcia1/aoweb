@@ -1,3 +1,4 @@
+import { logger } from "./logger";
 import "dotenv/config";
 
 const MAX_CONNECTIONS_PER_IP = parseInt(process.env.RATE_LIMIT_MAX_CONNECTIONS_PER_IP ?? "3", 10);
@@ -52,7 +53,7 @@ export function unregisterConnection(ip: string) {
 export function tempBanIp(ip: string) {
   const expiration = Date.now() + TEMP_BAN_MS;
   bannedIps.set(ip, expiration);
-  console.warn(`[AntiSpam] IP ${ip} ha sido baneada temporalmente hasta ${new Date(expiration).toISOString()}.`);
+  logger.warn("networksecurity", `[AntiSpam] IP ${ip} ha sido baneada temporalmente hasta ${new Date(expiration).toISOString()}.`);
 }
 
 export function getNetworkSecurityStats(now = Date.now()) {
