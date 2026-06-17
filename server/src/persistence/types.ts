@@ -31,6 +31,7 @@ export type CharacterSnapshot = {
   level: number;
   exp: number;
   expToNext: number;
+  usersKilled: number;
   hp: number;
   hpMax: number;
   mp: number;
@@ -82,6 +83,7 @@ export type CharacterRow = {
   level: number;
   exp: number;
   exp_to_next: number;
+  users_killed: number;
   hp: number;
   hp_max: number;
   mp: number;

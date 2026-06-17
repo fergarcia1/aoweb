@@ -175,7 +175,7 @@ async function shutdown(reason: string, exitCode = 0): Promise<void> {
   }, SHUTDOWN_TIMEOUT_MS);
   forceExit.unref();
 
-  world.stop();
+  await world.stop();
 
   for (const client of wss.clients) {
     client.close(1001, "server shutdown");

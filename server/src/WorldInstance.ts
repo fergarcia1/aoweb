@@ -420,11 +420,20 @@ export class WorldInstance implements WorldContext {
     };
   }
 
-  stop() {
+  async stop() {
     if (this.tickTimer) {
       clearInterval(this.tickTimer);
       this.tickTimer = null;
     }
+    logger.info("worldinstance", "[stop] Forzando persistencia de todos los jugadores activos...");
+    const promises = [];
+    for (const session of this.players.values()) {
+      if (session.joined) {
+        promises.push(this.persistSession(session));
+      }
+    }
+    await Promise.all(promises);
+    logger.info("worldinstance", "[stop] Todos los jugadores persistidos de forma segura.");
   }
 
   private onTick() {
@@ -1093,6 +1102,7 @@ export class WorldInstance implements WorldContext {
     session.factionId = normalizeFactionId(c.factionId);
     session.faceIndex = Math.max(0, Math.floor(c.faceIndex));
     session.level = clampPlayerLevel(c.level);
+    session.usersKilled = Math.max(0, Math.floor(c.usersKilled || 0));
     session.equipment = sanitizeJoinEquipment({
       weaponId: c.equipment.weaponItemId,
       shieldId: c.equipment.shieldItemId,

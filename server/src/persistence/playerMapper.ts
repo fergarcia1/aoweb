@@ -33,6 +33,7 @@ export function buildSnapshotFromPlayerSession(
     level,
     exp: Math.max(0, Math.floor(session.exp)),
     expToNext: Math.max(1, Math.floor(session.expToNext)),
+    usersKilled: Math.max(0, Math.floor(session.usersKilled || 0)),
     hp: session.hp,
     hpMax: session.hpMax,
     mp: session.mp,
@@ -84,6 +85,7 @@ export function mapCharacterSnapshotToRow(snapshot: CharacterSnapshot): Characte
     level: snapshot.level,
     exp: snapshot.exp,
     exp_to_next: snapshot.expToNext,
+    users_killed: snapshot.usersKilled,
     hp: snapshot.hp,
     hp_max: snapshot.hpMax,
     mp: snapshot.mp,
@@ -129,6 +131,7 @@ export function mapCharacterRowToSnapshot(
       exp: Math.max(0, Math.floor(row.exp)),
       expToNext:
         row.exp_to_next > 0 ? Math.floor(row.exp_to_next) : expRequiredForLevel(level),
+      usersKilled: Math.max(0, Math.floor(row.users_killed || 0)),
       hp: row.hp,
       hpMax: row.hp_max,
       mp: row.mp,

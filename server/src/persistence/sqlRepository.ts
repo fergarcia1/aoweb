@@ -63,7 +63,7 @@ export class SqlCharacterRepository
       SELECT
         id, account_id, name, role, map_id, tile_x, tile_y, facing,
         race_id, gender_id, class_id, faction_id, face_index,
-        level, exp, exp_to_next, hp, hp_max, mp, mp_max, gold, bank_gold,
+        level, exp, exp_to_next, users_killed, hp, hp_max, mp, mp_max, gold, bank_gold,
         weapon_item_id, shield_item_id, helmet_item_id, armor_item_id,
         equipped_outfit, attr_strength_bonus, attr_agility_bonus, attr_buffs_expires_at_ms
       FROM characters
@@ -141,16 +141,16 @@ export class SqlCharacterRepository
       INSERT INTO characters (
         id, account_id, name, role, map_id, tile_x, tile_y, facing,
         race_id, gender_id, class_id, faction_id, face_index,
-        level, exp, exp_to_next, hp, hp_max, mp, mp_max, gold, bank_gold,
+        level, exp, exp_to_next, users_killed, hp, hp_max, mp, mp_max, gold, bank_gold,
         weapon_item_id, shield_item_id, helmet_item_id, armor_item_id,
         equipped_outfit, attr_strength_bonus, attr_agility_bonus, attr_buffs_expires_at_ms,
         updated_at
       ) VALUES (
         $1, $2, $3, $4, $5, $6, $7, $8,
         $9, $10, $11, $12, $13,
-        $14, $15, $16, $17, $18, $19, $20, $21, $22,
-        $23, $24, $25, $26,
-        $27, $28, $29, $30,
+        $14, $15, $16, $17, $18, $19, $20, $21, $22, $23,
+        $24, $25, $26, $27,
+        $28, $29, $30, $31,
         NOW()
       )
       ON CONFLICT (id) DO UPDATE SET
@@ -169,6 +169,7 @@ export class SqlCharacterRepository
         level = EXCLUDED.level,
         exp = EXCLUDED.exp,
         exp_to_next = EXCLUDED.exp_to_next,
+        users_killed = EXCLUDED.users_killed,
         hp = EXCLUDED.hp,
         hp_max = EXCLUDED.hp_max,
         mp = EXCLUDED.mp,
@@ -202,6 +203,7 @@ export class SqlCharacterRepository
         row.level,
         row.exp,
         row.exp_to_next,
+        row.users_killed,
         row.hp,
         row.hp_max,
         row.mp,
