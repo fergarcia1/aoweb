@@ -23,6 +23,7 @@ import {
 } from "./multiplayerJoinPayload";
 import { normalizeNetPlayerState } from "../../../shared/types";
 import type { ServerWelcomeMessage } from "../../../shared/protocol";
+import { getSpellMagicWordsForCast } from "../../spells/spellMagicWords";
 
 export type GameSceneMultiplayerDeps = {
   scene: Phaser.Scene;
@@ -148,6 +149,7 @@ export type GameSceneMultiplayerDeps = {
   ) => void;
   stopResurrectChannelEffect: (casterId: string) => void;
   getSuppressServerSpellFxUntil: () => number;
+  showRemoteSpellMagicWords: (playerId: string, words: string) => void;
   getPlayerSprite: () => Phaser.GameObjects.Sprite;
   getLocalPlayerId: () => string | null;
   applyLocalRevivedFromServer: (hp: number) => void;
@@ -616,6 +618,13 @@ export class GameSceneMultiplayerController {
         event.sourcePlayerId
       );
       this.deps.playSpellEffect(event.spellId, event.tileX, event.tileY, spellAudible);
+
+      if (event.sourcePlayerId && event.sourcePlayerId !== this.deps.getLocalPlayerId()) {
+        const words = getSpellMagicWordsForCast(event.spellId);
+        if (words) {
+          this.deps.showRemoteSpellMagicWords(event.sourcePlayerId, words);
+        }
+      }
       return;
     }
 

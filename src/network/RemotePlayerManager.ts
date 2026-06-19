@@ -52,6 +52,7 @@ import {
   type MeditationVisualConfig,
 } from "../systems/meditationVisuals";
 import { buildHitboxFrameRect, containsWorldPointInHitArea, type BodyHitboxConfig } from "../game/hitboxUtils";
+import { SpellMagicWordsOverlay } from "../ui/spellMagicWordsOverlay";
 import {
   PLAYER_HITBOX_WIDTH_PX,
   PLAYER_HITBOX_PROFILE_WIDTH_PX,
@@ -139,6 +140,7 @@ export type RemoteEntry = {
   lastSyncHp?: number;
   lastSyncHpMax?: number;
   lastSyncParty?: boolean;
+  spellMagicWordsOverlay?: SpellMagicWordsOverlay;
 };
 
 export class RemotePlayerManager {
@@ -165,6 +167,25 @@ export class RemotePlayerManager {
     for (const player of visible) {
       this.upsert(player);
     }
+  }
+
+  showSpellMagicWords(playerId: string, words: string): void {
+    const entry = this.entries.get(playerId);
+    if (!entry || entry.isGhost) {
+      return;
+    }
+    if (!entry.spellMagicWordsOverlay) {
+      entry.spellMagicWordsOverlay = new SpellMagicWordsOverlay(
+        this.scene,
+        () => ({
+          x: entry.body.x,
+          y: entry.body.y,
+          depth: this.depthFromFeetY(entry.body.y) + 3,
+        }),
+        this.uiCamera
+      );
+    }
+    entry.spellMagicWordsOverlay.show(words);
   }
 
   clear() {
@@ -480,7 +501,7 @@ export class RemotePlayerManager {
       meditationConfig,
       label,
       playerName: state.name,
-      classId: state.classId,
+      classId: state.classId ?? "paladin",
       factionId: state.factionId,
       level: state.level,
       role: state.role,
@@ -722,6 +743,7 @@ export class RemotePlayerManager {
     entry.meditationSprite.setDepth(depth + 0.06);
     entry.label.setPosition(entry.body.x, entry.body.y + 2);
     entry.label.setDepth(depth + 2);
+    entry.spellMagicWordsOverlay?.syncPosition();
     this.syncPartyHpBar(entry, depth);
     this.syncRemoteGear(entry, walkSwayX, walkSwayY);
   }
@@ -952,8 +974,8 @@ export class RemotePlayerManager {
     this.syncRemoteVisuals(entry, true);
   }
 
-  private remove(id: string) {
-    const entry = this.entries.get(id);
+  private remove(playerId: string) {
+    const entry = this.entries.get(playerId);
     if (!entry) return;
     this.scene.tweens.killTweensOf(entry.body);
     entry.body.destroy();
@@ -964,6 +986,7 @@ export class RemotePlayerManager {
     entry.meditationSprite.destroy();
     entry.partyHpBar.destroy();
     entry.label.destroy();
-    this.entries.delete(id);
+    entry.spellMagicWordsOverlay?.clear();
+    this.entries.delete(playerId);
   }
 }

@@ -970,7 +970,12 @@ export class WorldInstance implements WorldContext {
         : session.id;
     void this.tryHydrateSessionFromRepository(session, message).catch((error) => {
       logger.error("worldinstance", "[join] failed to hydrate from repository:", error);
-      this.applyJoinFallback(session, message);
+      this.send(session, {
+        type: "error",
+        message:
+          "No se pudo cargar tu personaje desde la base de datos. Reinicia el servidor o corre la migracion antes de entrar.",
+      });
+      session.socket.close(1011, "character repository error");
     });
   }
 
@@ -1826,7 +1831,7 @@ export class WorldInstance implements WorldContext {
     }
 
     let secondsLeft = UNSAFE_LOGOUT_COUNTDOWN_SECONDS;
-    this.sendCombatLog(session, `Seras desconectado en ${secondsLeft} segundos.`);
+    this.sendCombatLog(session, `Desconectando en ${secondsLeft} segundos.`);
     this.send(session, { type: "logout_countdown", secondsLeft });
 
     const timer = setInterval(() => {
@@ -1836,7 +1841,7 @@ export class WorldInstance implements WorldContext {
         void this.completeLogout(session);
         return;
       }
-      this.sendCombatLog(session, `Desconectando en ${secondsLeft}...`);
+      this.sendCombatLog(session, `Desconectando en ${secondsLeft} segundos.`);
       this.send(session, { type: "logout_countdown", secondsLeft });
     }, 1_000);
 

@@ -1,6 +1,7 @@
 import type { PlayerSession } from "../PlayerSession";
 import type { MobEntity } from "../MobEntity";
 import type { WorldContext } from "./WorldContext";
+import { logger } from "../logger";
 import { ATTRIBUTE_POTION_BUFF_DURATION_MS, ATTRIBUTE_POTION_BUFF_MAX } from "../../../game-data/constants";
 import { INVISIBILITY_DURATION_MS } from "../../../game-data/invisibility";
 import {
@@ -110,10 +111,6 @@ export class CombatSystem {
   public handleAttack(session: PlayerSession) {
     const now = Date.now();
     if (!validateAttackIntent(now, session.nextAttackAt).ok) return;
-    
-    session.nextAttackAt = now + MECHANICS.INTERVAL_MELEE_ATTACK;
-    session.nextSpellAt = Math.max(session.nextSpellAt, now + MECHANICS.INTERVAL_MELEE_TO_SPELL);
-
     if (session.hp <= 0) {
       this.world.sendCombatLog(session, "Estás muerto.");
       return;
@@ -137,7 +134,7 @@ export class CombatSystem {
         this.world.sendCombatLog(session, "No podés atacar a este jugador (misma facción o alianza).");
         return;
       }
-      session.nextAttackAt = now + ATTACK_COOLDOWN_MS;
+      this.markMeleeAttackCooldown(session, now);
       const roll = rollAttackDamage(session.attackMin, session.attackMax, {
         canCrit: session.canCrit,
         critChance: session.critChance,
@@ -154,7 +151,7 @@ export class CombatSystem {
     if (targetMob && targetMob.alive) {
       if (!this.canAttackMob(session, targetMob)) return;
 
-      session.nextAttackAt = now + ATTACK_COOLDOWN_MS;
+      this.markMeleeAttackCooldown(session, now);
       const roll = rollAttackDamage(session.attackMin, session.attackMax, {
         canCrit: session.canCrit,
         critChance: session.critChance,
@@ -168,6 +165,14 @@ export class CombatSystem {
     }
 
     this.world.sendCombatLog(session, "No hay nadie para golpear.");
+  }
+
+  private markMeleeAttackCooldown(session: PlayerSession, now: number): void {
+    session.nextAttackAt = now + ATTACK_COOLDOWN_MS;
+    session.nextSpellAt = Math.max(
+      session.nextSpellAt,
+      now + MECHANICS.INTERVAL_MELEE_TO_SPELL
+    );
   }
 
   private getPlayersInRange(

@@ -41,6 +41,7 @@ import {
   isMapTileWalkable,
 } from "../../../shared/mapWalkability";
 import { getMap } from "../../../shared/maps";
+import { findLegacyDoorInteractionTile } from "../../../shared/legacyDoorInteraction";
 import { resolveImportedObjDef } from "../../../shared/legacyMapObjects";
 
 export class InteractionSystem {
@@ -364,14 +365,19 @@ export class InteractionSystem {
     }
 
     const map = getMap(session.mapId);
-    const obj = map.legacyObjs?.find((o) => o.tileX === tileX && o.tileY === tileY);
+    const doorTile = findLegacyDoorInteractionTile(map, tileX, tileY);
+    const interactionTileX = doorTile?.tileX ?? tileX;
+    const interactionTileY = doorTile?.tileY ?? tileY;
+    const obj = map.legacyObjs?.find(
+      (o) => o.tileX === interactionTileX && o.tileY === interactionTileY
+    );
     if (obj) {
       const def = resolveImportedObjDef(obj.objIndex);
       if (def?.objType === 6 && (def.indexAbierta > 0 || def.indexCerrada > 0)) {
         // Puerta
         const dynamicObjs = this.world.getDynamicMapObjs(session.mapId) || [];
         const entry = dynamicObjs.find(
-          (d) => d.tileX === tileX && d.tileY === tileY
+          (d) => d.tileX === interactionTileX && d.tileY === interactionTileY
         );
         const isOpen = entry ? entry.isOpen : (obj.objIndex === def.indexAbierta);
         const nextOpen = !isOpen;
@@ -383,22 +389,22 @@ export class InteractionSystem {
           entry.objIndex = nextIndex;
         } else {
           dynamicObjs.push({
-            tileX,
-            tileY,
+            tileX: interactionTileX,
+            tileY: interactionTileY,
             objIndex: nextIndex,
             isOpen: nextOpen,
           });
           this.world.setDynamicMapObjs(session.mapId, dynamicObjs);
         }
 
-        this.world.setDoorTileOverride(session.mapId, tileX, tileY, nextOpen);
+        this.world.setDoorTileOverride(session.mapId, interactionTileX, interactionTileY, nextOpen);
 
-        this.world.broadcastToAoi(session.mapId, tileX, tileY, {
+        this.world.broadcastToAoi(session.mapId, interactionTileX, interactionTileY, {
           type: "game_event",
           event: {
             kind: "map_object_updated",
-            tileX,
-            tileY,
+            tileX: interactionTileX,
+            tileY: interactionTileY,
             objIndex: nextIndex,
           },
         });

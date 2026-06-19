@@ -10,6 +10,7 @@ export const MOB_HIT_SOUND_BY_MODEL: Partial<Record<MobModelId, readonly NamedWa
   escorpion: ["escorpion"],
   fango: ["fango"],
   lobo: ["lobo"],
+  lobo_invernal: ["lobo"],
   serpiente: ["serpienteHit"],
 };
 

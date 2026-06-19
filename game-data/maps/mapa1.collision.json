@@ -106,6 +106,9 @@
     "73,68"
   ],
   "denyRects": [
+    { "x0": 71, "y0": 44, "x1": 71, "y1": 54, "label": "banco_pared_oeste" },
+    { "x0": 72, "y0": 54, "x1": 74, "y1": 54, "label": "banco_pared_sur_oeste" },
+    { "x0": 82, "y0": 44, "x1": 82, "y1": 54, "label": "banco_pared_este" },
     { "x0": 81, "y0": 61, "x1": 82, "y1": 68, "label": "templo_pared_este" }
   ],
   "roofTriggerRects": [

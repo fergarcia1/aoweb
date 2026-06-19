@@ -32,7 +32,7 @@ export class SpellMagicWordsOverlay {
   ) {}
 
   show(words: string): void {
-    const trimmed = words.trim();
+    const trimmed = words.trim().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
     if (!trimmed) {
       return;
     }

@@ -129,10 +129,16 @@ export class GameSceneChatCommands {
     if (normalized.startsWith("/ui ")) {
       return this.deps.handleUiCommand(normalized);
     }
-    if (normalized.startsWith("/gold")) {
+    if (normalized === "/gold" || normalized.startsWith("/gold ")) {
       const amt = parseInt(normalized.slice("/gold".length).trim(), 10);
       if (isNaN(amt) || amt <= 0) {
         this.deps.addChatLine("Uso: /gold <cantidad>");
+      } else if (this.deps.isMultiplayerConnected()) {
+        if (!this.deps.isPlayerAdmin()) {
+          this.deps.addChatLine("No tenes permisos de administrador.");
+          return true;
+        }
+        return this.deps.tryAdminCommand(message.trim());
       } else {
         this.deps.addGold(amt);
         this.deps.refreshHud();

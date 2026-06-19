@@ -1,5 +1,4 @@
 import Phaser from "phaser";
-import { registerMapObjectAssets } from "../../maps/mapObjects";
 import { registerPlayerSprites } from "../../player/playerSprites";
 import { registerRaceFaces } from "../../player/raceFaces";
 import { registerAoTerrain } from "../../terrain/aoTerrain";
@@ -18,8 +17,6 @@ import { macroSpellTextureKey } from "./progressFormulas";
 import {
   HUD_AGILITY_POTION_TEXTURE_KEY,
   HUD_STRENGTH_POTION_TEXTURE_KEY,
-  TREE_TEXTURE_KEY,
-  TREE_TEXTURE_PATH,
 } from "./constants";
 import { preloadPortalAnimationAssets } from "../../maps/portalVisuals";
 import type { GrhIndexEntry } from "../../maps/legacyMapObjects";
@@ -61,8 +58,6 @@ export function runGameSceneEssentialPreload(scene: Phaser.Scene): void {
 
   preloadMeditationVisuals(scene);
   preloadPortalAnimationAssets(scene);
-  scene.load.image(TREE_TEXTURE_KEY, TREE_TEXTURE_PATH);
-  registerMapObjectAssets(scene);
 
   scene.load.image("world_gold", "assets/ao/otherItems/oro.png");
   scene.load.image(HUD_STRENGTH_POTION_TEXTURE_KEY, "assets/ao/otherItems/pocionVerde.png");

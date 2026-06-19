@@ -6,7 +6,6 @@ export const ATTACK_COOLDOWN_MS = 1200;
 export const ATTACK_MIN_DAMAGE = 8;
 export const ATTACK_MAX_DAMAGE = 16;
 export const TREE_TEXTURE_KEY = "ao_tree_arbol1";
-export const TREE_TEXTURE_PATH = "/assets/ao/imperium/trees/arbol1.png";
 export const TREE_SCALE = 0.75;
 export const TREE_FRONT_DEPTH = 11.4;
 export const TREE_OCCLUDED_ALPHA = 0.48;

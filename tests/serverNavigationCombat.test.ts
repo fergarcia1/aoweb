@@ -85,6 +85,39 @@ describe("navigation combat", () => {
     randomSpy.mockRestore();
   });
 
+  it("no consume cooldown cuando el golpe no tiene objetivo", () => {
+    const session = createSession();
+    const mob = new MobEntity({
+      id: "mob-1",
+      mobId: "dummy",
+      name: "Dummy",
+      mapId: session.mapId,
+      tileX: session.tileX + 4,
+      tileY: session.tileY + 4,
+      maxHp: 200,
+      behavior: "passive",
+      hitboxOffsetY: 0,
+      hitboxWidthTiles: 1,
+      hitboxHeightTiles: 1,
+    });
+    const world = createFakeWorld(mob);
+    const combat = new CombatSystem(world);
+    const randomSpy = vi.spyOn(Math, "random").mockReturnValue(0);
+
+    combat.handleAttack(session);
+    expect(world.sendCombatLog).toHaveBeenCalledWith(session, "No hay nadie para golpear.");
+    expect(session.nextAttackAt).toBe(0);
+
+    mob.tileX = session.tileX;
+    mob.tileY = session.tileY + 1;
+    combat.handleAttack(session);
+
+    expect(mob.hp).toBe(200 - session.attackMin);
+    expect(session.nextAttackAt).toBeGreaterThan(Date.now());
+
+    randomSpy.mockRestore();
+  });
+
   it("mantiene resistencias y bloqueo del equipo aunque el jugador este en barca", () => {
     const session = createSession();
     const expectedDefense = getDefenseStatsFromEquipment(session.equipment);

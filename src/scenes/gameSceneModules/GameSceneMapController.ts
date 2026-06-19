@@ -35,6 +35,7 @@ import {
   TREE_TEXTURE_KEY,
 } from "./constants";
 import { spawnMapPortalSprites } from "../../maps/portalVisuals";
+import { findLegacyDoorInteractionTile } from "../../../shared/legacyDoorInteraction";
 
 type WorldCameraObjectInput =
   | Phaser.GameObjects.GameObject
@@ -152,24 +153,9 @@ export class GameSceneMapController {
     worldX: number,
     worldY: number
   ): { tileX: number; tileY: number } | null {
-    const doors = Array.from(this.dynamicObjs.values()).filter(
-      (obj) => obj.getData("isLegacyDoor") === true
-    );
-    for (let i = doors.length - 1; i >= 0; i -= 1) {
-      const door = doors[i];
-      if (!door.visible || door.alpha <= 0) {
-        continue;
-      }
-      if (!Phaser.Geom.Rectangle.Contains(door.getBounds(), worldX, worldY)) {
-        continue;
-      }
-      const tileX = door.getData("mapTileX") as number | undefined;
-      const tileY = door.getData("mapTileY") as number | undefined;
-      if (tileX !== undefined && tileY !== undefined) {
-        return { tileX, tileY };
-      }
-    }
-    return null;
+    const clickTileX = Math.floor(worldX / TILE_SIZE);
+    const clickTileY = Math.floor(worldY / TILE_SIZE);
+    return findLegacyDoorInteractionTile(this.deps.getCurrentMap(), clickTileX, clickTileY);
   }
 
   ensureMapVisualAssetsLoaded(map: GameMap): Promise<void> {

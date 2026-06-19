@@ -801,6 +801,14 @@ export const SHIELDS: ShieldData[] = [
     valor: 5800,
     equipablePor: HEAVY_ARMOR_CLASSES,
     iconAssetPath: "assets/ao/shields/escudoLeon_icon.png",
+    equippedAssetPath: "assets/ao/shields/escudoLeon.png",
+    equippedScale: 1,
+    equippedOffsetByFacing: {
+      down: { x: 7, y: 1 },
+      right: { x: 2, y: 3 },
+      left: { y: 3 },
+      up: { x: -7, y: 2 },
+    },
   },
   {
     itemId: "shield_torre",
@@ -832,7 +840,7 @@ export const SHIELDS: ShieldData[] = [
     valor: 9500,
     equipablePor: HEAVY_ARMOR_CLASSES,
     iconAssetPath: "assets/ao/shields/escudoReflexTreinta_icon.png",
-    equippedAssetPath: "assets/ao/shields/escudoReflexTreinta_std.png",
+    equippedAssetPath: "assets/ao/shields/escudoReflexTreinta.png",
     equippedScale: 1,
     equippedOffsetByFacing: {
       down: { x: 5 },
@@ -851,7 +859,7 @@ export const SHIELDS: ShieldData[] = [
     valor: 6500,
     equipablePor: HEAVY_ARMOR_CLASSES,
     iconAssetPath: "assets/ao/shields/escudoTortugaMasUno_icon.png",
-    equippedAssetPath: "assets/ao/shields/escudoTortugaMasUno_std.png",
+    equippedAssetPath: "assets/ao/shields/escudoTortugaMasUno.png",
     equippedScale: 1,
     equippedOffsetByFacing: {
       down: { x: 5 },
@@ -870,7 +878,7 @@ export const SHIELDS: ShieldData[] = [
     valor: 5000,
     equipablePor: HEAVY_ARMOR_CLASSES,
     iconAssetPath: "assets/ao/shields/escudoTortuga_icon.png",
-    equippedAssetPath: "assets/ao/shields/escudoTortuga_std.png",
+    equippedAssetPath: "assets/ao/shields/escudoTortuga.png",
     equippedScale: 1,
     equippedOffsetByFacing: {
       down: { x: 5 },
@@ -1283,6 +1291,7 @@ export const ARMORS: ArmorData[] = [
     iconAssetPath: "assets/ao/armors/tunicaClerigo_icon.png",
     clasesBajas: false,
     spritesheetStdPath: "assets/ao/armors/tunicaClerigo_std.png",
+    spritesheetBajosPath: "assets/ao/armors/tunicaClerigoBajos_std.png",
     outfitOverride: "tunicaClerigo",
   },
   {

@@ -25,6 +25,9 @@ Thumbs.db
 # Local clones / scratch (no versionar)
 tmp/
 scratch/
+server/restore*.js
+server/restore*.cjs
+scripts/replace_logger.*
 
 # Heavy reference / extracted game assets (clone locally)
 tools/external/

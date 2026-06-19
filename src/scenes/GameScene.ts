@@ -15,10 +15,7 @@ import {
   type GameMap,
 } from "../maps";
 import { getTileDefinition, TILE } from "../maps/tileDefinitions";
-import {
-  isTileBlockedByMapObject,
-  spawnMapObjectImage,
-} from "../maps/mapObjects";
+import { isTileBlockedByMapObject } from "../maps/mapObjects";
 import {
   applyPlayerOrigin,
   BOAT_BODY_TEXTURE_KEY,
@@ -318,7 +315,6 @@ import {
   TEST_MANA_POTION_STACK,
   TEST_START_GOLD,
   TREE_TEXTURE_KEY,
-  TREE_TEXTURE_PATH,
   TRAINING_DUMMY_NAME,
   WORLD_DEPTH_BASE,
   WORLD_DEPTH_SCALE,
@@ -1182,6 +1178,8 @@ export class GameScene extends Phaser.Scene {
         this.startResurrectChannelEffect(casterId, tileX, tileY, endsAtMs),
       stopResurrectChannelEffect: (casterId) => this.stopResurrectChannelEffect(casterId),
       getSuppressServerSpellFxUntil: () => this.suppressServerSpellFxUntil,
+      showRemoteSpellMagicWords: (playerId, words) =>
+        this.multiplayer?.getRemotePlayers()?.showSpellMagicWords(playerId, words),
       getPlayerSprite: () => this.player,
       getLocalPlayerId: () => this.mpController.getPlayerId(),
       applyLocalRevivedFromServer: (hp) => this.deathSystem.applyRevivedFromServer(hp),
@@ -2330,7 +2328,8 @@ export class GameScene extends Phaser.Scene {
       command === "tpmap" ||
       command === "speed" ||
       command === "pvp" ||
-      command === "give"
+      command === "give" ||
+      command === "gold"
     ) {
       if (!this.multiplayer?.isConnected()) {
         this.gameUi.addChatLine("No estás conectado al servidor.");

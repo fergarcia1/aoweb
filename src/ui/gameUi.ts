@@ -2507,12 +2507,12 @@ this.inventoryPanel = createInventoryPanel(this.scene, 0, 0, {
     this.statsOverlay = this.scene.add.container(0, 0).setScrollFactor(0).setVisible(false);
     this.statsOverlayDim = this.scene.add.graphics().setScrollFactor(0);
     this.statsOverlayPanel = this.scene.add.graphics().setScrollFactor(0);
-    this.statsOverlayTitle = this.makeText("Estadisticas", 14, "#5c4033", true).setOrigin(
+    this.statsOverlayTitle = this.makeText("Estadisticas", 14, "#f1c44d", true).setOrigin(
       0.5,
       0
     );
     this.statsOverlayCloseBtn = this.scene.add.graphics().setScrollFactor(0);
-    this.statsOverlayCloseLabel = this.makeText("Volver", 10, "#fbf0d9", true).setOrigin(0.5, 0.5);
+    this.statsOverlayCloseLabel = this.makeText("Volver", 10, "#fff3d2", true).setOrigin(0.5, 0.5);
     this.statsOverlayCloseZone = this.scene.add
       .zone(0, 0, 1, 1)
       .setOrigin(0, 0)
@@ -2525,10 +2525,10 @@ this.inventoryPanel = createInventoryPanel(this.scene, 0, 0, {
     this.statsOverlayDim.on("pointerdown", () => this.closeStatsOverlay());
 
     for (let i = 0; i < 2; i += 1) {
-      this.statsOverlayAttrTexts.push(this.makeText("", 10, "#5c4033", i === 0));
+      this.statsOverlayAttrTexts.push(this.makeText("", 10, "#f5e3bd", i === 0));
     }
     this.statsOverlaySectionTitles.push(
-      this.makeText("Asesinatos", 11, "#5c4033", true)
+      this.makeText("Asesinatos", 11, "#f1c44d", true)
     );
 
     this.statsOverlay.add([
@@ -2652,53 +2652,59 @@ this.inventoryPanel = createInventoryPanel(this.scene, 0, 0, {
     const w = this.scene.scale.width;
     const h = this.scene.scale.height;
     const viewport = getGameViewport(w, h);
-    const panelW = Math.min(270, Math.floor(viewport.width * 0.88));
-    const panelH = Math.min(194, Math.floor(viewport.height * 0.82));
+    const panelW = Math.min(300, Math.floor(viewport.width * 0.9));
+    const panelH = Math.min(226, Math.floor(viewport.height * 0.86));
     const panelX = viewport.x + Math.floor((viewport.width - panelW) / 2);
     const panelY = viewport.y + Math.floor((viewport.height - panelH) / 2);
-    const pad = 12;
+    const pad = 16;
     const leftX = panelX + pad;
 
     this.statsOverlayDim.clear();
-    this.statsOverlayDim.fillStyle(0x0a0c10, 0.6);
+    this.statsOverlayDim.fillStyle(0x070506, 0.68);
     this.statsOverlayDim.fillRect(viewport.x, viewport.y, viewport.width, viewport.height);
     this.statsOverlayDim.input?.hitArea.setTo(viewport.x, viewport.y, viewport.width, viewport.height);
 
     this.statsOverlayPanel.clear();
-    this.statsOverlayPanel.fillStyle(0xeadbb9, 0.98);
-    this.statsOverlayPanel.fillRect(panelX, panelY, panelW, panelH);
-    this.statsOverlayPanel.lineStyle(2, 0x6f4e37, 0.95);
-    this.statsOverlayPanel.strokeRect(panelX + 0.5, panelY + 0.5, panelW - 1, panelH - 1);
+    this.statsOverlayPanel.fillStyle(0x120b09, 0.98);
+    this.statsOverlayPanel.fillRoundedRect(panelX, panelY, panelW, panelH, 4);
+    this.statsOverlayPanel.fillStyle(0x2a0d0b, 0.92);
+    this.statsOverlayPanel.fillRoundedRect(panelX + 6, panelY + 6, panelW - 12, panelH - 12, 3);
+    this.statsOverlayPanel.fillStyle(0xffffff, 0.05);
+    this.statsOverlayPanel.fillRect(panelX + 8, panelY + 8, panelW - 16, 24);
+    this.statsOverlayPanel.lineStyle(2, 0xa42a20, 1);
+    this.statsOverlayPanel.strokeRoundedRect(panelX + 0.5, panelY + 0.5, panelW - 1, panelH - 1, 4);
+    this.statsOverlayPanel.lineStyle(1, 0x5d241d, 0.95);
+    this.statsOverlayPanel.strokeRoundedRect(panelX + 5.5, panelY + 5.5, panelW - 11, panelH - 11, 3);
+    this.statsOverlayPanel.lineStyle(1, 0x8d2b23, 0.8);
+    this.statsOverlayPanel.lineBetween(panelX + pad, panelY + 47, panelX + panelW - pad, panelY + 47);
+    this.statsOverlayPanel.lineStyle(1, 0x8d2b23, 0.65);
+    this.statsOverlayPanel.lineBetween(panelX + pad, panelY + 112, panelX + panelW - pad, panelY + 112);
 
-    this.statsOverlayTitle.setPosition(panelX + panelW / 2, panelY + 10);
-    const closeW = 58;
-    const closeH = 20;
-    const closeX = panelX + panelW - pad - closeW;
-    const closeY = panelY + 12;
-    this.statsOverlayCloseBtn.clear();
-    this.statsOverlayCloseBtn.fillStyle(0x8a6c5b, 1);
-    this.statsOverlayCloseBtn.fillRect(closeX, closeY, closeW, closeH);
-    this.statsOverlayCloseBtn.lineStyle(1, 0x6f4e37, 0.95);
-    this.statsOverlayCloseBtn.strokeRect(closeX + 0.5, closeY + 0.5, closeW - 1, closeH - 1);
+    this.statsOverlayTitle.setPosition(panelX + panelW / 2, panelY + 12);
+    const closeW = 78;
+    const closeH = 24;
+    const closeX = panelX + Math.floor((panelW - closeW) / 2);
+    const closeY = panelY + panelH - pad - closeH;
+    this.drawSpellPanelButton(this.statsOverlayCloseBtn, closeX, closeY, closeW, closeH, true);
     this.statsOverlayCloseZone.setPosition(closeX, closeY).setSize(closeW, closeH);
     this.statsOverlayCloseLabel.setPosition(closeX + closeW / 2, closeY + closeH / 2);
 
-    const infoY = panelY + 44;
+    const infoY = panelY + 60;
     const infoLines = [
       `Nombre: ${this.stats.name}`,
       `Nivel: ${this.stats.level}`,
     ];
     this.statsOverlayAttrTexts.forEach((text, index) => {
-      text.setPosition(leftX, infoY + index * 16);
+      text.setPosition(leftX, infoY + index * 18);
       text.setText(infoLines[index] ?? "");
-      text.setColor("#5c4033");
+      text.setColor(index === 0 ? "#fff3d2" : "#d7c7a5");
     });
 
     const killsTitle = this.statsOverlaySectionTitles[0];
-    const sectionY = infoY + 42;
+    const sectionY = panelY + 124;
     killsTitle.setPosition(leftX, sectionY);
 
-    const killsTop = sectionY + 16;
+    const killsTop = sectionY + 22;
     const factionKills = {
       imperial: this.killStats.imperialKilled ?? 0,
       armada: this.killStats.armadaKilled ?? 0,
@@ -2713,9 +2719,9 @@ this.inventoryPanel = createInventoryPanel(this.scene, 0, 0, {
       `Renegados: ${factionKills.renegade}`,
     ];
     this.statsKillTexts.forEach((text, index) => {
-      text.setPosition(leftX, killsTop + index * 15);
+      text.setPosition(leftX, killsTop + index * 16);
       text.setText(killLines[index] ?? "");
-      text.setColor("#5c4033");
+      text.setColor(index === 3 ? "#ffcf6a" : "#d7c7a5");
       text.setVisible(index < killLines.length);
     });
   }

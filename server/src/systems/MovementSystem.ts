@@ -156,9 +156,10 @@ export class MovementSystem {
     }
     session.aoiVisiblePlayerIds.clear();
 
+    const destination = this.resolveTransitionDestination(session, transition);
     session.mapId = transition.toMapId;
-    session.tileX = transition.toTileX;
-    session.tileY = transition.toTileY;
+    session.tileX = destination.tileX;
+    session.tileY = destination.tileY;
     if (transition.facing) {
       session.facing = transition.facing;
     }
@@ -171,6 +172,50 @@ export class MovementSystem {
 
     this.initAoiOnJoin(session);
     this.sendSnapshot(session);
+  }
+
+  private resolveTransitionDestination(
+    session: PlayerSession,
+    transition: MapTransition
+  ): { tileX: number; tileY: number } {
+    const isGhost = session.hp <= 0 || session.isDead;
+    const target = { tileX: transition.toTileX, tileY: transition.toTileY };
+    if (isGhost || this.canUseTransitionDestination(session, transition.toMapId, target.tileX, target.tileY)) {
+      return target;
+    }
+
+    const candidates = [
+      { tileX: target.tileX + 1, tileY: target.tileY },
+      { tileX: target.tileX - 1, tileY: target.tileY },
+      { tileX: target.tileX, tileY: target.tileY + 1 },
+      { tileX: target.tileX, tileY: target.tileY - 1 },
+    ];
+
+    return (
+      candidates.find((candidate) =>
+        this.canUseTransitionDestination(
+          session,
+          transition.toMapId,
+          candidate.tileX,
+          candidate.tileY
+        )
+      ) ?? target
+    );
+  }
+
+  private canUseTransitionDestination(
+    session: PlayerSession,
+    mapId: string,
+    tileX: number,
+    tileY: number
+  ): boolean {
+    const map = getMap(mapId);
+    const tileOverrides = this.ctx.getMapTileOverrides(mapId);
+    return (
+      isMapTileWalkable(mapId, tileX, tileY, tileOverrides) &&
+      !isTileBlockedByMapObject(map.objects, tileX, tileY) &&
+      !this.ctx.isTileOccupied(tileX, tileY, mapId, session.id)
+    );
   }
 
   public initAoiOnJoin(session: PlayerSession) {
