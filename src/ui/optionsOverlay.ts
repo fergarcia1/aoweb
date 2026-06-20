@@ -20,7 +20,8 @@ export type OptionsOverlayHandlers = {
 };
 
 const KEY_ACTIONS: { id: ActionName; label: string }[] = [
-  { id: "pickup", label: "Usar" },
+  { id: "useItem", label: "Usar objeto" },
+  { id: "pickup", label: "Agarrar" },
   { id: "equip", label: "Equipar" },
   { id: "drop", label: "Tirar" },
   { id: "moveUp", label: "W / Arriba" },

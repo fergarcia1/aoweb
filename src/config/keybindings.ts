@@ -2,6 +2,7 @@ import { getAccountScopedStorageKey } from "./accountScopedStorage";
 
 export type ActionName =
   | "attack"
+  | "useItem"
   | "pickup"
   | "equip"
   | "drop"
@@ -18,7 +19,8 @@ const KEYBINDINGS_STORAGE_KEY = "aoweb_keybindings";
 
 const defaultBindings: Keybindings = {
   attack: 17, // Phaser.Input.Keyboard.KeyCodes.CTRL
-  pickup: 81, // Q
+  useItem: 81, // Q
+  pickup: 71, // G
   equip: 69, // E
   drop: 84, // T
   meditate: 78, // N
@@ -35,7 +37,22 @@ export function loadKeybindings(): Keybindings {
       localStorage.getItem(getAccountScopedStorageKey(KEYBINDINGS_STORAGE_KEY)) ??
       localStorage.getItem(KEYBINDINGS_STORAGE_KEY);
     if (stored) {
-      return { ...defaultBindings, ...JSON.parse(stored) };
+      const parsed = JSON.parse(stored) as Partial<Keybindings>;
+      const legacyUseKey =
+        typeof parsed.useItem === "number"
+          ? parsed.useItem
+          : typeof parsed.pickup === "number"
+            ? parsed.pickup
+            : defaultBindings.useItem;
+      return {
+        ...defaultBindings,
+        ...parsed,
+        useItem: legacyUseKey,
+        pickup:
+          typeof parsed.useItem === "number" && typeof parsed.pickup === "number"
+            ? parsed.pickup
+            : defaultBindings.pickup,
+      };
     }
   } catch (e) {
     console.error("Failed to load keybindings", e);

@@ -364,6 +364,7 @@ export class GameScene extends Phaser.Scene {
   private isChangingMap = false;
   private facing: Facing = "down";
 
+  private useItemKey!: Phaser.Input.Keyboard.Key;
   private pickupKey!: Phaser.Input.Keyboard.Key;
   private cancelSpellTargetingKey!: Phaser.Input.Keyboard.Key;
   private meditateKey!: Phaser.Input.Keyboard.Key;
@@ -2875,6 +2876,7 @@ export class GameScene extends Phaser.Scene {
       right: this.keybindings.moveRight,
     }) as GameScene["wasd"];
     this.attackKey = this.input.keyboard.addKey(this.keybindings.attack);
+    this.useItemKey = this.input.keyboard.addKey(this.keybindings.useItem);
     this.equipSelectedSlotKey = this.input.keyboard.addKey(this.keybindings.equip);
     this.dropSelectedSlotKey = this.input.keyboard.addKey(this.keybindings.drop);
     this.pickupKey = this.input.keyboard.addKey(this.keybindings.pickup);
@@ -2946,7 +2948,8 @@ export class GameScene extends Phaser.Scene {
       justPressedDropSlot: Boolean(
         this.dropSelectedSlotKey && Phaser.Input.Keyboard.JustDown(this.dropSelectedSlotKey)
       ),
-      justPressedUseItem: Phaser.Input.Keyboard.JustDown(this.pickupKey),
+      justPressedUseItem: Phaser.Input.Keyboard.JustDown(this.useItemKey),
+      justPressedPickup: Phaser.Input.Keyboard.JustDown(this.pickupKey),
       isMoving: this.isMoving,
       getPressedDirection: () => this.getPressedDirection(),
       isPlayerImmobilized: () => this.isPlayerImmobilized(),
@@ -2977,6 +2980,7 @@ export class GameScene extends Phaser.Scene {
       onEquipSelectedSlot: () => this.tryToggleEquipmentFromSelectedSlot(),
       onDropSelectedSlot: () => this.tryDropSelectedItem(),
       onUseSelectedItem: () => this.inventoryController.tryUseSelectedItem(),
+      onPickup: () => this.inventoryController.tryPickupAtPlayerTile(),
       updateDesiredFacing: () => this.updateDesiredFacing(),
       stopMeditation: (reason) => this.stopMeditation(reason),
       onImmobilizedMoveAttempt: () =>

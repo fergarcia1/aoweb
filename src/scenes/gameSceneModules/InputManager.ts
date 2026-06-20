@@ -28,6 +28,7 @@ export class InputManager {
   private equipSelectedSlotKey!: Phaser.Input.Keyboard.Key;
   private dropSelectedSlotKey!: Phaser.Input.Keyboard.Key;
   private pickupKey!: Phaser.Input.Keyboard.Key;
+  private useItemKey!: Phaser.Input.Keyboard.Key;
   private meditateKey!: Phaser.Input.Keyboard.Key;
   private worldMapToggleKey!: Phaser.Input.Keyboard.Key;
   private partyToggleKey!: Phaser.Input.Keyboard.Key;
@@ -80,6 +81,7 @@ export class InputManager {
     this.attackKey = this.scene.input.keyboard.addKey(this.bindings.attack);
     this.equipSelectedSlotKey = this.scene.input.keyboard.addKey(this.bindings.equip);
     this.dropSelectedSlotKey = this.scene.input.keyboard.addKey(this.bindings.drop);
+    this.useItemKey = this.scene.input.keyboard.addKey(this.bindings.useItem);
     this.pickupKey = this.scene.input.keyboard.addKey(this.bindings.pickup);
   }
 
@@ -192,6 +194,7 @@ export class InputManager {
   public get justPressedEquipSlot() { return Phaser.Input.Keyboard.JustDown(this.equipSelectedSlotKey); }
   public get justPressedDropSlot() { return Phaser.Input.Keyboard.JustDown(this.dropSelectedSlotKey); }
   public get justPressedPickup() { return Phaser.Input.Keyboard.JustDown(this.pickupKey); }
+  public get justPressedUseItem() { return Phaser.Input.Keyboard.JustDown(this.useItemKey); }
   public get isAttackKeyDown() { return this.attackKey.isDown; }
   
   public get hasCursors() { return Boolean(this.cursors && this.wasd); }
