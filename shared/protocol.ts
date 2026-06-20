@@ -340,6 +340,7 @@ export type ServerChatMessage = {
   type: "chat";
   from: string;
   text: string;
+  fromPlayerId?: string;
 };
 
 export type ServerCombatLogMessage = {

@@ -419,6 +419,7 @@ export class MobSystem {
       spellId: caster.spellId,
       tileX: target.tileX,
       tileY: target.tileY,
+      targetPlayerId: target.id,
       sourceTileX: mob.tileX,
       sourceTileY: mob.tileY,
     });

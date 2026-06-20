@@ -301,6 +301,7 @@ export type SpellFxEvent = {
   tileX: number;
   tileY: number;
   sourcePlayerId?: string;
+  targetPlayerId?: string;
   sourceTileX?: number;
   sourceTileY?: number;
 };

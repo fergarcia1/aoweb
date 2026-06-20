@@ -821,9 +821,9 @@ export class GameSceneCombatController {
   private canAffordSpellMana(spell: SpellCastRequest): boolean {
     const progress = this.deps.getPlayerProgress();
     if (progress.mp < spell.manaCost) {
-      this.deps.getGameUi().addCombatLine(
-        `No tenés suficiente maná para ${spell.nombre} (${progress.mp}/${spell.manaCost}).`
-      );
+      const message = "No tienes mana suficiente para lanzar ese hechizo";
+      this.deps.getGameUi().addChatLine(message);
+      this.deps.getGameUi().addCombatLine(message);
       return false;
     }
     return true;

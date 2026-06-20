@@ -13,6 +13,7 @@ import {
 import { addToInventory, type InventorySlot } from "../items/inventoryStack";
 import { GHOST_RACE_ID } from "../data/characters";
 import { raceBodyTextureKey, type Outfit, type PlayerArmorVisualOptions } from "../player/playerSprites";
+import { faceTextureKey } from "../player/raceFaces";
 import {
   getActiveCharacterSlotIndex,
   loadCharacterSlots,
@@ -134,7 +135,11 @@ export class DeathSystem {
       this.cb.persistCharacterProgress();
     }
     this.cb.getDeathOverlay()?.show(this.cb.getGameViewportRect());
-    this.cb.addCombatLine("Has muerto. Perdiste tu equipamiento y tu inventario.");
+    this.cb.addCombatLine(
+      serverAuthoritative
+        ? "Has muerto."
+        : "Has muerto. Perdiste tu equipamiento y tu inventario."
+    );
     this.cb.addChatLine(
       "Elegí ir al sacerdote o cancelar para permanecer como fantasma. /hogar te lleva al sacerdote de tu ciudad."
     );
@@ -248,10 +253,11 @@ export class DeathSystem {
   applyGhostVisual() {
     const scene = this.cb.getScene();
     const bodyKey = raceBodyTextureKey(GHOST_RACE_ID, "male");
+    const faceKey = faceTextureKey(GHOST_RACE_ID, "male");
     const player = this.cb.getPlayerSprite();
     const face = this.cb.getPlayerFaceSprite();
 
-    if (!scene.textures.exists(bodyKey)) {
+    if (!scene.textures.exists(bodyKey) || !scene.textures.exists(faceKey)) {
       this._useGhostAppearance = false;
       player.clearTint();
       player.setAlpha(1);

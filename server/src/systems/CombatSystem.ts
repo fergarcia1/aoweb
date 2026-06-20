@@ -561,10 +561,7 @@ export class CombatSystem {
     }
 
     if (session.mp < spell.manaCost) {
-      this.world.sendCombatLog(
-        session,
-        `No tenés suficiente maná para ${spell.nombre} (${session.mp}/${spell.manaCost}).`
-      );
+      this.world.sendCombatLog(session, "No tienes mana suficiente para lanzar ese hechizo");
       return;
     }
 
@@ -649,6 +646,7 @@ export class CombatSystem {
       tileX: targetTileX,
       tileY: targetTileY,
       sourcePlayerId: session.id,
+      targetPlayerId: targetPlayer?.id ?? (targetsSelf ? session.id : undefined),
       sourceTileX: session.tileX,
       sourceTileY: session.tileY,
     });
@@ -1353,10 +1351,7 @@ export class CombatSystem {
           return true;
         }
         if (session.mp < spell.manaCost) {
-          this.world.sendCombatLog(
-            session,
-            `No tenés suficiente maná para ${spell.nombre} (${session.mp}/${spell.manaCost}).`
-          );
+          this.world.sendCombatLog(session, "No tienes mana suficiente para lanzar ese hechizo");
           return true;
         }
         this.handleResurrectCast(session, spell, targetTileX, targetTileY, targetPlayerId);
@@ -1375,10 +1370,7 @@ export class CombatSystem {
       return true;
     }
     if (session.mp < spell.manaCost) {
-      this.world.sendCombatLog(
-        session,
-        `No tenés suficiente maná para ${spell.nombre} (${session.mp}/${spell.manaCost}).`
-      );
+      this.world.sendCombatLog(session, "No tienes mana suficiente para lanzar ese hechizo");
       return true;
     }
     this.handleResurrectCast(session, spell, targetTileX, targetTileY, targetPlayerId);

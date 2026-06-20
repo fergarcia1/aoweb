@@ -7,6 +7,7 @@ import { ShopBankSystem } from "../systems/ShopBankSystem";
 import { isMmoServerAuthorityEnabled, OFFLINE_GAMEPLAY_MESSAGE } from "../game/mmoMode";
 import { registerEmergencyProgressFlush } from "../game/emergencyProgressFlush";
 import { STEP_DURATION_MS, TILE_SIZE } from "../config";
+import { loadKeybindings, type Keybindings } from "../config/keybindings";
 import {
   findTransition,
   getMap,
@@ -387,6 +388,7 @@ export class GameScene extends Phaser.Scene {
   private selectedFaceIndex = 0;
 
   private cursors!: Phaser.Types.Input.Keyboard.CursorKeys;
+  private keybindings: Keybindings = loadKeybindings();
   private wasd!: {
     up: Phaser.Input.Keyboard.Key;
     down: Phaser.Input.Keyboard.Key;
@@ -395,6 +397,8 @@ export class GameScene extends Phaser.Scene {
   };
   private movementKeyStack: Facing[] = [];
   private bufferedMovementTap: { facing: Facing; expiresAt: number } | null = null;
+  private localChatBubbleText?: Phaser.GameObjects.Text;
+  private localChatBubbleTimer?: Phaser.Time.TimerEvent;
   private attackKey!: Phaser.Input.Keyboard.Key;
   private equipSelectedSlotKey!: Phaser.Input.Keyboard.Key;
   private dropSelectedSlotKey!: Phaser.Input.Keyboard.Key;
@@ -1171,6 +1175,8 @@ export class GameScene extends Phaser.Scene {
         this.combatController.showCombatNumber(x, y, amount, "heal", source),
       playSpellEffect: (spellId, tx, ty, playSound) =>
         this.playSpellEffect(spellId, tx, ty, playSound),
+      playSpellEffectOnTarget: (spellId, target, playSound) =>
+        this.playSpellEffectOnTarget(spellId, target, playSound),
       shouldPlayWorldSound: (sourceTileX, sourceTileY, sourcePlayerId) =>
         this.soundController.shouldPlayWorldSound(sourceTileX, sourceTileY, sourcePlayerId),
       playSpawnEffectAtTile: (tileX, tileY) => this.playSpawnEffectAtTile(tileX, tileY),
@@ -1180,6 +1186,7 @@ export class GameScene extends Phaser.Scene {
       getSuppressServerSpellFxUntil: () => this.suppressServerSpellFxUntil,
       showRemoteSpellMagicWords: (playerId, words) =>
         this.multiplayer?.getRemotePlayers()?.showSpellMagicWords(playerId, words),
+      showPlayerChatBubble: (playerId, text) => this.showPlayerChatBubble(playerId, text),
       getPlayerSprite: () => this.player,
       getLocalPlayerId: () => this.mpController.getPlayerId(),
       applyLocalRevivedFromServer: (hp) => this.deathSystem.applyRevivedFromServer(hp),
@@ -2398,11 +2405,11 @@ export class GameScene extends Phaser.Scene {
       this.playerProgress.hp = hpMax;
     }
 
-    this.playerProgress.mp = CLASS_USES_MANA[this.selectedClass] ? 0 : 0;
+    this.playerProgress.mp = CLASS_USES_MANA[this.selectedClass] ? this.playerProgress.mpMax : 0;
     this.refreshInventoryUsability();
     this.refreshHud();
     this.scheduleCharacterProgressSave();
-    this.gameUi.addChatLine(`Nivel seteado a ${level}. Mana en 0 para probar meditacion.`);
+    this.gameUi.addChatLine(`Nivel seteado a ${level}. Mana restaurado.`);
   }
 
   private setHitboxDebugEnabled(enabled: boolean) {
@@ -2834,24 +2841,19 @@ export class GameScene extends Phaser.Scene {
     }
 
     this.cursors = this.input.keyboard.createCursorKeys();
-    this.wasd = this.input.keyboard.addKeys({
-      up: Phaser.Input.Keyboard.KeyCodes.W,
-      down: Phaser.Input.Keyboard.KeyCodes.S,
-      left: Phaser.Input.Keyboard.KeyCodes.A,
-      right: Phaser.Input.Keyboard.KeyCodes.D,
-    }) as GameScene["wasd"];
-    this.attackKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.CTRL);
-    this.equipSelectedSlotKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.E);
-    this.dropSelectedSlotKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.T);
-    this.pickupKey = this.input.keyboard.addKey(
-      Phaser.Input.Keyboard.KeyCodes.Q
-    );
-    this.meditateKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.N);
-    this.worldMapToggleKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.M);
-    this.partyToggleKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.P);
+    this.refreshInputKeybindings();
     this.cancelSpellTargetingKey = this.input.keyboard.addKey(
       Phaser.Input.Keyboard.KeyCodes.ESC
     );
+    this.partyToggleKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.P);
+    this.events.on("ui-keybindings-changed", this.refreshInputKeybindings, this);
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      this.events.off("ui-keybindings-changed", this.refreshInputKeybindings, this);
+      this.localChatBubbleTimer?.remove(false);
+      this.localChatBubbleTimer = undefined;
+      this.localChatBubbleText?.destroy();
+      this.localChatBubbleText = undefined;
+    });
     this.input.keyboard.on("keydown", (event: KeyboardEvent) => {
       this.recordMovementKeyDown(event);
       this.handleMacroHotkey(event);
@@ -2859,6 +2861,25 @@ export class GameScene extends Phaser.Scene {
     this.input.keyboard.on("keyup", (event: KeyboardEvent) => {
       this.recordMovementKeyUp(event);
     });
+  }
+
+  private refreshInputKeybindings(): void {
+    if (!this.input.keyboard) {
+      return;
+    }
+    this.keybindings = loadKeybindings();
+    this.wasd = this.input.keyboard.addKeys({
+      up: this.keybindings.moveUp,
+      down: this.keybindings.moveDown,
+      left: this.keybindings.moveLeft,
+      right: this.keybindings.moveRight,
+    }) as GameScene["wasd"];
+    this.attackKey = this.input.keyboard.addKey(this.keybindings.attack);
+    this.equipSelectedSlotKey = this.input.keyboard.addKey(this.keybindings.equip);
+    this.dropSelectedSlotKey = this.input.keyboard.addKey(this.keybindings.drop);
+    this.pickupKey = this.input.keyboard.addKey(this.keybindings.pickup);
+    this.meditateKey = this.input.keyboard.addKey(this.keybindings.meditate);
+    this.worldMapToggleKey = this.input.keyboard.addKey(this.keybindings.map);
   }
 
   private refreshMapLocationLabel() {
@@ -2884,6 +2905,7 @@ export class GameScene extends Phaser.Scene {
     this.meditationSystem.update(delta);
     this.ensureEntitySyncReady();
     this.entitySync?.syncFrame();
+    this.syncLocalChatBubblePosition();
     this.meditationSystem.syncFxPosition();
     this.mapController.syncSceneryOcclusion(this.playerTileX, this.playerTileY);
 
@@ -3017,10 +3039,10 @@ export class GameScene extends Phaser.Scene {
   }
 
   private directionFromKeyboardEvent(event: KeyboardEvent): Facing | null {
-    if (event.code === "KeyW" || event.code === "ArrowUp") return "up";
-    if (event.code === "KeyS" || event.code === "ArrowDown") return "down";
-    if (event.code === "KeyA" || event.code === "ArrowLeft") return "left";
-    if (event.code === "KeyD" || event.code === "ArrowRight") return "right";
+    if (event.keyCode === this.keybindings.moveUp || event.code === "ArrowUp") return "up";
+    if (event.keyCode === this.keybindings.moveDown || event.code === "ArrowDown") return "down";
+    if (event.keyCode === this.keybindings.moveLeft || event.code === "ArrowLeft") return "left";
+    if (event.keyCode === this.keybindings.moveRight || event.code === "ArrowRight") return "right";
     return null;
   }
 
@@ -4958,6 +4980,67 @@ export class GameScene extends Phaser.Scene {
     this.resurrectChannelFxByCasterId.delete(casterId);
   }
 
+  private showPlayerChatBubble(playerId: string, text: string): void {
+    if (playerId === this.mpController?.getLocalPlayerId()) {
+      this.showLocalChatBubble(text);
+      return;
+    }
+    this.multiplayer?.getRemotePlayers()?.showChatBubble(playerId, text);
+  }
+
+  private showLocalChatBubble(text: string): void {
+    const message = text.trim().slice(0, 90);
+    this.localChatBubbleTimer?.remove(false);
+    this.localChatBubbleTimer = undefined;
+
+    if (!message) {
+      this.localChatBubbleText?.destroy();
+      this.localChatBubbleText = undefined;
+      return;
+    }
+
+    if (!this.localChatBubbleText) {
+      this.localChatBubbleText = this.add
+        .text(this.player.x, this.player.y - 54, message, {
+          fontFamily: GAME_FONT,
+          fontSize: "14px",
+          color: "#fff2cf",
+          fontStyle: "bold",
+          stroke: "#1a0705",
+          strokeThickness: 4,
+          resolution: GAME_TEXT_RESOLUTION,
+          align: "center",
+          wordWrap: { width: 190, useAdvancedWrap: true },
+        })
+        .setOrigin(0.5, 1);
+      if (this.uiCamera) {
+        this.uiCamera.ignore(this.localChatBubbleText);
+      }
+    } else {
+      this.localChatBubbleText.setText(message);
+      this.localChatBubbleText.setVisible(true);
+    }
+
+    this.syncLocalChatBubblePosition();
+    this.localChatBubbleTimer = this.time.delayedCall(4000, () => {
+      this.localChatBubbleText?.destroy();
+      this.localChatBubbleText = undefined;
+      this.localChatBubbleTimer = undefined;
+    });
+  }
+
+  private syncLocalChatBubblePosition(): void {
+    if (!this.localChatBubbleText || !this.player) {
+      return;
+    }
+    const depth = this.depthFromFeetY(this.player.y);
+    this.localChatBubbleText.setPosition(
+      this.player.x,
+      this.player.y - Math.max(54, this.player.displayHeight + 12)
+    );
+    this.localChatBubbleText.setDepth(depth + 4);
+  }
+
   private playSpellEffect(spellId: number, tileX: number, tileY: number, playSound = true) {
     if (playSound) {
       this.soundController.playSpellCastSound(spellId);
@@ -4997,6 +5080,81 @@ export class GameScene extends Phaser.Scene {
     }
 
     const destroyFx = () => {
+      if (sprite.active) {
+        sprite.destroy();
+      }
+    };
+    sprite.once(`animationcomplete-${animKey}`, destroyFx);
+
+    const played = sprite.play({ key: animKey, repeat: 0 });
+    if (!played) {
+      destroyFx();
+      return;
+    }
+
+    if (fxConfig.shakeOnPlay) {
+      this.cameras.main.shake(90, 0.0022, true);
+    }
+  }
+
+  private playSpellEffectOnTarget(
+    spellId: number,
+    target: Phaser.GameObjects.Sprite,
+    playSound = true
+  ) {
+    if (playSound) {
+      this.soundController.playSpellCastSound(spellId);
+    }
+
+    const fxConfig = getSpellEffectConfig(spellId);
+    if (!fxConfig) {
+      return;
+    }
+
+    const animKey = spellEffectAnimKey(spellId);
+    if (!this.anims.exists(animKey)) {
+      return;
+    }
+
+    const offsetX = fxConfig.offsetX ?? 0;
+    const offsetY = fxConfig.offsetY ?? 0;
+    const sprite = this.add
+      .sprite(
+        target.x + offsetX,
+        target.y + offsetY,
+        fxConfig.sheetKey,
+        getSpellEffectFirstFrame(fxConfig)
+      )
+      .setOrigin(fxConfig.originX ?? 0.5, fxConfig.originY ?? 0.5)
+      .setDepth(this.depthFromFeetY(target.y) + 1)
+      .setScale(fxConfig.scale ?? 1)
+      .setBlendMode(Phaser.BlendModes.ADD);
+
+    if (fxConfig.tint != null) {
+      sprite.setTint(fxConfig.tint);
+    }
+
+    if (this.uiCamera) {
+      this.uiCamera.ignore(sprite);
+    }
+
+    const syncFx = () => {
+      if (!sprite.active) {
+        this.events.off(Phaser.Scenes.Events.UPDATE, syncFx);
+        return;
+      }
+      if (!target.active) {
+        sprite.destroy();
+        this.events.off(Phaser.Scenes.Events.UPDATE, syncFx);
+        return;
+      }
+      sprite.setPosition(target.x + offsetX, target.y + offsetY);
+      sprite.setDepth(this.depthFromFeetY(target.y) + 1);
+    };
+    this.events.on(Phaser.Scenes.Events.UPDATE, syncFx);
+
+    const destroyFx = () => {
+      this.events.off(Phaser.Scenes.Events.UPDATE, syncFx);
       if (sprite.active) {
         sprite.destroy();
       }

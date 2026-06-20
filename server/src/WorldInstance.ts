@@ -1522,6 +1522,9 @@ export class WorldInstance implements WorldContext {
       return;
     }
     session.deathLootProcessed = true;
+    if (this.isInSafeZone(session)) {
+      return;
+    }
 
     session.inventorySlots = sanitizeJoinInventory(session.inventorySlots);
     this.syncInventoryEquippedFlags(session);

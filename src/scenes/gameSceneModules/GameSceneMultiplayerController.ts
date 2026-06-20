@@ -135,6 +135,11 @@ export type GameSceneMultiplayerDeps = {
     tileY: number,
     playSound?: boolean
   ) => void;
+  playSpellEffectOnTarget: (
+    spellId: number,
+    target: Phaser.GameObjects.Sprite,
+    playSound?: boolean
+  ) => void;
   shouldPlayWorldSound: (
     sourceTileX: number,
     sourceTileY: number,
@@ -150,6 +155,7 @@ export type GameSceneMultiplayerDeps = {
   stopResurrectChannelEffect: (casterId: string) => void;
   getSuppressServerSpellFxUntil: () => number;
   showRemoteSpellMagicWords: (playerId: string, words: string) => void;
+  showPlayerChatBubble: (playerId: string, text: string) => void;
   getPlayerSprite: () => Phaser.GameObjects.Sprite;
   getLocalPlayerId: () => string | null;
   applyLocalRevivedFromServer: (hp: number) => void;
@@ -238,6 +244,7 @@ export class GameSceneMultiplayerController {
       {
         onStatus: (message) => this.deps.setMultiplayerStatus(message),
         onChatLine: (text) => this.deps.addChatLine(text),
+        onChatBubble: (playerId, text) => this.deps.showPlayerChatBubble(playerId, text),
         onCombatLine: (text) => {
           if (/subiste al nivel/i.test(text)) {
             this.deps.playLevelUpSound();
@@ -247,6 +254,9 @@ export class GameSceneMultiplayerController {
           }
           if (text === "No hay nadie para golpear.") {
             this.deps.playAirHitSound();
+          }
+          if (text === "No tienes mana suficiente para lanzar ese hechizo") {
+            this.deps.addChatLine(text);
           }
           this.deps.addCombatLine(text);
         },
@@ -617,7 +627,20 @@ export class GameSceneMultiplayerController {
         spellSourceY,
         event.sourcePlayerId
       );
-      this.deps.playSpellEffect(event.spellId, event.tileX, event.tileY, spellAudible);
+      const localId = this.deps.getLocalPlayerId();
+      const targetPlayerId = event.targetPlayerId;
+      const targetSprite =
+        targetPlayerId && targetPlayerId === localId
+          ? this.deps.getPlayerSprite()
+          : targetPlayerId
+            ? this.bridge?.getRemotePlayers()?.getPlayerSprite(targetPlayerId)
+            : undefined;
+
+      if (targetSprite) {
+        this.deps.playSpellEffectOnTarget(event.spellId, targetSprite, spellAudible);
+      } else {
+        this.deps.playSpellEffect(event.spellId, event.tileX, event.tileY, spellAudible);
+      }
 
       if (event.sourcePlayerId && event.sourcePlayerId !== this.deps.getLocalPlayerId()) {
         const words = getSpellMagicWordsForCast(event.spellId);

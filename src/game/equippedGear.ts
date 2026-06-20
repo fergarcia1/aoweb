@@ -67,6 +67,13 @@ export type EquippedGearSyncContext = {
   hideEquipmentVisuals?: boolean;
 };
 
+function getShortBodyHelmetYOffset(player: Phaser.GameObjects.Sprite): number {
+  const key = player.texture.key.toLowerCase();
+  return key.includes("bajos") || key.includes("gnome") || key.includes("dwarf")
+    ? 10
+    : 0;
+}
+
 function getEquippedSheetFacing(item: ItemDefinition, facing: Facing): Facing {
   const isProfile = facing === "left" || facing === "right";
   const mirrorRight = item.equippedMirrorRightFromLeft !== false;
@@ -244,9 +251,10 @@ export function syncEquippedHelmetVisual(ctx: EquippedGearSyncContext): void {
   sprite.setScale(helmetDef.equippedScale ?? 1);
   const baseOffset = HELMET_OFFSET_BY_FACING[ctx.facing];
   const facingAdjust = helmetDef.equippedOffsetByFacing?.[ctx.facing];
+  const shortBodyYOffset = getShortBodyHelmetYOffset(ctx.player);
   sprite.setPosition(
     ctx.player.x + baseOffset.x + (facingAdjust?.x ?? 0) + sway.x,
-    ctx.player.y - baseOffset.y + (facingAdjust?.y ?? 0) + sway.y
+    ctx.player.y - baseOffset.y + shortBodyYOffset + (facingAdjust?.y ?? 0) + sway.y
   );
   const depthAdjust = helmetDef.equippedDepthOffsetByFacing?.[ctx.facing] ?? 0;
   sprite.setDepth(

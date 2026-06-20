@@ -28,6 +28,7 @@ export type MultiplayerJoinPayload = Omit<Extract<ClientMessage, { type: "join" 
 export type MultiplayerBridgeCallbacks = {
   onStatus: (message: string) => void;
   onChatLine: (text: string) => void;
+  onChatBubble?: (playerId: string, text: string) => void;
   onCombatLine: (text: string) => void;
   onWelcome: (welcome: ServerWelcomeMessage) => void;
   onSnapshot: (snapshot: WorldSnapshot) => void;
@@ -200,8 +201,11 @@ export class MultiplayerBridge {
       onPartyUpdate: (message) => this.callbacks.onPartyUpdate?.(message),
       onPartyInviteRequest: (message) => this.callbacks.onPartyInviteRequest?.(message),
       onLogoutComplete: () => this.callbacks.onLogoutComplete?.(),
-      onChat: (from, text) => {
+      onChat: (from, text, fromPlayerId) => {
         this.callbacks.onChatLine(`${from}: ${text}`);
+        if (fromPlayerId) {
+          this.callbacks.onChatBubble?.(fromPlayerId, text);
+        }
       },
       onError: (message, code) => {
         if (code === "character_already_online") {

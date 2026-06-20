@@ -108,6 +108,8 @@ export type RemoteEntry = {
   helmetSprite: Phaser.GameObjects.Sprite;
   meditationSprite: Phaser.GameObjects.Sprite;
   partyHpBar: Phaser.GameObjects.Graphics;
+  chatBubbleText?: Phaser.GameObjects.Text;
+  chatBubbleTimer?: Phaser.Time.TimerEvent;
   meditationConfig?: MeditationVisualConfig;
   label: Phaser.GameObjects.Text;
   playerName: string;
@@ -186,6 +188,52 @@ export class RemotePlayerManager {
       );
     }
     entry.spellMagicWordsOverlay.show(words);
+  }
+
+  showChatBubble(playerId: string, text: string): void {
+    const entry = this.entries.get(playerId);
+    if (!entry) {
+      return;
+    }
+
+    entry.chatBubbleTimer?.remove(false);
+    entry.chatBubbleTimer = undefined;
+
+    const message = text.trim().slice(0, 90);
+    if (!message) {
+      entry.chatBubbleText?.destroy();
+      entry.chatBubbleText = undefined;
+      return;
+    }
+
+    if (!entry.chatBubbleText) {
+      entry.chatBubbleText = this.scene.add
+        .text(entry.body.x, entry.body.y - 54, message, {
+          fontFamily: GAME_FONT,
+          fontSize: "14px",
+          color: "#fff2cf",
+          fontStyle: "bold",
+          stroke: "#1a0705",
+          strokeThickness: 4,
+          resolution: GAME_TEXT_RESOLUTION,
+          align: "center",
+          wordWrap: { width: 190, useAdvancedWrap: true },
+        })
+        .setOrigin(0.5, 1);
+      if (this.uiCamera) {
+        this.uiCamera.ignore(entry.chatBubbleText);
+      }
+    } else {
+      entry.chatBubbleText.setText(message);
+      entry.chatBubbleText.setVisible(true);
+    }
+
+    this.syncChatBubblePosition(entry, this.depthFromFeetY(entry.body.y));
+    entry.chatBubbleTimer = this.scene.time.delayedCall(4000, () => {
+      entry.chatBubbleText?.destroy();
+      entry.chatBubbleText = undefined;
+      entry.chatBubbleTimer = undefined;
+    });
   }
 
   clear() {
@@ -743,6 +791,7 @@ export class RemotePlayerManager {
     entry.meditationSprite.setDepth(depth + 0.06);
     entry.label.setPosition(entry.body.x, entry.body.y + 2);
     entry.label.setDepth(depth + 2);
+    this.syncChatBubblePosition(entry, depth);
     entry.spellMagicWordsOverlay?.syncPosition();
     this.syncPartyHpBar(entry, depth);
     this.syncRemoteGear(entry, walkSwayX, walkSwayY);
@@ -771,6 +820,18 @@ export class RemotePlayerManager {
     bar.fillRect(x, y, width, height);
     bar.fillStyle(ratio > 0.35 ? 0x28d15f : 0xd95745, 1);
     bar.fillRect(x, y, Math.max(1, Math.floor(width * ratio)), height);
+  }
+
+  private syncChatBubblePosition(entry: RemoteEntry, depth: number): void {
+    const bubble = entry.chatBubbleText;
+    if (!bubble) {
+      return;
+    }
+    bubble.setPosition(
+      entry.body.x,
+      entry.body.y - Math.max(54, entry.body.displayHeight + 12)
+    );
+    bubble.setDepth(depth + 4);
   }
 
   private buildGearSyncContext(entry: RemoteEntry): EquippedGearSyncContext {
@@ -986,6 +1047,8 @@ export class RemotePlayerManager {
     entry.meditationSprite.destroy();
     entry.partyHpBar.destroy();
     entry.label.destroy();
+    entry.chatBubbleTimer?.remove(false);
+    entry.chatBubbleText?.destroy();
     entry.spellMagicWordsOverlay?.clear();
     this.entries.delete(playerId);
   }

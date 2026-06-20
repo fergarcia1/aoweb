@@ -34,7 +34,7 @@ export type NetworkClientHandlers = {
   onPlayerUpdated?: (player: NetPlayerState) => void;
   onMobUpdated?: (mob: NetMobState) => void;
   onMobLeft?: (mobId: string) => void;
-  onChat?: (from: string, text: string) => void;
+  onChat?: (from: string, text: string, fromPlayerId?: string) => void;
   onCombatLog?: (text: string) => void;
   onGameEvent?: (event: GameEvent) => void;
   onPlayerDied?: (playerId: string, killerId: string, killerName: string) => void;
@@ -414,7 +414,7 @@ export class NetworkClient {
       return;
     }
     if (message.type === "chat") {
-      this.handlers.onChat?.(message.from, message.text);
+      this.handlers.onChat?.(message.from, message.text, message.fromPlayerId);
       return;
     }
     if (message.type === "combat_log") {

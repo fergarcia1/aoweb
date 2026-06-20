@@ -43,6 +43,7 @@ export class ChatSystem {
       type: "chat",
       from: session.name,
       text: trimmed,
+      fromPlayerId: session.id,
     });
   }
 
@@ -229,7 +230,7 @@ export class ChatSystem {
     }
 
     session.hp = session.hpMax;
-    session.mp = CLASS_USES_MANA[classId] ? 0 : 0;
+    session.mp = CLASS_USES_MANA[classId] ? session.mpMax : 0;
     session.isMeditating = false;
     session.nextMeditationRegenAt = 0;
 
@@ -249,7 +250,7 @@ export class ChatSystem {
     this.world.schedulePersistSessionDebounced(session);
     this.world.sendCombatLog(
       session,
-      `Nivel seteado a ${level}. Mana en 0 para probar meditacion.`
+      `Nivel seteado a ${level}. Mana restaurado.`
     );
   }
 
