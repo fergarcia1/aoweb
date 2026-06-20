@@ -19,10 +19,13 @@ export const STARTER_ARMOR_ITEM_ID = "armor_citizen" as const;export const START
 export const STARTER_POTION_HP_AMOUNT = 800;
 
 export function getStarterWeaponItemId(classId: CharacterClassId): string {
-  if ((STARTER_SEMI_MAGIC_CLASS_IDS as readonly string[]).includes(classId)) {
-    return "weapon_baculo_lazurt";
-  }
   switch (classId) {
+    case "mago":
+    case "druida":
+    case "nigromante":
+      return "weapon_baston";
+    case "bardo":
+      return "weapon_nudillos_bronce";
     case "cazador":
       return "weapon_arco_largo";
     case "paladin":
