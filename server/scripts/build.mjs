@@ -4,7 +4,7 @@ import { dirname, resolve } from "node:path";
 
 const serverRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const repoRoot = resolve(serverRoot, "..");
-const renderFreeMapsPath = resolve(serverRoot, "src/renderFreeMaps.ts");
+const renderFreeMapsPath = resolve(repoRoot, "shared/renderFreeMaps.ts");
 
 const sharedMapsAliasPlugin = {
   name: "shared-maps-alias",
