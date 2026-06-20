@@ -1,5 +1,5 @@
 import { MAP_MOB_SPAWNS_BY_MAP_ID, MOB_DEFINITIONS } from "../game-data/mobs";
-import { getMap } from "./maps";
+import { getMap, hasMap } from "./maps";
 import { getNpcOccupiedTiles } from "./npcDefinitions";
 import { DEFAULT_MOB_HITBOX, DEFAULT_MAP_ID } from "./constants";
 import { getMapSpawnTile, isMapTileWalkable } from "./mapWalkability";
@@ -25,7 +25,7 @@ function shuffleInPlace<T>(items: T[]) {
 
 /** Mapas con entradas en `mobs.json` → `mapSpawns`. */
 export function getMapIdsWithMobSpawns(): string[] {
-  return [...MAP_MOB_SPAWNS_BY_MAP_ID.keys()];
+  return [...MAP_MOB_SPAWNS_BY_MAP_ID.keys()].filter((mapId) => hasMap(mapId));
 }
 
 /** Todos los tiles caminables del mapa (opcional: sin el tile de spawn de jugadores). */
@@ -33,6 +33,10 @@ export function collectMobSpawnCandidateTiles(
   mapId: string,
   options?: { excludePlayerSpawnTile?: boolean; isAquatic?: boolean }
 ): { x: number; y: number }[] {
+  if (!hasMap(mapId)) {
+    return [];
+  }
+
   const mapDef = getMap(mapId);
   const spawn = getMapSpawnTile(mapId);
   const excludeSpawn = options?.excludePlayerSpawnTile ?? true;
@@ -91,6 +95,10 @@ export type MobPlacement = {
 
 /** Mobs de un mapa: cantidad según `mapSpawns`, tiles al azar sin repetir. */
 export function buildInitialMobPlacements(mapId: string): MobPlacement[] {
+  if (!hasMap(mapId)) {
+    return [];
+  }
+
   const mapEntries = MAP_MOB_SPAWNS_BY_MAP_ID.get(mapId);
   if (!mapEntries?.length) {
     return [];
@@ -197,14 +205,7 @@ export function buildInitialMobPlacements(mapId: string): MobPlacement[] {
 export function buildAllInitialMobPlacements(): MobPlacement[] {
   const placements: MobPlacement[] = [];
   for (const mapId of getMapIdsWithMobSpawns()) {
-    try {
-      placements.push(...buildInitialMobPlacements(mapId));
-    } catch (error) {
-      if (error instanceof Error && error.message.includes("Mapa no disponible en Render Free")) {
-        continue;
-      }
-      throw error;
-    }
+    placements.push(...buildInitialMobPlacements(mapId));
   }
   return placements;
 }
