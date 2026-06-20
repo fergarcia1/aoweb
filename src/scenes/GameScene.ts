@@ -2226,6 +2226,10 @@ export class GameScene extends Phaser.Scene {
     return this.mpController?.isActive() ?? false;
   }
 
+  private isServerJoinPending() {
+    return Boolean(this.mpController?.isConnected() && !this.isMultiplayerActive());
+  }
+
   private tryNetworkStepOrWarn(dir: MoveDirection) {
     if (!this.isMultiplayerActive()) {
       const now = Date.now();
@@ -2930,6 +2934,7 @@ export class GameScene extends Phaser.Scene {
         this.nextImmobilizedMoveFeedbackAt = at;
       },
       isMultiplayerActive: () => this.isMultiplayerActive(),
+      isServerJoinPending: () => this.isServerJoinPending(),
       toggleWorldMap: () => this.mapController.toggleWorldMap(),
       togglePartyOverlay: () => this.gameUi.togglePartyOverlay(),
       cancelSpellTargeting: (message) => this.combatController.cancelSpellTargeting(message),

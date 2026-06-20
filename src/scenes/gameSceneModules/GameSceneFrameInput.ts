@@ -31,6 +31,7 @@ export type GameSceneFrameInputDeps = {
   getNextImmobilizedFeedbackAt: () => number;
   setNextImmobilizedFeedbackAt: (at: number) => void;
   isMultiplayerActive: () => boolean;
+  isServerJoinPending: () => boolean;
   toggleWorldMap: () => void;
   togglePartyOverlay: () => void;
   cancelSpellTargeting: (message: string) => void;
@@ -121,6 +122,10 @@ export function processGameSceneFrameInput(deps: GameSceneFrameInputDeps): boole
   }
 
   if (deps.isWorldMapOpen) {
+    return true;
+  }
+
+  if (deps.isServerJoinPending()) {
     return true;
   }
 

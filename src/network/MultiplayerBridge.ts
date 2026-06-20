@@ -259,6 +259,13 @@ export class MultiplayerBridge {
     return this.remotePlayers;
   }
 
+  private sendIfJoined(send: (client: NetworkClient) => void) {
+    if (!this.isActive() || !this.networkClient) {
+      return;
+    }
+    send(this.networkClient);
+  }
+
   requestJoin() {
     if (!this.networkClient?.isConnected()) {
       return;
@@ -314,47 +321,47 @@ export class MultiplayerBridge {
   }
 
   sendMove(facing: Facing) {
-    this.networkClient?.sendMove(facing);
+    this.sendIfJoined((client) => client.sendMove(facing));
   }
 
   sendChat(message: string) {
-    this.networkClient?.sendChat(message);
+    this.sendIfJoined((client) => client.sendChat(message));
   }
 
   sendAttack(facing: Facing) {
-    this.networkClient?.sendAttack(facing);
+    this.sendIfJoined((client) => client.sendAttack(facing));
   }
 
   sendCastSpell(spellId: number, tileX: number, tileY: number, targetPlayerId?: string) {
-    this.networkClient?.sendCastSpell(spellId, tileX, tileY, targetPlayerId);
+    this.sendIfJoined((client) => client.sendCastSpell(spellId, tileX, tileY, targetPlayerId));
   }
 
   sendRevive(source: "priest" | "ally", tileX?: number, tileY?: number, mapId?: string) {
-    this.networkClient?.sendRevive(source, tileX, tileY, mapId);
+    this.sendIfJoined((client) => client.sendRevive(source, tileX, tileY, mapId));
   }
 
   sendInteractMap(tileX: number, tileY: number) {
-    this.networkClient?.sendInteractMap(tileX, tileY);
+    this.sendIfJoined((client) => client.sendInteractMap(tileX, tileY));
   }
 
   sendSuicide() {
-    this.networkClient?.sendSuicide();
+    this.sendIfJoined((client) => client.sendSuicide());
   }
 
   sendBecomeRenegade() {
-    this.networkClient?.sendBecomeRenegade();
+    this.sendIfJoined((client) => client.sendBecomeRenegade());
   }
 
   sendAdminCommand(command: string, args: string[]) {
-    this.networkClient?.sendAdminCommand(command, args);
+    this.sendIfJoined((client) => client.sendAdminCommand(command, args));
   }
 
   sendUseItem(itemId: string, inventorySlot?: number) {
-    this.networkClient?.sendUseItem(itemId, inventorySlot);
+    this.sendIfJoined((client) => client.sendUseItem(itemId, inventorySlot));
   }
 
   sendSyncVitals(patch: { hp?: number; mp?: number }) {
-    this.networkClient?.sendSyncVitals(patch);
+    this.sendIfJoined((client) => client.sendSyncVitals(patch));
   }
 
   sendEquipItem(
@@ -365,7 +372,7 @@ export class MultiplayerBridge {
       equipSlot?: "weapon" | "shield" | "helmet" | "armor";
     }
   ) {
-    this.networkClient?.sendEquipItem(action, options);
+    this.sendIfJoined((client) => client.sendEquipItem(action, options));
   }
 
   sendSyncInventory(
@@ -376,7 +383,7 @@ export class MultiplayerBridge {
       isEquipped?: boolean;
     }>
   ) {
-    this.networkClient?.sendSyncInventory(inventory);
+    this.sendIfJoined((client) => client.sendSyncInventory(inventory));
   }
 
   sendSyncBank(
@@ -388,19 +395,19 @@ export class MultiplayerBridge {
     }>,
     gold?: number
   ) {
-    this.networkClient?.sendSyncBank(bankGold, bankInventory, gold);
+    this.sendIfJoined((client) => client.sendSyncBank(bankGold, bankInventory, gold));
   }
 
   sendDropItem(inventorySlot: number, amount: number) {
-    this.networkClient?.sendDropItem(inventorySlot, amount);
+    this.sendIfJoined((client) => client.sendDropItem(inventorySlot, amount));
   }
 
   sendDropGold(amount: number) {
-    this.networkClient?.sendDropGold(amount);
+    this.sendIfJoined((client) => client.sendDropGold(amount));
   }
 
   sendPickupWorldItem() {
-    this.networkClient?.sendPickupWorldItem();
+    this.sendIfJoined((client) => client.sendPickupWorldItem());
   }
 
   sendBankAction(
@@ -408,43 +415,43 @@ export class MultiplayerBridge {
     amount: number,
     slotIndex?: number
   ) {
-    this.networkClient?.sendBankAction(action, amount, slotIndex);
+    this.sendIfJoined((client) => client.sendBankAction(action, amount, slotIndex));
   }
 
   sendShopBuy(role: Extract<ClientMessage, { type: "shop_buy" }>["role"], itemId: string, amount: number) {
-    this.networkClient?.sendShopBuy(role, itemId, amount);
+    this.sendIfJoined((client) => client.sendShopBuy(role, itemId, amount));
   }
 
   sendShopSell(role: Extract<ClientMessage, { type: "shop_sell" }>["role"], inventorySlot: number, amount: number) {
-    this.networkClient?.sendShopSell(role, inventorySlot, amount);
+    this.sendIfJoined((client) => client.sendShopSell(role, inventorySlot, amount));
   }
 
   sendSpellShopBuy(spellId: number) {
-    this.networkClient?.sendSpellShopBuy(spellId);
+    this.sendIfJoined((client) => client.sendSpellShopBuy(spellId));
   }
 
   sendMeditation(active: boolean) {
-    this.networkClient?.sendMeditation(active);
+    this.sendIfJoined((client) => client.sendMeditation(active));
   }
 
   sendAuctionFetch() {
-    this.networkClient?.sendAuctionFetch();
+    this.sendIfJoined((client) => client.sendAuctionFetch());
   }
 
   sendAuctionList(inventorySlot: number, amount: number, price: number, durationHours: number) {
-    this.networkClient?.sendAuctionList(inventorySlot, amount, price, durationHours);
+    this.sendIfJoined((client) => client.sendAuctionList(inventorySlot, amount, price, durationHours));
   }
 
   sendAuctionBuy(auctionId: string) {
-    this.networkClient?.sendAuctionBuy(auctionId);
+    this.sendIfJoined((client) => client.sendAuctionBuy(auctionId));
   }
 
   sendAuctionCancel(auctionId: string) {
-    this.networkClient?.sendAuctionCancel(auctionId);
+    this.sendIfJoined((client) => client.sendAuctionCancel(auctionId));
   }
 
   sendRequestLogout() {
-    this.networkClient?.sendRequestLogout();
+    this.sendIfJoined((client) => client.sendRequestLogout());
   }
 
 
@@ -454,7 +461,7 @@ export class MultiplayerBridge {
     leaderId?: string,
     targetId?: string
   ) {
-    this.networkClient?.sendPartyAction(action, targetName, leaderId, targetId);
+    this.sendIfJoined((client) => client.sendPartyAction(action, targetName, leaderId, targetId));
   }
 
   updateRemote(player: NetPlayerState, mapId: string) {

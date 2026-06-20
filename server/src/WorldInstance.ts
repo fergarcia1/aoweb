@@ -958,6 +958,16 @@ export class WorldInstance implements WorldContext {
     session: PlayerSession,
     message: Extract<ClientMessage, { type: "join" }>
   ) {
+    if (session.joined) {
+      this.sendWelcome(session);
+      this.movementSystem.sendSnapshot(session);
+      return;
+    }
+    if (session.joining) {
+      logger.info("worldinstance", `[join] join duplicado ignorado mientras carga ${session.name} (${session.id.slice(0, 8)})`);
+      return;
+    }
+    session.joining = true;
     this.resetEphemeralCombatState(session);
     const incomingName = message.name.trim().slice(0, 24) || "Viajero";
     session.name = incomingName;
@@ -968,15 +978,19 @@ export class WorldInstance implements WorldContext {
       typeof message.characterId === "string" && message.characterId.trim()
         ? message.characterId.trim().slice(0, 64)
         : session.id;
-    void this.tryHydrateSessionFromRepository(session, message).catch((error) => {
-      logger.error("worldinstance", "[join] failed to hydrate from repository:", error);
-      this.send(session, {
-        type: "error",
-        message:
-          "No se pudo cargar tu personaje desde la base de datos. Reinicia el servidor o corre la migracion antes de entrar.",
+    void this.tryHydrateSessionFromRepository(session, message)
+      .catch((error) => {
+        logger.error("worldinstance", "[join] failed to hydrate from repository:", error);
+        this.send(session, {
+          type: "error",
+          message:
+            "No se pudo cargar tu personaje desde la base de datos. Reinicia el servidor o corre la migracion antes de entrar.",
+        });
+        session.socket.close(1011, "character repository error");
+      })
+      .finally(() => {
+        session.joining = false;
       });
-      session.socket.close(1011, "character repository error");
-    });
   }
 
   private applyJoinFallback(

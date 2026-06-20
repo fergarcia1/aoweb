@@ -41,6 +41,7 @@ export class PlayerSession {
   factionId: string;
   faceIndex: number;
   joined = false;
+  joining = false;
   role: PlayerRole = "player";
   /** Muerto en el mundo (fantasma); autoritativo para Resucitar aunque hp se desincronice. */
   isDead = false;
