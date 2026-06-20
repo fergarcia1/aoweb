@@ -26,4 +26,5 @@ export {
   getAllMaps,
   getMap,
   getScopedPreloadMapIds,
+  hasMap,
 } from "../../shared/maps";

@@ -20,6 +20,10 @@ export function getMap(mapId: string): GameMap {
   return map;
 }
 
+export function hasMap(mapId: string): boolean {
+  return Boolean(MAPS[mapId]);
+}
+
 export function getAllMaps(): GameMap[] {
   return Object.values(MAPS);
 }

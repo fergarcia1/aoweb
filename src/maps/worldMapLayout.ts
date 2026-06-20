@@ -1,5 +1,5 @@
 import { WORLD_MAP_GRID_CELLS } from "../../shared/worldMapGrid";
-import { getMap } from "../../shared/maps";
+import { getMap, hasMap } from "../../shared/maps";
 
 export type WorldMapBiome = "grass" | "forest" | "sand" | "snow" | "dungeon" | "water" | "city";
 
@@ -130,7 +130,7 @@ function getMapLabel(mapId: string): string {
   return `Mapa ${mapId.replace("mapa", "")}`;
 }
 
-export const WORLD_MAP_CELLS: WorldMapCellConfig[] = WORLD_MAP_GRID_CELLS.map((cell) => {
+export const WORLD_MAP_CELLS: WorldMapCellConfig[] = WORLD_MAP_GRID_CELLS.filter((cell) => hasMap(cell.mapId)).map((cell) => {
   const isWater = WATER_MAP_IDS.has(cell.mapId);
   const isCity = CITY_MAP_IDS.has(cell.mapId);
   const defaultLabel = isWater ? "Océano" : cell.mapId.replace("mapa", "");
