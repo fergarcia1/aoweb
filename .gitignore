@@ -21,6 +21,8 @@ Thumbs.db
 # Local env & secrets
 .env
 .env.*
+!.env.example
+!server/.env.example
 
 # Local clones / scratch (no versionar)
 tmp/

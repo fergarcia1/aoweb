@@ -46,6 +46,8 @@ npm run server:restart
 |----------|-------------|
 | `VITE_MULTIPLAYER` | `0` o `false` desactiva multijugador (solo local) |
 | `VITE_WS_URL` | URL del WebSocket (por defecto `ws://localhost:3001`) |
+| `VITE_AUTH_REQUIRED` | `true` oculta el acceso dev sin cuenta y fuerza login/registro |
+| `VITE_UI_SKIN` | Skin inicial: `red`, `dark` o `clear` |
 
 ### Servidor (`server/.env`)
 
