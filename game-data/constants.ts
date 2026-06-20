@@ -74,7 +74,7 @@ export const INVENTORY_ROWS = 4;
 export const INVENTORY_SLOT_COUNT = INVENTORY_COLS * INVENTORY_ROWS;
 
 /** Slots del banco (cadena Goliath / AO clásico). */
-export const BANK_SLOT_COUNT = 20;
+export const BANK_SLOT_COUNT = 40;
 
 /** Bonificación máxima por pociones de fuerza/agilidad (por encima del tope natural). */
 export const ATTRIBUTE_POTION_BUFF_MAX = 15;

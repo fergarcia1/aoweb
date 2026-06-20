@@ -1,4 +1,5 @@
 import type { Facing, NetMobState } from "../../shared/types";
+import type { MobCasterConfig } from "../../game-data/mobs";
 
 const WANDER_MIN_MS = 4000;
 const WANDER_MAX_MS = 7000;
@@ -23,6 +24,7 @@ export class MobEntity {
   readonly goldReward: number;
   readonly expReward: number;
   readonly aquatic: boolean;
+  readonly caster?: MobCasterConfig;
   tileX: number;
   tileY: number;
   facing: Facing = "down";
@@ -33,8 +35,13 @@ export class MobEntity {
   respawnAt = 0;
   nextWanderAt = 0;
   nextAttackAt = 0;
+  nextSpellAt = 0;
   nextMoveAt = 0;
   isAggroed = false;
+  aggroTargetId: string | null = null;
+  aggroUpdatedAt: number = 0;
+  aggroStartX: number | null = null;
+  aggroStartY: number | null = null;
   wasInMeleeRange = false;
 
   constructor(config: {
@@ -60,6 +67,7 @@ export class MobEntity {
     goldReward?: number;
     expReward?: number;
     aquatic?: boolean;
+    caster?: MobCasterConfig;
   }) {
     this.id = config.id;
     this.mobId = config.mobId;
@@ -83,12 +91,13 @@ export class MobEntity {
       this.minHit = this.maxHit;
       this.maxHit = swap;
     }
-    this.attackCooldownMs = Math.max(200, config.attackCooldownMs ?? 1000);
-    this.aiMoveCooldownMs = Math.max(200, config.aiMoveCooldownMs ?? 450);
+    this.attackCooldownMs = Math.max(200, config.attackCooldownMs ?? 1400);
+    this.aiMoveCooldownMs = Math.max(200, config.aiMoveCooldownMs ?? 350);
     this.respawnMs = Math.max(500, config.respawnMs ?? 10_000);
     this.goldReward = Math.max(0, Math.floor(config.goldReward ?? 0));
     this.expReward = Math.max(0, Math.floor(config.expReward ?? 0));
     this.aquatic = !!config.aquatic;
+    this.caster = config.caster;
     this.nextWanderAt = Date.now() + randomWanderDelay();
   }
 

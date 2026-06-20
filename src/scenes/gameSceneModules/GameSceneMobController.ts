@@ -99,6 +99,7 @@ export type GameSceneMobDeps = {
   isTileWalkableForMob: (tileX: number, tileY: number, source: DummyState) => boolean;
   isTileOccupiedByStaticNpc: (tileX: number, tileY: number, mapId?: string) => boolean;
   playMobFootstepSound?: (modelId: MobModelId, tileX: number, tileY: number) => void;
+  addToWorld?: (...objects: any[]) => void;
 };
 
 /**
@@ -110,14 +111,16 @@ export class GameSceneMobController {
   constructor(private readonly deps: GameSceneMobDeps) {}
 
   /** Objetos de mob solo en cámara de mundo (no fijos en viewport UI). */
-  private registerMobWorldCamera(...objects: Phaser.GameObjects.GameObject[]) {
-    const uiCamera = this.deps.getUiCamera();
-    if (!uiCamera) {
-      return;
-    }
+  private registerMobWorldCamera(...objects: (Phaser.GameObjects.GameObject | undefined)[]) {
     const valid = objects.filter((obj): obj is Phaser.GameObjects.GameObject => Boolean(obj));
-    if (valid.length > 0) {
+    if (valid.length === 0) return;
+
+    const uiCamera = this.deps.getUiCamera();
+    if (uiCamera) {
       uiCamera.ignore(valid);
+    }
+    if (this.deps.addToWorld) {
+      this.deps.addToWorld(valid);
     }
   }
 
@@ -207,12 +210,7 @@ export class GameSceneMobController {
     dummy.hp = netMob.hp;
     dummy.maxHp = netMob.hpMax;
     this.syncMobImmobilizedFromNet(dummy, netMob.immobilizedUntilMs);
-    if (isMobImmobilizedAt(dummy.immobilizedUntilMs)) {
-      this.deps.tweens.killTweensOf(dummy.sprite);
-      dummy.netMoveQueue = [];
-      dummy.isMoving = false;
-      dummy.netMoveTargetTile = undefined;
-    }
+    const isNowImmobilized = isMobImmobilizedAt(dummy.immobilizedUntilMs);
 
     if (!netMob.alive && dummy.alive) {
       this.deps.applyMobDeathFromServer(dummy);
@@ -227,6 +225,11 @@ export class GameSceneMobController {
 
     const tileChanged =
       dummy.tileX !== netMob.tileX || dummy.tileY !== netMob.tileY;
+    // Check if the client is already animating toward the server's tile
+    const alreadyMovingToServerTile =
+      dummy.isMoving &&
+      dummy.netMoveTargetTile?.x === netMob.tileX &&
+      dummy.netMoveTargetTile?.y === netMob.tileY;
     const facingChanged = netMob.facing !== dummy.facing;
 
     if (tileChanged) {
@@ -240,9 +243,21 @@ export class GameSceneMobController {
       if (dist > 2) {
         this.snapNetMobToTile(dummy, netMob.tileX, netMob.tileY, netMob.facing);
       } else if (dist > 0) {
+        // Even if immobilized, enqueue the step so the mob visually reaches the
+        // server-authoritative tile before stopping.
         this.enqueueNetMobStep(dummy, netMob.tileX, netMob.tileY, netMob.facing);
       }
-    } else if (facingChanged) {
+    } else if (!tileChanged && isNowImmobilized && !alreadyMovingToServerTile && !dummy.isMoving) {
+      // The server already placed this mob at its current logical tile and
+      // immobilized it. If the client never started moving (e.g. the move+immobilize
+      // happened in the same server tick), snap the facing and ensure idle state.
+      if (facingChanged) {
+        dummy.facing = netMob.facing;
+      }
+      this.deps.setMobAnimationState(dummy, "idle");
+    } else if (facingChanged && !isNowImmobilized) {
+      // Only update facing when NOT immobilized to prevent the mob from
+      // turning toward the player during the frozen state.
       dummy.facing = netMob.facing;
       if (dummy.isMoving) {
         this.deps.syncMobFaceForDummy(dummy);
@@ -281,9 +296,6 @@ export class GameSceneMobController {
     tileY: number,
     facing: Facing
   ): void {
-    if (isMobImmobilizedAt(dummy.immobilizedUntilMs)) {
-      return;
-    }
     if (!dummy.netMoveQueue) {
       dummy.netMoveQueue = [];
     }
@@ -309,10 +321,6 @@ export class GameSceneMobController {
   }
 
   private pumpNetMobStep(dummy: DummyState): void {
-    if (isMobImmobilizedAt(dummy.immobilizedUntilMs)) {
-      dummy.netMoveQueue = [];
-      return;
-    }
     if (dummy.isMoving || !dummy.netMoveQueue?.length) {
       return;
     }
@@ -359,6 +367,13 @@ export class GameSceneMobController {
         dummy.sprite.setPosition(target.x, target.y);
         if (dummy.face) {
           this.deps.syncMobFaceForDummy(dummy);
+        }
+        // If the mob is now immobilized (debuff arrived while mid-step),
+        // stop here regardless of remaining queue entries.
+        if (isMobImmobilizedAt(dummy.immobilizedUntilMs)) {
+          dummy.netMoveQueue = [];
+          this.deps.setMobAnimationState(dummy, "idle");
+          return;
         }
         if (dummy.netMoveQueue && dummy.netMoveQueue.length > 0) {
           this.pumpNetMobStep(dummy);

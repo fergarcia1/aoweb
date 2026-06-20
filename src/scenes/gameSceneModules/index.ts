@@ -30,3 +30,7 @@ export * from "./GameSceneLocalPlayerSync";
 export * from "./GameSceneConsumableController";
 export * from "./GameSceneSoundController";
 export * from "./characterProgressApply";
+export * from "./VisualRegistry";
+export * from "./CharacterState";
+export * from "./InputManager";
+export * from "./WorldManager";

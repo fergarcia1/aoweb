@@ -15,11 +15,12 @@ import { createEmptyPvpSpellHitRecords } from "../../../game-data/antiOneshot";
 import { mitigatePhysicalDamage } from "../../../game-data/physicalDamageMitigation";
 import { MOB_MELEE_ENGAGE_DELAY_MS } from "../../../game-data/constants";
 import { findFirstChaseStep } from "../../../shared/gridPathfinding";
+import { rollInt, isAdjacent } from "../../../shared/combat";
 
 function getMobStepDurationMs(modelId: string): number {
   const model = MOB_MODELS[modelId as keyof typeof MOB_MODELS];
   const speedRatio = model?.moveSpeedRatio ?? 1.0;
-  return Math.max(200, Math.floor(450 / speedRatio));
+  return Math.max(150, Math.floor(350 / speedRatio));
 }
 
 export class MobSystem {
@@ -50,8 +51,10 @@ export class MobSystem {
         existing.alive = true;
         existing.hp = existing.maxHp;
         existing.isAggroed = false;
+        existing.aggroTargetId = null;
         existing.wasInMeleeRange = false;
         existing.respawnAt = 0;
+        existing.nextSpellAt = 0;
         existing.scheduleNextWander();
         continue;
       }
@@ -84,6 +87,7 @@ export class MobSystem {
         goldReward: spawn.gold,
         expReward: spawn.expReward,
         aquatic: spawn.aquatic,
+        caster: spawn.caster,
       });
 
 
@@ -108,6 +112,8 @@ export class MobSystem {
   private processMobWander() {
     const now = Date.now();
     for (const mob of this.world.getMobs().values()) {
+      // NOTE: Aggressive and static mobs must not wander. They remain stationary
+      // until they aggro onto a player (or stay stationary forever if static).
       if (!mob.alive || mob.behavior !== "peaceful") continue;
       if (now < mob.nextWanderAt) continue;
       if (mob.isImmobilized(now)) {
@@ -122,30 +128,56 @@ export class MobSystem {
   private processMobCombat() {
     const now = Date.now();
     for (const mob of this.world.getMobs().values()) {
-      if (!mob.alive || mob.behavior !== "aggressive" || !mobCanAttack(mob.minHit, mob.maxHit) || mob.isImmobilized(now)) continue;
+      if (
+        !mob.alive ||
+        mob.behavior !== "aggressive" ||
+        (!mobCanAttack(mob.minHit, mob.maxHit) && !mob.caster) ||
+        mob.isImmobilized(now)
+      ) {
+        continue;
+      }
 
-      const target = this.findClosestPlayerForMob(mob, now);
-      if (!target || target.hp <= 0) {
+      const target = this.findTargetPlayerForMob(mob, now);
+      if (!target || target.hp <= 0 || (mob.isAggroed && now - mob.aggroUpdatedAt > 30000)) {
         mob.isAggroed = false;
+        mob.aggroTargetId = null;
         mob.wasInMeleeRange = false;
         continue;
       }
 
-      const distance = Math.abs(target.tileX - mob.tileX) + Math.abs(target.tileY - mob.tileY);
+      const distanceFromPlayerToMob = Math.max(Math.abs(target.tileX - mob.tileX), Math.abs(target.tileY - mob.tileY));
+      const distanceFromMobToAggroStart = mob.aggroStartX !== null && mob.aggroStartY !== null
+        ? Math.max(Math.abs(mob.tileX - mob.aggroStartX), Math.abs(mob.tileY - mob.aggroStartY))
+        : 0;
 
-      if (distance > mob.leashRangeTiles) {
+      if (distanceFromPlayerToMob > mob.leashRangeTiles || distanceFromMobToAggroStart > mob.leashRangeTiles) {
         mob.isAggroed = false;
+        mob.aggroTargetId = null;
         mob.wasInMeleeRange = false;
+        mob.aggroStartX = null;
+        mob.aggroStartY = null;
         continue;
       }
 
-      if (!mob.isAggroed && distance <= mob.detectionRangeTiles) {
+      if (!mob.isAggroed && distanceFromPlayerToMob <= mob.detectionRangeTiles) {
         mob.isAggroed = true;
+        mob.aggroTargetId = target.id;
+        mob.aggroUpdatedAt = now;
+        mob.aggroStartX = mob.tileX;
+        mob.aggroStartY = mob.tileY;
+        if (mob.caster) {
+          mob.nextSpellAt = Math.max(mob.nextSpellAt, now + mob.caster.cooldownMs);
+        }
       }
 
       if (!mob.isAggroed) continue;
 
-      if (distance === 1) {
+      // Keep aggro alive while chasing
+      mob.aggroUpdatedAt = now;
+
+      this.tryCastMobSpell(mob, target, now);
+
+      if (isAdjacent(mob.tileX, mob.tileY, target.tileX, target.tileY)) {
         if (!mob.wasInMeleeRange) {
           mob.wasInMeleeRange = true;
           mob.nextAttackAt = Math.max(
@@ -154,6 +186,7 @@ export class MobSystem {
           );
         }
         if (now >= mob.nextAttackAt) {
+          mob.aggroUpdatedAt = now;
           mob.nextAttackAt = now + mob.attackCooldownMs;
           mob.facing = this.facingTowards(mob.tileX, mob.tileY, target.tileX, target.tileY);
           this.applyMobDamageToPlayer(
@@ -177,11 +210,16 @@ export class MobSystem {
       mob.tileY = step.y;
       mob.facing = step.facing;
       mob.nextMoveAt = now + mob.aiMoveCooldownMs;
+      // Delay attack so the client has time to visually animate the mob into the adjacent tile
+      mob.nextAttackAt = Math.max(mob.nextAttackAt, now + Math.min(mob.aiMoveCooldownMs, 400));
       this.world.broadcastMobUpdated(mob);
     }
   }
 
   private tryWanderMob(mob: MobEntity) {
+    if (mob.isAggressive) {
+      return;
+    }
     const dirs: Facing[] = ["up", "down", "left", "right"];
     for (let i = dirs.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
@@ -221,6 +259,22 @@ export class MobSystem {
     }
   }
 
+  private findTargetPlayerForMob(mob: MobEntity, now: number): PlayerSession | null {
+    if (mob.isAggroed && mob.aggroTargetId) {
+      const target = this.world.getPlayers().get(mob.aggroTargetId);
+      if (
+        target?.joined &&
+        target.mapId === mob.mapId &&
+        target.hp > 0 &&
+        !target.isInvisible(now)
+      ) {
+        return target;
+      }
+      return null;
+    }
+    return this.findClosestPlayerForMob(mob, now);
+  }
+
   private findClosestPlayerForMob(mob: MobEntity, now: number): PlayerSession | null {
     let closest: PlayerSession | null = null;
     let closestDistance = Number.POSITIVE_INFINITY;
@@ -234,7 +288,7 @@ export class MobSystem {
       ) {
         continue;
       }
-      const distance = Math.abs(player.tileX - mob.tileX) + Math.abs(player.tileY - mob.tileY);
+      const distance = Math.max(Math.abs(player.tileX - mob.tileX), Math.abs(player.tileY - mob.tileY));
       if (distance < closestDistance) {
         closestDistance = distance;
         closest = player;
@@ -248,7 +302,7 @@ export class MobSystem {
       { tileX: mob.tileX, tileY: mob.tileY },
       { tileX: targetTileX, tileY: targetTileY },
       {
-        maxDepth: 40,
+        maxDepth: 60,
         canEnter: (tileX, tileY) => this.canMobStepOntoTile(mob, tileX, tileY, targetTileX, targetTileY),
       }
     );
@@ -341,6 +395,7 @@ export class MobSystem {
       player: victim.toNetState(),
     });
     this.world.send(victim, { type: "player_updated", player: victim.toNetState() });
+    this.world.notifyPartyOfHpChange(victim.id);
     const blockNote = physical.blocked ? " (bloqueaste con el escudo)" : "";
     this.world.sendCombatLog(victim, `${mob.name} te golpea por ${mitigated}${blockNote}.`);
 
@@ -349,15 +404,77 @@ export class MobSystem {
     }
   }
 
-  private handlePlayerKilledByMob(mob: MobEntity, victim: PlayerSession) {
-    if (victim.isDead || victim.deathLootProcessed) {
+  private tryCastMobSpell(mob: MobEntity, target: PlayerSession, now: number): void {
+    const caster = mob.caster;
+    if (!caster || now < mob.nextSpellAt || target.hp <= 0) {
       return;
     }
+
+    mob.nextSpellAt = now + caster.cooldownMs;
+    mob.aggroUpdatedAt = now;
+    mob.facing = this.facingTowards(mob.tileX, mob.tileY, target.tileX, target.tileY);
+
+    this.world.broadcastGameEvent(target.mapId, target.tileX, target.tileY, {
+      kind: "spell_fx",
+      spellId: caster.spellId,
+      tileX: target.tileX,
+      tileY: target.tileY,
+      sourceTileX: mob.tileX,
+      sourceTileY: mob.tileY,
+    });
+
+    const rawDamage = rollInt(caster.minDamage, caster.maxDamage);
+    const mitigated = Math.max(
+      1,
+      Math.floor(rawDamage * (1 - target.magicResistancePercent))
+    );
+    target.hp = Math.max(0, target.hp - mitigated);
+
+    this.world.broadcastGameEvent(target.mapId, target.tileX, target.tileY, {
+      kind: "damage",
+      targetKind: "player",
+      targetId: target.id,
+      amount: mitigated,
+      tileX: target.tileX,
+      tileY: target.tileY,
+      sourceTileX: mob.tileX,
+      sourceTileY: mob.tileY,
+    });
+
+    this.world.broadcastToAoi(target.mapId, target.tileX, target.tileY, {
+      type: "player_updated",
+      player: target.toNetState(),
+    });
+    this.world.send(target, { type: "player_updated", player: target.toNetState() });
+    this.world.notifyPartyOfHpChange(target.id);
+
+    if (target.hp > 0) {
+      this.world.broadcastCombatLog(
+        target.mapId,
+        target.tileX,
+        target.tileY,
+        `${mob.name} lanza un hechizo a ${target.name} por ${mitigated}.`
+      );
+    } else {
+      this.handlePlayerKilledByMob(mob, target);
+    }
+
+    this.world.broadcastMobUpdated(mob);
+  }
+
+  private handlePlayerKilledByMob(mob: MobEntity, victim: PlayerSession) {
+    if (victim.isDead) {
+      return;
+    }
+    logger.info("mobsystem", `Player ${victim.name} (${victim.id}) killed by mob ${mob.name} (${mob.id})`);
+    const shouldDropLoot = !victim.deathLootProcessed;
     victim.isDead = true;
     victim.hp = 0;
     victim.recentPvpSpellHits = createEmptyPvpSpellHitRecords();
-    this.world.dropPlayerDeathLoot(victim);
-    this.world.sendInventoryUpdated(victim);
+    if (shouldDropLoot) {
+      this.world.dropPlayerDeathLoot(victim);
+      this.world.sendInventoryUpdated(victim);
+    }
     this.world.sendPlayerState(victim);
     const msg = `${victim.name} fue matado por ${mob.name}.`;
     this.world.broadcastCombatLog(victim.mapId, victim.tileX, victim.tileY, msg);
@@ -395,8 +512,10 @@ export class MobSystem {
           mob.alive = true;
           mob.hp = mob.maxHp;
           mob.isAggroed = false;
+          mob.aggroTargetId = null;
           mob.wasInMeleeRange = false;
           mob.immobilizedUntil = 0;
+          mob.nextSpellAt = 0;
           mob.scheduleNextWander();
           respawned.push(mob);
         } else {
@@ -467,13 +586,26 @@ export class MobSystem {
     if (
       !mob.alive ||
       mob.behavior !== "aggressive" ||
-      !mobCanAttack(mob.minHit, mob.maxHit) ||
+      (!mobCanAttack(mob.minHit, mob.maxHit) && !mob.caster) ||
       attacker.isInvisible()
     ) {
       return;
     }
+    mob.aggroUpdatedAt = Date.now();
+    const shouldScheduleFirstCast = !mob.isAggroed || mob.aggroTargetId !== attacker.id;
+    if (shouldScheduleFirstCast) {
+      mob.aggroStartX = mob.tileX;
+      mob.aggroStartY = mob.tileY;
+    }
     mob.isAggroed = true;
-    mob.facing = this.facingTowards(mob.tileX, mob.tileY, attacker.tileX, attacker.tileY);
+    mob.aggroTargetId = attacker.id;
+    if (mob.caster && shouldScheduleFirstCast) {
+      const now = Date.now();
+      mob.nextSpellAt = Math.max(mob.nextSpellAt, now + mob.caster.cooldownMs);
+    }
+    if (!mob.isImmobilized(Date.now())) {
+      mob.facing = this.facingTowards(mob.tileX, mob.tileY, attacker.tileX, attacker.tileY);
+    }
   }
 
   public mobOccupiesTile(mob: MobEntity, tileX: number, tileY: number): boolean {

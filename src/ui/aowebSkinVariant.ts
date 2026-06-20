@@ -1,3 +1,5 @@
+import { getAccountScopedStorageKey } from "../config/accountScopedStorage";
+
 export const AOWEB_SKIN_STORAGE_KEY = "aoweb_ui_skin_variant";
 
 export const AOWEB_SKIN_FILES = {
@@ -33,7 +35,9 @@ export function parseUiSkinCommandArg(arg: string): AowebUiSkinVariant | null {
 
 export function getAowebSkinVariant(): AowebUiSkinVariant {
   try {
-    const stored = localStorage.getItem(AOWEB_SKIN_STORAGE_KEY);
+    const stored =
+      localStorage.getItem(getAccountScopedStorageKey(AOWEB_SKIN_STORAGE_KEY)) ??
+      localStorage.getItem(AOWEB_SKIN_STORAGE_KEY);
     if (stored && isAowebUiSkinVariant(stored)) {
       return stored;
     }
@@ -53,7 +57,7 @@ export function getAowebSkinVariant(): AowebUiSkinVariant {
 }
 
 export function setAowebSkinVariant(variant: AowebUiSkinVariant): void {
-  localStorage.setItem(AOWEB_SKIN_STORAGE_KEY, variant);
+  localStorage.setItem(getAccountScopedStorageKey(AOWEB_SKIN_STORAGE_KEY), variant);
 }
 
 export function resolveAowebSkinFile(variant: AowebUiSkinVariant = getAowebSkinVariant()): string {

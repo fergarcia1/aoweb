@@ -40,6 +40,7 @@ import {
 import { mitigatePhysicalDamage } from "../../../game-data/physicalDamageMitigation";
 import { getStrengthDamageBonus } from "./progressFormulas";
 import type { MobModelId } from "../../../game-data/mobs";
+import { MECHANICS } from "../../../shared/gameMechanics";
 import type {
   DamageType,
   DummyState,
@@ -97,7 +98,6 @@ export type GameSceneCombatDeps = {
     endsAtMs: number
   ) => void;
   getLocalPlayerId: () => string | null;
-  setSuppressServerSpellFxUntil: (until: number) => void;
   showSpellMagicWords: (spellId: number, spellNombre: string) => void;
   clearSpellMagicWords: () => void;
   onMeleeImpact?: () => void;
@@ -119,6 +119,7 @@ export type GameSceneCombatDeps = {
 export class GameSceneCombatController {
   private pendingSpellCast: SpellCastRequest | null = null;
   private nextAttackAt = 0;
+  private nextSpellAt = 0;
   private activePlayerDamageText?: Phaser.GameObjects.Text;
   private activePlayerDamageTween?: Phaser.Tweens.Tween;
 
@@ -255,6 +256,19 @@ export class GameSceneCombatController {
     this.cancelSpellTargeting("Lanzamiento cancelado.");
   }
 
+  private canCastSpellNow(): boolean {
+    const now = this.deps.time.now;
+    if (now < this.nextSpellAt) {
+      this.deps.getGameUi().addChatLine("No podés lanzar el hechizo tan rápido.");
+      return false;
+    }
+    return true;
+  }
+
+  private markSpellCastNow(): void {
+    this.nextSpellAt = this.deps.time.now + MECHANICS.INTERVAL_SPELL_CAST;
+  }
+
   private isRemoveImmobilizeTargetValid(
     spell: SpellCastRequest,
     targetTileX?: number,
@@ -336,6 +350,9 @@ export class GameSceneCombatController {
     if (!this.canAffordSpellMana(spell)) {
       return;
     }
+    if (!this.canCastSpellNow()) {
+      return;
+    }
 
     const casterTile = this.deps.getPlayerTile();
     if (!isWithinResurrectRange(casterTile.x, casterTile.y, targetTileX, targetTileY)) {
@@ -358,6 +375,7 @@ export class GameSceneCombatController {
     }
 
     this.deps.showSpellMagicWords(RESURRECT_SPELL_ID, spell.nombre);
+    this.markSpellCastNow();
     this.deps.sendCastSpellToServer(
       RESURRECT_SPELL_ID,
       targetTileX,
@@ -405,6 +423,9 @@ export class GameSceneCombatController {
       }
 
       if (!this.canAffordSpellMana(spell)) {
+        return;
+      }
+      if (!this.canCastSpellNow()) {
         return;
       }
 
@@ -469,7 +490,8 @@ export class GameSceneCombatController {
         gameUi.addCombatLine(`${spell.nombre}: te volvés invisible.`);
       }
 
-      this.playLocalSpellFx(spell.idSpell, spell.nombre, tile.x, tile.y);
+      this.deps.showSpellMagicWords(spell.idSpell, spell.nombre);
+      this.markSpellCastNow();
       this.deps.sendCastSpellToServer(spell.idSpell, tile.x, tile.y);
       this.cancelSpellTargeting();
       return;
@@ -504,7 +526,11 @@ export class GameSceneCombatController {
         if (!this.canAffordSpellMana(spell)) {
           return;
         }
-        this.playLocalSpellFx(spell.idSpell, spell.nombre, hitTile.x, hitTile.y);
+        if (!this.canCastSpellNow()) {
+          return;
+        }
+        this.deps.showSpellMagicWords(spell.idSpell, spell.nombre);
+        this.markSpellCastNow();
         this.deps.sendCastSpellToServer(spell.idSpell, hitTile.x, hitTile.y);
         this.cancelSpellTargeting();
         return;
@@ -517,10 +543,14 @@ export class GameSceneCombatController {
       if (!this.canAffordSpellMana(spell)) {
         return;
       }
+      if (!this.canCastSpellNow()) {
+        return;
+      }
       if (IMMOBILIZE_SPELL_IDS.has(spell.idSpell)) {
         this.applyInmovilizadoDebuffToDummy(dummy, spell.nombre, spell.idSpell);
       }
-      this.playLocalSpellFx(spell.idSpell, spell.nombre, hitTile.x, hitTile.y);
+      this.deps.showSpellMagicWords(spell.idSpell, spell.nombre);
+      this.markSpellCastNow();
       this.deps.sendCastSpellToServer(spell.idSpell, hitTile.x, hitTile.y);
       this.cancelSpellTargeting();
       return;
@@ -542,6 +572,10 @@ export class GameSceneCombatController {
       return;
     }
     this.nextAttackAt = now + ATTACK_COOLDOWN_MS;
+    this.nextSpellAt = Math.max(
+      this.nextSpellAt,
+      now + MECHANICS.INTERVAL_MELEE_TO_SPELL
+    );
 
     if (this.deps.isMultiplayerActive()) {
       this.deps.sendAttackToServer(this.deps.getFacing());
@@ -802,17 +836,6 @@ export class GameSceneCombatController {
     this.deps.getPlayerProgress().mp -= spell.manaCost;
     this.deps.refreshHud();
     return true;
-  }
-
-  private playLocalSpellFx(
-    spellId: number,
-    spellNombre: string,
-    tileX: number,
-    tileY: number
-  ): void {
-    this.deps.showSpellMagicWords(spellId, spellNombre);
-    this.deps.playSpellEffect(spellId, tileX, tileY);
-    this.deps.setSuppressServerSpellFxUntil(this.deps.time.now + 300);
   }
 
   private applyInmovilizadoDebuffToDummy(

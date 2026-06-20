@@ -1,6 +1,6 @@
 import Phaser from "phaser";
 
-const UI_PATH = "/assets/ao/uiGrafica/";
+const UI_PATH = "assets/ao/uiGrafica/";
 
 export const LVL_NAME_EXP_TEXTURE_KEY = "lvl_name_exp";
 export const VENTANA_CHAT_TEXTURE_KEY = "ventana_chat";

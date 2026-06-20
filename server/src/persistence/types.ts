@@ -31,6 +31,7 @@ export type CharacterSnapshot = {
   level: number;
   exp: number;
   expToNext: number;
+  usersKilled: number;
   hp: number;
   hpMax: number;
   mp: number;
@@ -82,6 +83,7 @@ export type CharacterRow = {
   level: number;
   exp: number;
   exp_to_next: number;
+  users_killed: number;
   hp: number;
   hp_max: number;
   mp: number;
@@ -96,4 +98,14 @@ export type CharacterRow = {
   attr_strength_bonus: number;
   attr_agility_bonus: number;
   attr_buffs_expires_at_ms: number;
+};
+
+export type AuctionSnapshot = {
+  id: string;
+  sellerId: string;
+  sellerName: string;
+  itemId: string;
+  amount: number;
+  price: number;
+  expiresAtMs: number;
 };

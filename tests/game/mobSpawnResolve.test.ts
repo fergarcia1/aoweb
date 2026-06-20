@@ -39,4 +39,31 @@ describe("resolveMobSpawnConfigForNetMob", () => {
     expect(inferMobIdFromSpawnId("goblin_mapa2_5")).toBe("goblin");
     expect(inferMobIdFromSpawnId("showcase_lobo")).toBeUndefined();
   });
+
+  it("conserva la regla acuatica al resolver mobs sin spawn explicito", () => {
+    const spawn = resolveMobSpawnConfigForNetMob({
+      id: "sirena_showcase_1",
+      mobId: "sirena",
+      npcId: 644,
+      mapId: "mapa61",
+    });
+    expect(spawn?.modelId).toBe("sirena");
+    expect(spawn?.aquatic).toBe(true);
+  });
+
+  it("mantiene la configuracion caster de la bruja", () => {
+    const spawn = resolveMobSpawnConfigForNetMob({
+      id: "bruja_drow_mapa2_1",
+      mobId: "bruja_drow",
+      npcId: 550,
+      mapId: "mapa2",
+    });
+
+    expect(spawn?.caster).toEqual({
+      spellId: 36,
+      cooldownMs: 5000,
+      minDamage: 45,
+      maxDamage: 75,
+    });
+  });
 });

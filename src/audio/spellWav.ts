@@ -11,6 +11,18 @@ export function getUniqueSpellWavIndices(): number[] {
   return [...set].sort((a, b) => a - b);
 }
 
+/** WAVs con nombre referenciados por hechizos (Furia de Uhkrul, Apocalipsis, etc.). */
+export function getUniqueSpellNamedWavIds(): NamedWavId[] {
+  const set = new Set<NamedWavId>();
+  for (const meta of Object.values(SPELL_CAST_META_BY_ID)) {
+    const named = meta.namedWav;
+    if (named && named in NAMED_WAV_FILES) {
+      set.add(named as NamedWavId);
+    }
+  }
+  return [...set].sort();
+}
+
 export function spellWavAssetPath(wavIndex: number): string {
   return `/assets/ao/wav/${wavIndex}.wav`;
 }
@@ -27,6 +39,7 @@ export function preloadSpellWavs(scene: Phaser.Scene): number {
     scene.load.audio(key, spellWavAssetPath(wavIndex));
     queued += 1;
   }
+  queued += preloadNamedWavs(scene, getUniqueSpellNamedWavIds());
   return queued;
 }
 

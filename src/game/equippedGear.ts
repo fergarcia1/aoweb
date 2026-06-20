@@ -161,6 +161,10 @@ export function syncEquippedWeaponVisual(ctx: EquippedGearSyncContext): void {
 
   const weaponDef = getItemDefinition(equippedWeaponId);
   const weaponTexture = weaponDef.equippedTextureKey ?? weaponDef.textureKey;
+  if (!ctx.player.scene.textures.exists(weaponTexture)) {
+    sprite.setVisible(false);
+    return;
+  }
   sprite.setTexture(weaponTexture);
   sprite.setFrame(getEquippedDirectionalFrame(weaponDef, ctx));
   sprite.setScale(weaponDef.equippedScale ?? 1);
@@ -189,6 +193,10 @@ export function syncEquippedShieldVisual(ctx: EquippedGearSyncContext): void {
   }
 
   const shieldTexture = shieldDef.equippedTextureKey ?? shieldDef.textureKey;
+  if (!ctx.player.scene.textures.exists(shieldTexture)) {
+    sprite.setVisible(false);
+    return;
+  }
   sprite.setTexture(shieldTexture);
   sprite.setFrame(getEquippedDirectionalFrame(shieldDef, ctx));
   sprite.setScale(shieldDef.equippedScale ?? 1);
@@ -227,6 +235,10 @@ export function syncEquippedHelmetVisual(ctx: EquippedGearSyncContext): void {
       : getPlayerHeadWalkSway(ctx.player, ctx.facing, ctx.isMoving);
 
   const helmetTexture = helmetDef.equippedTextureKey ?? helmetDef.textureKey;
+  if (!ctx.player.scene.textures.exists(helmetTexture)) {
+    sprite.setVisible(false);
+    return;
+  }
   sprite.setTexture(helmetTexture);
   sprite.setFrame(getEquippedDirectionalFrame(helmetDef, ctx));
   sprite.setScale(helmetDef.equippedScale ?? 1);

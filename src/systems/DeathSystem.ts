@@ -429,14 +429,16 @@ export class DeathSystem {
 
   /** Revive autoritativo del servidor (hechizo Resucitar); no reenvía revive al servidor. */
   applyRevivedFromServer(hp: number) {
-    if (this.deathPhase === "alive") return;
+    const wasAlreadyAlive = this.deathPhase === "alive" && !this._useGhostAppearance;
     this.deathPhase = "alive";
     this.cb.getDeathOverlay()?.hide();
     this.clearGhostVisual();
     this.cb.setPlayerHp(Math.max(1, Math.floor(hp)));
     this.cb.refreshHud();
-    this.cb.scheduleProgressSave();
-    this.cb.playSpawnEffect();
+    if (!wasAlreadyAlive) {
+      this.cb.scheduleProgressSave();
+      this.cb.playSpawnEffect();
+    }
   }
 
   markHomeCity() {

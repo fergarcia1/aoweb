@@ -13,6 +13,7 @@ import type { NetWorldItemState } from "../../../shared/types";
 import { findNearestWalkableDropTile } from "../../../shared/deathLootPlacement";
 import { isWorldItemDropTileAllowed } from "../../../shared/mapEdgeZones";
 import type { WorldItemEntry } from "./types";
+import { ensureItemAssetsLoaded } from "./gameSceneAssetQueue";
 
 export type WorldItemManagerDeps = {
   scene: Phaser.Scene;
@@ -269,6 +270,18 @@ export class WorldItemManager {
   ): void {
     const item = getItemDefinition(itemId);
     const sprite = this.createBaseSprite(tileX, tileY, item.textureKey);
+    const isLoaded = this.deps.scene.textures.exists(item.textureKey);
+    if (!isLoaded) {
+      sprite.setVisible(false);
+      ensureItemAssetsLoaded(this.deps.scene, itemId, {
+        onComplete: () => {
+          if (sprite.active) {
+            sprite.setTexture(item.textureKey);
+            sprite.setVisible(true);
+          }
+        }
+      });
+    }
     const worldItem: WorldItemEntry = {
       worldItemId,
       id: itemId,
@@ -311,6 +324,11 @@ export class WorldItemManager {
     sprite.setScale(0.8);
     sprite.setInteractive({ useHandCursor: true, pixelPerfect: true });
     uiCamera.ignore(sprite);
+    
+    // Asegurar que esté en el worldLayer
+    if ((scene as any).mapController?.addToWorld) {
+      (scene as any).mapController.addToWorld(sprite);
+    }
     return sprite;
   }
 

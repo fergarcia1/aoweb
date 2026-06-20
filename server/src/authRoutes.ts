@@ -1,3 +1,4 @@
+import { logger } from "./logger";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import {
   createAccountId,
@@ -113,7 +114,7 @@ export function createAuthRouter(store: AuthStore) {
       sendJson(res, 404, { error: "Ruta de auth no encontrada." });
       return true;
     } catch (error) {
-      console.error("[auth] route error:", error);
+      logger.error("authroutes", "[auth] route error:", error);
       sendJson(res, 400, { error: "Solicitud invalida." });
       return true;
     }

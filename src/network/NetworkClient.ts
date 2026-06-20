@@ -51,7 +51,9 @@ export type NetworkClientHandlers = {
   onPlayerProgressUpdated?: (exp: number, expToNext: number, level: number) => void;
   onPartyUpdate?: (message: ServerPartyUpdateMessage) => void;
   onPartyInviteRequest?: (message: ServerPartyInviteRequestMessage) => void;
+  onAuctionCatalog?: (auctions: import("../../shared/types").NetAuctionState[]) => void;
   onWorldItemSpawned?: (mapId: string, item: NetWorldItemState) => void;
+
   onWorldItemUpdated?: (mapId: string, item: NetWorldItemState) => void;
   onWorldItemRemoved?: (mapId: string, worldItemId: string) => void;
   onLogoutCountdown?: (secondsLeft: number) => void;
@@ -65,6 +67,7 @@ export type NetworkClientOptions = {
 };
 
 const RECONNECT_DELAYS_MS = [1_000, 2_000, 4_000, 8_000, 15_000];
+const MAX_RECONNECT_ATTEMPTS = 6;
 const NON_RECONNECT_CLOSE_CODES = new Set([4000, 4001, 4002, 4003, 4004]);
 
 export class NetworkClient {
@@ -92,21 +95,29 @@ export class NetworkClient {
     }
 
     this.intentionalClose = false;
-    this.socket = new WebSocket(this.url);
+    const socket = new WebSocket(this.url);
+    this.socket = socket;
 
-    this.socket.addEventListener("open", () => {
+    socket.addEventListener("open", () => {
+      if (this.socket !== socket) {
+        socket.close();
+        return;
+      }
       this.reconnectAttempt = 0;
       this.handlers.onConnected?.();
     });
 
-    this.socket.addEventListener("close", (event) => {
+    socket.addEventListener("close", (event) => {
+      if (this.socket !== socket) {
+        return;
+      }
       this.socket = null;
       this.playerId = null;
       const willReconnect =
         this.autoReconnect &&
         !this.intentionalClose &&
         !NON_RECONNECT_CLOSE_CODES.has(event.code) &&
-        this.reconnectAttempt < 12;
+        this.reconnectAttempt < MAX_RECONNECT_ATTEMPTS;
       this.handlers.onDisconnected?.({
         code: event.code,
         reason: event.reason,
@@ -117,13 +128,22 @@ export class NetworkClient {
       }
     });
 
-    this.socket.addEventListener("message", (event) => {
+    socket.addEventListener("message", (event) => {
+      if (this.socket !== socket) {
+        return;
+      }
       const message = parseServerMessage(String(event.data));
       if (!message) return;
       this.handleServerMessage(message);
     });
 
-    this.socket.addEventListener("error", () => {
+    socket.addEventListener("error", () => {
+      if (this.socket !== socket) {
+        return;
+      }
+      if (this.autoReconnect) {
+        return;
+      }
       this.handlers.onError?.("No se pudo conectar al servidor.");
     });
   }
@@ -152,9 +172,10 @@ export class NetworkClient {
   disconnect() {
     this.intentionalClose = true;
     this.clearReconnectTimer();
-    this.socket?.close();
+    const socket = this.socket;
     this.socket = null;
     this.playerId = null;
+    socket?.close();
   }
 
   isConnected() {
@@ -308,9 +329,26 @@ export class NetworkClient {
     this.send({ type: "meditation", active });
   }
 
+  sendAuctionFetch() {
+    this.send({ type: "auction_fetch" });
+  }
+
+  sendAuctionList(inventorySlot: number, amount: number, price: number, durationHours: number) {
+    this.send({ type: "auction_list", inventorySlot, amount, price, durationHours });
+  }
+
+  sendAuctionBuy(auctionId: string) {
+    this.send({ type: "auction_buy", auctionId });
+  }
+
+  sendAuctionCancel(auctionId: string) {
+    this.send({ type: "auction_cancel", auctionId });
+  }
+
   sendRequestLogout() {
     this.send({ type: "request_logout" });
   }
+
 
   sendPartyAction(
     action: Extract<ClientMessage, { type: "party_action" }>["action"],
@@ -451,9 +489,14 @@ export class NetworkClient {
       this.handlers.onPartyInviteRequest?.(message);
       return;
     }
+    if (message.type === "auction_catalog") {
+      this.handlers.onAuctionCatalog?.(message.auctions);
+      return;
+    }
     if (message.type === "error") {
       this.handlers.onError?.(message.message, message.code);
     }
+
   }
 }
 

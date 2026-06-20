@@ -345,6 +345,16 @@ export type MapObjectUpdateEvent = {
   objIndex: number;
 };
 
+export type NetAuctionState = {
+  id: string;
+  sellerId: string;
+  sellerName: string;
+  itemId: string;
+  amount: number;
+  price: number;
+  expiresAtMs: number;
+};
+
 export type GameEvent =
   | DamageEvent
   | HealEvent

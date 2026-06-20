@@ -1,4 +1,5 @@
 import { WORLD_MAP_GRID_CELLS } from "../../shared/worldMapGrid";
+import { getMap } from "../../shared/maps";
 
 export type WorldMapBiome = "grass" | "forest" | "sand" | "snow" | "dungeon" | "water" | "city";
 
@@ -7,6 +8,7 @@ export type WorldMapCellConfig = {
   gridX: number;
   gridY: number;
   label?: string;
+  displayLabel?: string;
   description?: string;
   biome: WorldMapBiome;
 };
@@ -76,13 +78,22 @@ function getBiome(mapId: string): WorldMapBiome {
   return "grass";
 }
 
-const CITY_LABELS: Record<string, string> = {
+const WORLD_MAP_DISPLAY_LABELS: Record<string, string> = {
   mapa1: "Ullathorpe",
-  mapa156: "Muelle de Ullathorpe",
   mapa34: "Nix",
+  mapa20: "Rinkel",
   mapa59: "Banderbill",
-  mapa40: "Lindos",
+  mapa60: "Banderbill",
+  mapa61: "Banderbill",
+  mapa62: "Lindos",
+  mapa63: "Lindos",
+  mapa64: "Lindos",
   mapa119: "Arghal",
+  mapa151: "Arghal",
+  mapa156: "Arghal",
+  mapa218: "Tiama",
+  mapa111: "Nueva Esperanza",
+  mapa112: "Nueva Esperanza",
   // Ocean labels
   mapa126: "Mar del Norte",
   mapa137: "Océano Abierto",
@@ -109,19 +120,32 @@ const MAP_DESCRIPTIONS: Record<string, string> = {
   mapa162: "Un pasaje traicionero lleno de arrecifes y piratas.",
 };
 
+function getMapLabel(mapId: string): string {
+  try {
+    const name = getMap(mapId).name.trim();
+    if (name) return name;
+  } catch {
+    // The atlas can contain future placeholder ids before their maps exist.
+  }
+  return `Mapa ${mapId.replace("mapa", "")}`;
+}
+
 export const WORLD_MAP_CELLS: WorldMapCellConfig[] = WORLD_MAP_GRID_CELLS.map((cell) => {
   const isWater = WATER_MAP_IDS.has(cell.mapId);
   const isCity = CITY_MAP_IDS.has(cell.mapId);
   const defaultLabel = isWater ? "Océano" : cell.mapId.replace("mapa", "");
   const defaultDesc = isWater ? "Vastas extensiones de agua salada." : `Mapa ${cell.mapId.replace("mapa", "")}. Territorio inexplorado.`;
 
+  const mapLabel = getMapLabel(cell.mapId);
+
   let biome = getBiome(cell.mapId);
   if (isCity) biome = "city";
 
   return {
     ...cell,
-    label: CITY_LABELS[cell.mapId] ?? defaultLabel,
-    description: MAP_DESCRIPTIONS[cell.mapId] ?? defaultDesc,
+    label: mapLabel,
+    displayLabel: WORLD_MAP_DISPLAY_LABELS[cell.mapId] ?? defaultLabel,
+    description: MAP_DESCRIPTIONS[cell.mapId] ?? (isWater ? defaultDesc : mapLabel),
     biome,
   };
 });

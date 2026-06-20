@@ -16,6 +16,7 @@ const FRAME_W = FACE_FRAME_W;
 const FRAME_H = FACE_FRAME_H;
 const SHEET_COLS = FACE_COUNT;
 const SHEET_ROWS = 4;
+const ORC_FEMALE_FACE_FRAME_H = 33;
 
 const FACE_ROW_BY_FACING: Record<Facing, number> = {
   down: 0,
@@ -36,6 +37,10 @@ function faceSheetPath(raceId: CharacterRaceId, genderId: CharacterGenderId): st
     return `/assets/ao/razes/fantasma_faces.png`;
   }
   return `/assets/ao/razes/${faceTextureKey(raceId, genderId)}.png`;
+}
+
+function faceFrameHeight(raceId: CharacterRaceId, genderId: CharacterGenderId): number {
+  return raceId === "orc" && genderId === "female" ? ORC_FEMALE_FACE_FRAME_H : FRAME_H;
 }
 
 const ALL_RACE_GENDER: Array<{ raceId: CharacterRaceId; genderId: CharacterGenderId }> = [
@@ -59,14 +64,13 @@ export function registerRaceFaces(scene: Phaser.Scene): void {
     const key = faceTextureKey(raceId, genderId);
     scene.load.spritesheet(key, faceSheetPath(raceId, genderId), {
       frameWidth: FRAME_W,
-      frameHeight: FRAME_H,
+      frameHeight: faceFrameHeight(raceId, genderId),
     });
   }
 }
 
 export function setupRaceFacesTextures(scene: Phaser.Scene): void {
   const expectedW = SHEET_COLS * FRAME_W;
-  const expectedH = SHEET_ROWS * FRAME_H;
 
   for (const { raceId, genderId } of ALL_RACE_GENDER) {
     const key = faceTextureKey(raceId, genderId);
@@ -74,6 +78,7 @@ export function setupRaceFacesTextures(scene: Phaser.Scene): void {
     if (texture.key === "__MISSING") continue;
     texture.setFilter(Phaser.Textures.FilterMode.NEAREST);
     const source = texture.getSourceImage() as { width?: number; height?: number };
+    const expectedH = SHEET_ROWS * faceFrameHeight(raceId, genderId);
     if (source.width !== expectedW || source.height !== expectedH) {
       console.warn(
         `[${key}] Se esperaba ${expectedW}x${expectedH}, recibido ${source.width}x${source.height}.`

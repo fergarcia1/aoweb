@@ -1,5 +1,5 @@
-import type { CharacterRepository } from "./repository";
-import type { PersistedCharacterSnapshot } from "./types";
+import type { AuctionRepository, CharacterRepository } from "./repository";
+import type { AuctionSnapshot, PersistedCharacterSnapshot } from "./types";
 
 function cloneSnapshot(snapshot: PersistedCharacterSnapshot): PersistedCharacterSnapshot {
   return {
@@ -14,8 +14,11 @@ function cloneSnapshot(snapshot: PersistedCharacterSnapshot): PersistedCharacter
   };
 }
 
-export class MemoryCharacterRepository implements CharacterRepository {
+export class MemoryCharacterRepository
+  implements CharacterRepository, AuctionRepository
+{
   private readonly byName = new Map<string, PersistedCharacterSnapshot>();
+  private readonly auctions = new Map<string, AuctionSnapshot>();
 
   async getByName(name: string): Promise<PersistedCharacterSnapshot | null> {
     const key = name.trim().toLowerCase();
@@ -27,4 +30,22 @@ export class MemoryCharacterRepository implements CharacterRepository {
     const key = snapshot.character.name.trim().toLowerCase();
     this.byName.set(key, cloneSnapshot(snapshot));
   }
+
+  async getAll(): Promise<AuctionSnapshot[]> {
+    return Array.from(this.auctions.values()).map((a) => ({ ...a }));
+  }
+
+  async getById(id: string): Promise<AuctionSnapshot | null> {
+    const a = this.auctions.get(id);
+    return a ? { ...a } : null;
+  }
+
+  async add(auction: AuctionSnapshot): Promise<void> {
+    this.auctions.set(auction.id, { ...auction });
+  }
+
+  async remove(id: string): Promise<void> {
+    this.auctions.delete(id);
+  }
 }
+

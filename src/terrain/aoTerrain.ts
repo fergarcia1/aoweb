@@ -6,10 +6,10 @@ export const AO_TERRAIN_TEXTURE_KEY = "ao_terrain_20";
 
 /** Textura grande de pasto (512x512, se recorta en frames de TILE_SIZE). */
 export const AO_GRASS_TEXTURE_KEY = "ao_grass_pasto1";
-const AO_GRASS_IMAGE_PATH = "/assets/ao/terrain/pasto1.png";
+const AO_GRASS_IMAGE_PATH = "/assets/ao/graficos/20.png";
 const GRASS_SHEET_COLS = 16;
 
-const TERRAIN_IMAGE_PATH = "/assets/ao/terrain/terrain.png";
+const TERRAIN_IMAGE_PATH = "/assets/ao/graficos/20.png";
 const SHEET_COLS = 16;
 
 /** Recorte de 1px para evitar líneas verdes entre tiles (bleeding del spritesheet). */

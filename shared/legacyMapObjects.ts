@@ -30,11 +30,5 @@ export function getLegacyObjGrhId(
   def: ImportedObjDef,
   mapObjIndex: number
 ): number {
-  if (mapObjIndex === def.indexAbierta && def.indexAbierta > 0) {
-    return def.grhIndex + 1;
-  }
-  if (mapObjIndex === def.indexCerrada && def.indexCerrada > 0) {
-    return def.grhIndex;
-  }
   return def.grhIndex;
 }

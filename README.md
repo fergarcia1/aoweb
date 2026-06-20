@@ -46,12 +46,29 @@ npm run server:restart
 |----------|-------------|
 | `VITE_MULTIPLAYER` | `0` o `false` desactiva multijugador (solo local) |
 | `VITE_WS_URL` | URL del WebSocket (por defecto `ws://localhost:3001`) |
+| `VITE_AUTH_REQUIRED` | `true` oculta el acceso dev sin cuenta y fuerza login/registro |
+| `VITE_UI_SKIN` | Skin inicial: `red`, `dark` o `clear` |
 
 ### Servidor (`server/.env`)
 
 | Variable | Descripción |
 |----------|-------------|
 | `DATABASE_URL` | Conexión PostgreSQL. Si no está, persistencia en memoria |
+| `PORT` | Puerto HTTP/WebSocket del servidor. Por defecto `3001` |
+| `AUTH_REQUIRED` | `true` obliga token valido para entrar por WebSocket |
+| `AUTH_TOKEN_SECRET` | Secreto para firmar tokens de login. En hosting debe ser unico y privado |
+| `CORS_ORIGIN` | Origen permitido para rutas `/auth/*`. Por defecto `*` |
+| `RATE_LIMIT_MAX_CONNECTIONS_PER_IP` | Maximo de conexiones WebSocket simultaneas por IP. Por defecto `3` |
+| `RATE_LIMIT_MAX_ACTIONS_PER_SECOND` | Maximo de mensajes por segundo por socket. Por defecto `20` |
+| `RATE_LIMIT_TEMP_BAN_MS` | Duracion del ban temporal por spam. Por defecto `300000` |
+
+Health-check del servidor:
+
+```bash
+curl http://localhost:3001/health
+```
+
+Responde estado, uptime, persistencia activa, clientes WebSocket y estadisticas basicas del mundo.
 
 Migrar esquema (con PostgreSQL):
 

@@ -1,3 +1,4 @@
+import { logger } from "../logger";
 import type { PlayerSession } from "../PlayerSession";
 import type { WorldContext } from "./WorldContext";
 import { MECHANICS } from "../../../shared/gameMechanics";
@@ -105,7 +106,7 @@ export class InventorySystem {
         clientOnly: true,
       });
       void this.world.persistSession(session).catch((error) => {
-        console.error("[use_item] persist failed:", error);
+        logger.error("inventorysystem", "[use_item] persist failed:", error);
       });
       return;
     }
@@ -118,6 +119,15 @@ export class InventorySystem {
     }
     if (result.attributeBuffs) {
       session.attributeBuffs = result.attributeBuffs;
+    }
+    if (typeof result.hp === "number" || result.attributeBuffs) {
+      this.world.broadcastToAoi(session.mapId, session.tileX, session.tileY, {
+        type: "player_updated",
+        player: session.toNetState(),
+      });
+      if (typeof result.hp === "number") {
+        this.world.notifyPartyOfHpChange(session.id);
+      }
     }
     this.consumeInventorySlot(session, slot.slotIndex);
 
@@ -138,7 +148,7 @@ export class InventorySystem {
     });
     this.world.sendInventoryUpdated(session);
     void this.world.persistSession(session).catch((error) => {
-      console.error("[use_item] persist failed:", error);
+      logger.error("inventorysystem", "[use_item] persist failed:", error);
     });
   }
 
@@ -189,7 +199,7 @@ export class InventorySystem {
       this.world.sendPlayerState(session);
       this.world.broadcastPlayerMoved(session);
       void this.world.persistSession(session).catch((error) => {
-        console.error("[boat_navigation] persist failed:", error);
+        logger.error("inventorysystem", "[boat_navigation] persist failed:", error);
       });
       return;
     }
@@ -211,7 +221,7 @@ export class InventorySystem {
     this.world.sendPlayerState(session);
     this.world.broadcastPlayerMoved(session);
     void this.world.persistSession(session).catch((error) => {
-      console.error("[boat_navigation] persist failed:", error);
+      logger.error("inventorysystem", "[boat_navigation] persist failed:", error);
     });
   }
 
@@ -300,7 +310,7 @@ export class InventorySystem {
       session.recalcDefenseStats();
       session.recalcAttackStats();
       this.world.sendCombatLog(session, `Equipaste ${item.name}.`);
-      this.world.sendPlayerState(session);
+      this.world.broadcastPlayerState(session);
       void this.world.persistSession(session);
       return;
     }
@@ -321,7 +331,7 @@ export class InventorySystem {
     session.recalcDefenseStats();
     session.recalcAttackStats();
     this.world.sendCombatLog(session, `Te quitaste ${item.name}.`);
-    this.world.sendPlayerState(session);
+    this.world.broadcastPlayerState(session);
     void this.world.persistSession(session);
   }
 
@@ -412,7 +422,7 @@ export class InventorySystem {
     this.syncInventoryEquippedFlags(session);
     
     if (unequipped) {
-      this.world.sendPlayerState(session);
+      this.world.broadcastPlayerState(session);
       this.world.broadcastPlayerMoved(session);
     }
 
@@ -439,6 +449,8 @@ export class InventorySystem {
     const kind = beforeId === record.id ? "updated" : "spawned";
     this.world.broadcastWorldItemState(session.mapId, tileX, tileY, record, kind);
     this.world.sendInventoryUpdated(session);
+    
+    logger.info("inventorysystem", `Player ${session.name} (${session.id}) dropped ${removed}x ${itemId} at ${tileX},${tileY}`);
 
     const item = getItemDefinition(itemId as ItemId);
     this.world.sendCombatLog(
@@ -528,6 +540,8 @@ export class InventorySystem {
         `Tiraste ${droppedTotal.toLocaleString("es-AR")} de oro.`
       );
     }
+    
+    logger.info("inventorysystem", `Player ${session.name} (${session.id}) dropped ${droppedTotal} gold at ${originX},${originY}`);
     void this.world.persistSession(session);
   }
 
@@ -621,6 +635,8 @@ export class InventorySystem {
       this.world.send(session, { type: "world_item_removed", mapId, worldItemId: worldItem.id });
       this.world.broadcastWorldItemRemoved(mapId, tileX, tileY, worldItem.id, session.id);
       this.world.sendInventoryUpdated(session);
+      
+      logger.info("inventorysystem", `Player ${session.name} (${session.id}) picked up ${worldItem.count} gold at ${tileX},${tileY}`);
       void this.world.persistSession(session);
       return;
     }
@@ -654,6 +670,7 @@ export class InventorySystem {
       session,
       added > 1 ? `Agarraste ${item.name} x${added}.` : `Agarraste ${item.name}.`
     );
+    logger.info("inventorysystem", `Player ${session.name} (${session.id}) picked up ${added}x ${worldItem.itemId} at ${tileX},${tileY}`);
     void this.world.persistSession(session);
   }
 }

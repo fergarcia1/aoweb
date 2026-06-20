@@ -33,11 +33,40 @@ export function doorWalkabilityTile(isOpen: boolean): number {
   return isOpen ? TILE.GRASS : TILE.GRASS_BLOCKED;
 }
 
+const LINKED_LEGACY_DOOR_BASES: Record<string, string> = {
+  "76,54": "78,54",
+  "78,54": "76,54",
+  "76,68": "78,68",
+  "78,68": "76,68",
+};
+
+function setLegacyDoorFootprint(
+  overrides: Map<string, number>,
+  tileX: number,
+  tileY: number,
+  value: number
+): void {
+  overrides.set(mapTileOverrideKey(tileX, tileY), value);
+  // En los mapas legacy, la coordenada del obj de puerta suele ser la mitad derecha.
+  // La mitad izquierda comparte estado de colision aunque no siempre venga en una tabla.
+  overrides.set(mapTileOverrideKey(tileX - 1, tileY), value);
+}
+
 export function setDoorTileOverride(
   overrides: Map<string, number>,
   tileX: number,
   tileY: number,
   isOpen: boolean
 ): void {
-  overrides.set(mapTileOverrideKey(tileX, tileY), doorWalkabilityTile(isOpen));
+  const key = mapTileOverrideKey(tileX, tileY);
+  const val = doorWalkabilityTile(isOpen);
+  setLegacyDoorFootprint(overrides, tileX, tileY, val);
+
+  const partnerKey = LINKED_LEGACY_DOOR_BASES[key];
+  if (partnerKey) {
+    const [partnerX, partnerY] = partnerKey.split(",").map(Number);
+    if (Number.isFinite(partnerX) && Number.isFinite(partnerY)) {
+      setLegacyDoorFootprint(overrides, partnerX, partnerY, val);
+    }
+  }
 }

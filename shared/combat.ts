@@ -6,7 +6,7 @@ import {
   PARALIZAR_PLAYER_DURATION_MS,
 } from "../game-data/constants";
 
-export const ATTACK_COOLDOWN_MS = 800;
+export const ATTACK_COOLDOWN_MS = 1200;
 
 export function getSpellDefinition(spellId: number) {
   return SPELL_DEFINITIONS.find((spell) => spell.idSpell === spellId);

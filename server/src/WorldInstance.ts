@@ -1,3 +1,4 @@
+import { logger } from "./logger";
 import { findTransition } from "../../shared/maps";
 import {
   canStayInNewbieDungeon,
@@ -14,8 +15,10 @@ import { CombatSystem } from "./systems/CombatSystem";
 import { MobSystem } from "./systems/MobSystem";
 import { MovementSystem } from "./systems/MovementSystem";
 import { InteractionSystem } from "./systems/InteractionSystem";
+import { AuctionSystem } from "./systems/AuctionSystem";
 import type { WorldContext } from "./systems/WorldContext";
 import type { WebSocket } from "ws";
+import { MAX_ACTIONS_PER_SECOND, tempBanIp } from "./networkSecurity";
 import { isInAoi } from "../../shared/aoi";
 import {
   applyJoinVitalsToSession,
@@ -200,6 +203,7 @@ export class WorldInstance implements WorldContext {
     ReturnType<typeof setInterval>
   >();
   private readonly logoutCompletingIds = new Set<string>();
+  private readonly auctionSystem: AuctionSystem;
 
   constructor(characterRepo: CharacterRepository = new MemoryCharacterRepository()) {
     this.characterRepo = characterRepo;
@@ -210,7 +214,78 @@ export class WorldInstance implements WorldContext {
     this.mobSystem = new MobSystem(this);
     this.movementSystem = new MovementSystem(this);
     this.interactionSystem = new InteractionSystem(this);
+    this.auctionSystem = new AuctionSystem(this);
     this.initAllMobs();
+    void this.auctionSystem.init();
+  }
+
+  public getAuctionRepo() {
+    return this.characterRepo as unknown as import("./persistence/repository").AuctionRepository;
+  }
+
+  public addToBankSlots(
+    session: PlayerSession,
+    itemId: string,
+    amount: number
+  ): { added: number; remaining: number } {
+    let toAdd = Math.floor(amount);
+    let addedTotal = 0;
+
+    for (const slot of session.bankSlots) {
+      if (slot.itemId === itemId) {
+        slot.amount += toAdd;
+        addedTotal += toAdd;
+        toAdd = 0;
+        break;
+      }
+    }
+
+    if (toAdd > 0) {
+      for (const slot of session.bankSlots) {
+        if (!slot.itemId || slot.amount <= 0) {
+          slot.itemId = itemId;
+          slot.amount = toAdd;
+          addedTotal += toAdd;
+          toAdd = 0;
+          break;
+        }
+      }
+    }
+
+    return { added: addedTotal, remaining: toAdd };
+  }
+
+  public removeFromBankSlot(
+    session: PlayerSession,
+    slotIndex: number,
+    amount: number
+  ): { removed: number; itemId: string | null } {
+    const slot = session.bankSlots[slotIndex];
+    if (!slot?.itemId || slot.amount <= 0 || amount <= 0) {
+      return { removed: 0, itemId: null };
+    }
+    const removed = Math.min(slot.amount, Math.floor(amount));
+    const itemId = slot.itemId;
+    slot.amount -= removed;
+    if (slot.amount <= 0) {
+      slot.itemId = null;
+      slot.amount = 0;
+    }
+    return { removed, itemId };
+  }
+
+  public areInSameParty(playerIdA: string, playerIdB: string): boolean {
+    if (playerIdA === playerIdB) return true;
+    const p1 = this.partySystem.getPartyForPlayer(playerIdA);
+    const p2 = this.partySystem.getPartyForPlayer(playerIdB);
+    return !!(p1 && p2 && p1.id === p2.id);
+  }
+
+  public notifyPartyOfHpChange(playerId: string): void {
+    const party = this.partySystem.getPartyForPlayer(playerId);
+    if (party) {
+      this.broadcastPartyUpdate(party);
+    }
   }
 
   private initAllMobs() {
@@ -226,8 +301,8 @@ export class WorldInstance implements WorldContext {
       if (map && map.legacyObjs) {
         for (const o of map.legacyObjs) {
           const def = resolveImportedObjDef(o.objIndex);
-          const isDoor = def?.objType === 14;
-          const isOpen = isDoor ? false : false; // Default closed
+          const isDoor = def?.objType === 6 && (def.indexAbierta > 0 || def.indexCerrada > 0);
+          const isOpen = isDoor ? o.objIndex === def.indexAbierta : false;
           objs.push({ tileX: o.tileX, tileY: o.tileY, objIndex: o.objIndex, isOpen });
           if (isDoor) {
             if (!overrides) {
@@ -329,11 +404,36 @@ export class WorldInstance implements WorldContext {
   public getWorldItems() { return this.worldItems; }
   public aggroMobOnPlayerHit(mob: MobEntity, attacker: PlayerSession) { this.mobSystem.aggroMobOnPlayerHit(mob, attacker); }
 
-  stop() {
+  public getRuntimeStats() {
+    let aliveMobs = 0;
+    for (const mob of this.mobs.values()) {
+      if (mob.alive) {
+        aliveMobs += 1;
+      }
+    }
+    return {
+      tick: this.tick,
+      sessions: this.players.size,
+      joinedPlayers: this.countJoinedPlayers(),
+      aliveMobs,
+      worldItems: this.worldItems.count(),
+    };
+  }
+
+  async stop() {
     if (this.tickTimer) {
       clearInterval(this.tickTimer);
       this.tickTimer = null;
     }
+    logger.info("worldinstance", "[stop] Forzando persistencia de todos los jugadores activos...");
+    const promises = [];
+    for (const session of this.players.values()) {
+      if (session.joined) {
+        promises.push(this.persistSession(session));
+      }
+    }
+    await Promise.all(promises);
+    logger.info("worldinstance", "[stop] Todos los jugadores persistidos de forma segura.");
   }
 
   private onTick() {
@@ -348,7 +448,7 @@ export class WorldInstance implements WorldContext {
         this.cleanupItems();
       }
     } catch (error) {
-      console.error("[tick] unhandled error:", error);
+      logger.error("worldinstance", "[tick] unhandled error:", error);
     }
   }
 
@@ -372,6 +472,7 @@ export class WorldInstance implements WorldContext {
   }
 
   public getMapTileOverrides(mapId: string): ReadonlyMap<string, number> | undefined {
+    this.getDynamicMapObjs(mapId);
     return this.tileOverridesByMap.get(mapId);
   }
 
@@ -391,7 +492,7 @@ export class WorldInstance implements WorldContext {
     for (const player of this.players.values()) {
       if (!player.joined) continue;
       void this.persistSession(player).catch((error) => {
-        console.error("[autosave] persist failed:", error);
+        logger.error("worldinstance", "[autosave] persist failed:", error);
       });
     }
   }
@@ -508,9 +609,34 @@ export class WorldInstance implements WorldContext {
     socket.on("message", (data) => {
       try {
         const raw = typeof data === "string" ? data : data.toString("utf8");
+
+        // Anti-Spam: Payload size limit (16KB max)
+        if (raw.length > 16384) {
+          logger.warn("worldinstance", `[AntiSpam] Payload demasiado grande (${raw.length} bytes). Cortando conexión.`);
+          socket.close(4009, "Payload too large");
+          return;
+        }
+
+        // Anti-Spam: Rate Limit por socket
+        const now = Date.now();
+        const state = (socket as any)._spamState || { count: 0, windowStart: now };
+        if (now - state.windowStart > 1000) {
+          state.count = 1;
+          state.windowStart = now;
+        } else {
+          state.count++;
+          if (state.count > MAX_ACTIONS_PER_SECOND) {
+             logger.warn("worldinstance", `[AntiSpam] Límite de acciones excedido (${state.count} msg/s). Cortando conexión.`);
+             tempBanIp((socket as any).realIp || "unknown");
+             socket.close(4008, "Rate limit exceeded");
+             return;
+          }
+        }
+        (socket as any)._spamState = state;
+
         const message = parseClientMessage(raw);
         if (!message) {
-          console.warn(`[ws] mensaje invalido antes/durante join: ${raw.slice(0, 500)}`);
+          logger.warn("worldinstance", `[ws] mensaje invalido antes/durante join: ${raw.slice(0, 500)}`);
           const session = this.socketSessions.get(socket);
           if (session) {
             this.send(session, { type: "error", message: "Mensaje inválido." });
@@ -539,7 +665,7 @@ export class WorldInstance implements WorldContext {
 
         const session = this.socketSessions.get(socket);
         if (!session) {
-          console.warn(`[join] mensaje ${message.type} recibido antes de join`);
+          logger.warn("worldinstance", `[join] mensaje ${message.type} recibido antes de join`);
           if (Date.now() > joinDeadline) {
             socket.close(4001, "join required");
           }
@@ -547,7 +673,7 @@ export class WorldInstance implements WorldContext {
         }
         this.handleClientMessage(session, message);
       } catch (error) {
-        console.error("[ws] message handler error:", error);
+        logger.error("worldinstance", "[ws] message handler error:", error);
         const session = this.socketSessions.get(socket);
         if (session) {
           this.send(session, { type: "error", message: "Error interno del servidor." });
@@ -556,7 +682,7 @@ export class WorldInstance implements WorldContext {
     });
 
     socket.on("error", (error) => {
-      console.error("[ws] socket error:", error);
+      logger.error("worldinstance", "[ws] socket error:", error);
     });
 
     socket.on("close", () => {
@@ -585,11 +711,11 @@ export class WorldInstance implements WorldContext {
       void this.characterRepo
         .upsert(snapshot)
         .catch((error) => {
-          console.error("[leave] failed to persist session:", error);
+          logger.error("worldinstance", "[leave] failed to persist session:", error);
         })
         .finally(() => {
           if (this.isInSafeZone(session)) {
-            console.log(`[leave] ${session.name} (${session.id.slice(0, 8)}) — zona segura, removiendo al instante`);
+            logger.info("worldinstance", `[leave] ${session.name} (${session.id.slice(0, 8)}) — zona segura, removiendo al instante`);
             this.removePlayer(session.id);
             return;
           }
@@ -761,7 +887,30 @@ export class WorldInstance implements WorldContext {
       this.handlePartyAction(session, message);
       return;
     }
+    if (message.type === "auction_fetch") {
+      this.auctionSystem.sendAuctionCatalog(session);
+      return;
+    }
+    if (message.type === "auction_list") {
+      void this.auctionSystem.handleListAuction(
+        session,
+        message.inventorySlot,
+        message.amount,
+        message.price,
+        message.durationHours
+      );
+      return;
+    }
+    if (message.type === "auction_buy") {
+      void this.auctionSystem.handleBuyAuction(session, message.auctionId);
+      return;
+    }
+    if (message.type === "auction_cancel") {
+      void this.auctionSystem.handleCancelAuction(session, message.auctionId);
+      return;
+    }
   }
+
 
   private handleSyncInventory(
     session: PlayerSession,
@@ -774,7 +923,7 @@ export class WorldInstance implements WorldContext {
       slotIndex: slot.slotIndex,
       itemId: slot.itemId as any,
       amount: slot.amount,
-      isEquipped: slot.isEquipped,
+      isEquipped: slot.isEquipped ?? false,
     }));
 
     // Sincronizar equipamiento visual si algo cambió (opcional pero recomendado)
@@ -785,7 +934,7 @@ export class WorldInstance implements WorldContext {
 
     // Persistir el nuevo orden en la DB
     void this.persistSession(session).catch((error) => {
-      console.error("[sync_inventory] failed to persist session:", error);
+      logger.error("worldinstance", "[sync_inventory] failed to persist session:", error);
     });
   }
 
@@ -820,8 +969,13 @@ export class WorldInstance implements WorldContext {
         ? message.characterId.trim().slice(0, 64)
         : session.id;
     void this.tryHydrateSessionFromRepository(session, message).catch((error) => {
-      console.error("[join] failed to hydrate from repository:", error);
-      this.applyJoinFallback(session, message);
+      logger.error("worldinstance", "[join] failed to hydrate from repository:", error);
+      this.send(session, {
+        type: "error",
+        message:
+          "No se pudo cargar tu personaje desde la base de datos. Reinicia el servidor o corre la migracion antes de entrar.",
+      });
+      session.socket.close(1011, "character repository error");
     });
   }
 
@@ -953,6 +1107,7 @@ export class WorldInstance implements WorldContext {
     session.factionId = normalizeFactionId(c.factionId);
     session.faceIndex = Math.max(0, Math.floor(c.faceIndex));
     session.level = clampPlayerLevel(c.level);
+    session.usersKilled = Math.max(0, Math.floor(c.usersKilled || 0));
     session.equipment = sanitizeJoinEquipment({
       weaponId: c.equipment.weaponItemId,
       shieldId: c.equipment.shieldItemId,
@@ -1232,7 +1387,7 @@ export class WorldInstance implements WorldContext {
     const timer = setTimeout(() => {
       this.persistDebounceTimers.delete(session.id);
       void this.persistSession(session).catch((error) => {
-        console.error("[move] debounced persist failed:", error);
+        logger.error("worldinstance", "[move] debounced persist failed:", error);
       });
     }, delayMs);
     this.persistDebounceTimers.set(session.id, timer);
@@ -1273,7 +1428,7 @@ export class WorldInstance implements WorldContext {
     this.movementSystem.sendSnapshot(session);
     this.movementSystem.initAoiOnJoin(session);
     void this.persistSession(session).catch((error) => {
-      console.error("[join] persist failed:", error);
+      logger.error("worldinstance", "[join] persist failed:", error);
     });
     console.log(
       `[join] ${session.name} (${session.id.slice(0, 8)}) en ${session.mapId} @ ${session.tileX},${session.tileY}`
@@ -1320,7 +1475,7 @@ export class WorldInstance implements WorldContext {
     try {
       await this.characterRepo.upsert(snapshot);
     } catch (error) {
-      console.error(`[persist] upsert failed (${session.name}/${session.characterId}):`, error);
+      logger.error("worldinstance", `[persist] upsert failed (${session.name}/${session.characterId}):`, error);
     }
   }
 
@@ -1406,7 +1561,7 @@ export class WorldInstance implements WorldContext {
 
     const canDrop = (tileX: number, tileY: number) =>
       isWorldItemDropTileAllowed(mapId, tileX, tileY, (x, y) =>
-        isMapTileWalkable(mapId, x, y, this.tileOverridesByMap.get(mapId))
+        isMapTileWalkable(mapId, x, y, this.getMapTileOverrides(mapId))
       ) && !occupied.has(`${tileX},${tileY}`);
 
     for (const stack of lootStacks) {
@@ -1449,7 +1604,7 @@ export class WorldInstance implements WorldContext {
       );
       this.sendInventoryUpdated(recipient);
       void this.persistSession(recipient).catch((error) => {
-        console.error("[mob_kill_gold] persist failed:", error);
+        logger.error("worldinstance", "[mob_kill_gold] persist failed:", error);
       });
     }
   }
@@ -1534,6 +1689,11 @@ export class WorldInstance implements WorldContext {
       }
       this.sendCombatLog(session, `¡Subiste al nivel ${session.level}!`);
       this.sendPlayerState(session);
+      this.broadcastToAoi(session.mapId, session.tileX, session.tileY, {
+        type: "player_updated",
+        player: session.toNetState(),
+      });
+      this.notifyPartyOfHpChange(session.id);
 
       if (
         session.mapId === NEWBIE_DUNGEON_MAP_ID &&
@@ -1552,7 +1712,7 @@ export class WorldInstance implements WorldContext {
 
     this.sendPlayerProgressUpdated(session);
     void this.persistSession(session).catch((error) => {
-      console.error("[mob_kill_exp] persist failed:", error);
+      logger.error("worldinstance", "[mob_kill_exp] persist failed:", error);
     });
   }
 
@@ -1644,7 +1804,7 @@ export class WorldInstance implements WorldContext {
     clearInterval(countdown);
     this.pendingLogoutCountdownTimers.delete(session.id);
     this.sendCombatLog(session, "Desconexión cancelada.");
-    console.log(`[logout] cancelado por movimiento — ${session.name} (${session.id.slice(0, 8)})`);
+    logger.info("worldinstance", `[logout] cancelado por movimiento — ${session.name} (${session.id.slice(0, 8)})`);
   }
 
   private scheduleLogoutGraceRemoval(playerId: string): void {
@@ -1659,7 +1819,7 @@ export class WorldInstance implements WorldContext {
   }
 
   private handleRequestLogout(session: PlayerSession): void {
-    console.log(`[logout] ${session.name} (${session.id.slice(0, 8)}) map=${session.mapId}`);
+    logger.info("worldinstance", `[logout] ${session.name} (${session.id.slice(0, 8)}) map=${session.mapId}`);
     if (this.pendingLogoutCountdownTimers.has(session.id)) {
       this.sendCombatLog(session, "Ya estás desconectando...");
       return;
@@ -1671,7 +1831,7 @@ export class WorldInstance implements WorldContext {
     }
 
     let secondsLeft = UNSAFE_LOGOUT_COUNTDOWN_SECONDS;
-    this.sendCombatLog(session, `Desconectando en ${secondsLeft}...`);
+    this.sendCombatLog(session, `Desconectando en ${secondsLeft} segundos.`);
     this.send(session, { type: "logout_countdown", secondsLeft });
 
     const timer = setInterval(() => {
@@ -1681,7 +1841,7 @@ export class WorldInstance implements WorldContext {
         void this.completeLogout(session);
         return;
       }
-      this.sendCombatLog(session, `Desconectando en ${secondsLeft}...`);
+      this.sendCombatLog(session, `Desconectando en ${secondsLeft} segundos.`);
       this.send(session, { type: "logout_countdown", secondsLeft });
     }, 1_000);
 
@@ -1697,7 +1857,7 @@ export class WorldInstance implements WorldContext {
     try {
       await this.characterRepo.upsert(snapshot);
     } catch (error) {
-      console.error("[logout] failed to persist session:", error);
+      logger.error("worldinstance", "[logout] failed to persist session:", error);
     }
 
     this.send(session, { type: "logout_complete" });
@@ -1723,7 +1883,7 @@ export class WorldInstance implements WorldContext {
         }
       }
       session.aoiVisiblePlayerIds.clear();
-      console.log(`[leave] ${session.name} (${playerId.slice(0, 8)})`);
+      logger.info("worldinstance", `[leave] ${session.name} (${playerId.slice(0, 8)})`);
     }
 
     this.cancelResurrectForPlayer(playerId);
@@ -1801,7 +1961,7 @@ export class WorldInstance implements WorldContext {
       const nextY = occupiedTileY + dy;
       const key = `${nextX},${nextY}`;
       if (reservedTiles.has(key)) continue;
-      if (!isMapTileWalkable(mapId, nextX, nextY, this.tileOverridesByMap.get(mapId)) || isTileBlockedByMapObject(getMap(mapId).objects, nextX, nextY)) continue;
+      if (!isMapTileWalkable(mapId, nextX, nextY, this.getMapTileOverrides(mapId)) || isTileBlockedByMapObject(getMap(mapId).objects, nextX, nextY)) continue;
       if (this.isTileOccupied(nextX, nextY, mapId, ghostId)) continue;
       const score = -(dx * incomingDx + dy * incomingDy);
       candidates.push({ tileX: nextX, tileY: nextY, score });
@@ -1816,7 +1976,7 @@ export class WorldInstance implements WorldContext {
       const key = `${nextX},${nextY}`;
       if (reservedTiles.has(key)) return true;
       if (nextX === occupiedTileX && nextY === occupiedTileY) return true;
-      if (!isMapTileWalkable(mapId, nextX, nextY, this.tileOverridesByMap.get(mapId)) || isTileBlockedByMapObject(getMap(mapId).objects, nextX, nextY)) return true;
+      if (!isMapTileWalkable(mapId, nextX, nextY, this.getMapTileOverrides(mapId)) || isTileBlockedByMapObject(getMap(mapId).objects, nextX, nextY)) return true;
       return this.isTileOccupied(nextX, nextY, mapId, ghostId);
     }, 8);
   }
@@ -1841,7 +2001,7 @@ export class WorldInstance implements WorldContext {
     this.send(session, { type: "player_updated", player: session.toNetState(options) });
   }
 
-  private broadcastPlayerState(session: PlayerSession, options?: { includeAttributeBuffs?: boolean }) {
+  public broadcastPlayerState(session: PlayerSession, options?: { includeAttributeBuffs?: boolean }) {
     const message: ServerMessage = { type: "player_updated", player: session.toNetState(options) };
     this.send(session, message);
     this.broadcastToAoi(session.mapId, session.tileX, session.tileY, message, session.id);
@@ -1852,7 +2012,7 @@ export class WorldInstance implements WorldContext {
     try {
       session.socket.send(JSON.stringify(message));
     } catch (error) {
-      console.error(`[ws] send failed (${session.name}):`, error);
+      logger.error("worldinstance", `[ws] send failed (${session.name}):`, error);
     }
   }
 

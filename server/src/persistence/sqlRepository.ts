@@ -1,5 +1,5 @@
-import type { CharacterRepository } from "./repository";
-import type { PersistedCharacterSnapshot } from "./types";
+import type { AuctionRepository, CharacterRepository } from "./repository";
+import type { AuctionSnapshot, PersistedCharacterSnapshot } from "./types";
 import { Pool, type PoolClient } from "pg";
 import {
   mapCharacterRowToSnapshot,
@@ -10,14 +10,51 @@ import type { CharacterRow } from "./types";
 /**
  * PostgreSQL-backed repository.
  */
-export class SqlCharacterRepository implements CharacterRepository {
+export class SqlCharacterRepository
+  implements CharacterRepository, AuctionRepository
+{
   private readonly pool: Pool;
 
   constructor(private readonly connectionString: string) {
     this.pool = new Pool({ connectionString: this.connectionString });
   }
 
+  async getAll(): Promise<AuctionSnapshot[]> {
+    const result = await this.pool.query<AuctionSnapshot>(
+      `SELECT id, seller_id AS "sellerId", seller_name AS "sellerName", item_id AS "itemId", amount, price, expires_at_ms AS "expiresAtMs" FROM auctions`
+    );
+    return result.rows;
+  }
+
+  async getById(id: string): Promise<AuctionSnapshot | null> {
+    const result = await this.pool.query<AuctionSnapshot>(
+      `SELECT id, seller_id AS "sellerId", seller_name AS "sellerName", item_id AS "itemId", amount, price, expires_at_ms AS "expiresAtMs" FROM auctions WHERE id = $1`,
+      [id]
+    );
+    return result.rows[0] || null;
+  }
+
+  async add(auction: AuctionSnapshot): Promise<void> {
+    await this.pool.query(
+      `INSERT INTO auctions (id, seller_id, seller_name, item_id, amount, price, expires_at_ms) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+      [
+        auction.id,
+        auction.sellerId,
+        auction.sellerName,
+        auction.itemId,
+        auction.amount,
+        auction.price,
+        auction.expiresAtMs,
+      ]
+    );
+  }
+
+  async remove(id: string): Promise<void> {
+    await this.pool.query(`DELETE FROM auctions WHERE id = $1`, [id]);
+  }
+
   async getByName(name: string): Promise<PersistedCharacterSnapshot | null> {
+
     const normalized = name.trim();
     if (!normalized) return null;
 
@@ -26,7 +63,7 @@ export class SqlCharacterRepository implements CharacterRepository {
       SELECT
         id, account_id, name, role, map_id, tile_x, tile_y, facing,
         race_id, gender_id, class_id, faction_id, face_index,
-        level, exp, exp_to_next, hp, hp_max, mp, mp_max, gold, bank_gold,
+        level, exp, exp_to_next, users_killed, hp, hp_max, mp, mp_max, gold, bank_gold,
         weapon_item_id, shield_item_id, helmet_item_id, armor_item_id,
         equipped_outfit, attr_strength_bonus, attr_agility_bonus, attr_buffs_expires_at_ms
       FROM characters
@@ -104,16 +141,16 @@ export class SqlCharacterRepository implements CharacterRepository {
       INSERT INTO characters (
         id, account_id, name, role, map_id, tile_x, tile_y, facing,
         race_id, gender_id, class_id, faction_id, face_index,
-        level, exp, exp_to_next, hp, hp_max, mp, mp_max, gold, bank_gold,
+        level, exp, exp_to_next, users_killed, hp, hp_max, mp, mp_max, gold, bank_gold,
         weapon_item_id, shield_item_id, helmet_item_id, armor_item_id,
         equipped_outfit, attr_strength_bonus, attr_agility_bonus, attr_buffs_expires_at_ms,
         updated_at
       ) VALUES (
         $1, $2, $3, $4, $5, $6, $7, $8,
         $9, $10, $11, $12, $13,
-        $14, $15, $16, $17, $18, $19, $20, $21, $22,
-        $23, $24, $25, $26,
-        $27, $28, $29, $30,
+        $14, $15, $16, $17, $18, $19, $20, $21, $22, $23,
+        $24, $25, $26, $27,
+        $28, $29, $30, $31,
         NOW()
       )
       ON CONFLICT (id) DO UPDATE SET
@@ -132,6 +169,7 @@ export class SqlCharacterRepository implements CharacterRepository {
         level = EXCLUDED.level,
         exp = EXCLUDED.exp,
         exp_to_next = EXCLUDED.exp_to_next,
+        users_killed = EXCLUDED.users_killed,
         hp = EXCLUDED.hp,
         hp_max = EXCLUDED.hp_max,
         mp = EXCLUDED.mp,
@@ -165,6 +203,7 @@ export class SqlCharacterRepository implements CharacterRepository {
         row.level,
         row.exp,
         row.exp_to_next,
+        row.users_killed,
         row.hp,
         row.hp_max,
         row.mp,

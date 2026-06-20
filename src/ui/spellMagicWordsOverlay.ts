@@ -27,11 +27,12 @@ export class SpellMagicWordsOverlay {
   constructor(
     private readonly scene: Phaser.Scene,
     private readonly getAnchor: () => SpellMagicWordsAnchor | null,
-    private readonly ignoreCamera?: Phaser.Cameras.Scene2D.Camera
+    private readonly ignoreCamera?: Phaser.Cameras.Scene2D.Camera,
+    private readonly worldLayer?: Phaser.GameObjects.Container
   ) {}
 
   show(words: string): void {
-    const trimmed = words.trim();
+    const trimmed = words.trim().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
     if (!trimmed) {
       return;
     }
@@ -67,8 +68,13 @@ export class SpellMagicWordsOverlay {
         .setDepth(anchor.depth);
     }
 
-    if (this.ignoreCamera && this.text) {
-      this.ignoreCamera.ignore(this.text);
+    if (this.text) {
+      if (this.worldLayer) {
+        this.worldLayer.add(this.text);
+      }
+      if (this.ignoreCamera) {
+        this.ignoreCamera.ignore(this.text);
+      }
     }
 
     this.hideTimer = this.scene.time.delayedCall(SPELL_MAGIC_WORDS_DURATION_MS, () => {

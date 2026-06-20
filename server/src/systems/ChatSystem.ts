@@ -1,3 +1,4 @@
+import { logger } from "../logger";
 import { ADMIN_GM_HP_MAX, ADMIN_GM_MP_MAX } from "../../../game-data/constants";
 import { CLASS_USES_MANA, type CharacterClassId } from "../../../game-data/classes";
 import { expRequiredForLevel } from "../../../game-data/progressFormulas";
@@ -11,6 +12,7 @@ import {
   isMapTileWalkable,
 } from "../../../shared/mapWalkability";
 import { getMap } from "../../../shared/maps";
+import { isWaterTile } from "../../../shared/navigation";
 import { addToServerInventory } from "../../../shared/serverInventory";
 import { getItemDefinition, type ItemId } from "../../../game-data/items/definitions";
 import { isKnownItemId } from "../../../game-data/items/registry";
@@ -18,6 +20,7 @@ import type { PlayerSession } from "../PlayerSession";
 import type { WorldContext } from "./WorldContext";
 
 const MAX_ADMIN_SPEED_MULTIPLIER = 3;
+const MAX_ADMIN_GOLD_GRANT = 2_000_000_000;
 
 export class ChatSystem {
   constructor(private readonly world: WorldContext) {}
@@ -59,7 +62,7 @@ export class ChatSystem {
       this.world.sendCombatLog(session, "Por favor usa el botón de aceptar en el cartel de invitación.");
       return true;
     }
-    if (command === "salirgrupo" || command === "salir") {
+    if (command === "salirgrupo") {
       // @ts-ignore
       this.world.handlePartyAction(session, { type: "party_action", action: "leave" });
       return true;
@@ -118,7 +121,41 @@ export class ChatSystem {
       return;
     }
 
+    if (command === "gold") {
+      this.handleAdminGold(session, args);
+      return;
+    }
+
     this.world.sendCombatLog(session, `Comando admin desconocido: /${command}`);
+  }
+
+  private handleAdminGold(session: PlayerSession, args: string[]) {
+    const amount = parseInt(args[0] ?? "", 10);
+    if (!Number.isFinite(amount) || amount <= 0 || amount > MAX_ADMIN_GOLD_GRANT) {
+      this.world.sendCombatLog(session, `Uso: /gold <1-${MAX_ADMIN_GOLD_GRANT}> [personaje]`);
+      return;
+    }
+
+    const targetName = args.slice(1).join(" ").trim() || session.name;
+    const target = [...this.world.getPlayers().values()].find(
+      (player) => player.joined && player.name.toLowerCase() === targetName.toLowerCase()
+    );
+    if (!target) {
+      this.world.sendCombatLog(session, `No se encontro al personaje "${targetName}".`);
+      return;
+    }
+
+    const grant = Math.floor(amount);
+    target.gold = Math.min(Number.MAX_SAFE_INTEGER, Math.max(0, Math.floor(target.gold)) + grant);
+    this.world.sendInventoryUpdated(target);
+    void this.world.persistSession(target).catch((error) => {
+      logger.error("chatsystem", "[admin_gold] persist failed:", error);
+    });
+
+    this.world.sendCombatLog(target, `Recibiste ${grant.toLocaleString("es-AR")} monedas de oro.`);
+    if (target.id !== session.id) {
+      this.world.sendCombatLog(session, `Entregaste ${grant.toLocaleString("es-AR")} monedas de oro a ${target.name}.`);
+    }
   }
 
   private handleAdminGive(session: PlayerSession, args: string[]) {
@@ -152,7 +189,7 @@ export class ChatSystem {
     this.world.syncInventoryEquippedFlags(target);
     this.world.sendInventoryUpdated(target);
     void this.world.persistSession(target).catch((error) => {
-      console.error("[admin_give] persist failed:", error);
+      logger.error("chatsystem", "[admin_give] persist failed:", error);
     });
 
     const item = getItemDefinition(itemId as ItemId);
@@ -208,6 +245,7 @@ export class ChatSystem {
     };
     this.world.send(session, update);
     this.world.broadcastToAoi(session.mapId, session.tileX, session.tileY, update, session.id);
+    this.world.notifyPartyOfHpChange(session.id);
     this.world.schedulePersistSessionDebounced(session);
     this.world.sendCombatLog(
       session,
@@ -224,7 +262,11 @@ export class ChatSystem {
       return;
     }
 
-    if (!isMapTileWalkable(session.mapId, x, y, this.world.getMapTileOverrides(session.mapId))) {
+    const overrides = this.world.getMapTileOverrides(session.mapId);
+    const isWalkable = isMapTileWalkable(session.mapId, x, y, overrides);
+    const isWater = isMapTileWalkable(session.mapId, x, y, overrides, true);
+
+    if (!isWalkable && !isWater) {
       this.world.sendCombatLog(session, `Tile (${x}, ${y}) no es caminable.`);
       return;
     }
@@ -274,7 +316,11 @@ export class ChatSystem {
       return;
     }
 
-    if (!isMapTileWalkable(mapId, x, y, this.world.getMapTileOverrides(mapId))) {
+    const overrides = this.world.getMapTileOverrides(mapId);
+    const isWalkable = isMapTileWalkable(mapId, x, y, overrides);
+    const isWater = isMapTileWalkable(mapId, x, y, overrides, true);
+
+    if (!isWalkable && !isWater) {
       this.world.sendCombatLog(session, `Tile (${x}, ${y}) no es caminable en ${mapId}. No fuiste teletransportado.`);
       return;
     }

@@ -8,7 +8,6 @@ import type { BankState } from "../../game/bankStorage";
 import { normalizeFactionId, type CharacterFactionId } from "../../../shared/faction";
 import type { NetPlayerState, NetWorldItemState } from "../../../shared/types";
 import type { WorldItemManager } from "./WorldItemManager";
-import { isMultiplayerEnabled } from "../../network/multiplayerConfig";
 
 export type GameSceneLocalPlayerSyncDeps = {
   getDeathPhase: () => DeathPhase;
@@ -137,11 +136,9 @@ export class GameSceneLocalPlayerSync {
         this.ensureServerReviveSynced();
         return;
       }
-      // En multijugador el overlay de muerte lo dispara player_died (después de inventory_updated).
-      if (!isMultiplayerEnabled()) {
-        this.deps.setPlayerHp(0);
-        this.deps.onLocalPlayerDeath();
-      }
+      // Fallback autoritativo: si player_died se pierde o llega tarde, hp 0 tambien mata localmente.
+      this.deps.setPlayerHp(0);
+      this.deps.onLocalPlayerDeath();
       this.deps.setPlayerProgressFromServer({
         hp: 0,
         hpMax: state.hpMax,

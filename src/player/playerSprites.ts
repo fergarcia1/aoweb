@@ -155,59 +155,59 @@ const PLAYER_SHEET_PATHS: Record<Exclude<Outfit, "base">, string> = {
 const PLAYER_BAJOS_TEXTURE_KEYS: Record<Exclude<Outfit, "base">, string> = {
   citizen: "citizenClothesBajos_std",
   cuero: armorBajosTextureKey(PLAYER_TEXTURE_KEYS.cuero),
-  placas: armorBajosTextureKey(PLAYER_TEXTURE_KEYS.placas),
+  placas: PLAYER_TEXTURE_KEYS.placas,
   placasRojas: armorBajosTextureKey(PLAYER_TEXTURE_KEYS.placasRojas),
-  placasAzules: armorBajosTextureKey(PLAYER_TEXTURE_KEYS.placasAzules),
-  tunicaNigro: armorBajosTextureKey(PLAYER_TEXTURE_KEYS.tunicaNigro),
-  tunicaAzul: armorBajosTextureKey(PLAYER_TEXTURE_KEYS.tunicaAzul),
-  tunicaCruz: armorBajosTextureKey(PLAYER_TEXTURE_KEYS.tunicaCruz),
+  placasAzules: PLAYER_TEXTURE_KEYS.placasAzules,
+  tunicaNigro: PLAYER_TEXTURE_KEYS.tunicaNigro,
+  tunicaAzul: PLAYER_TEXTURE_KEYS.tunicaAzul,
+  tunicaCruz: PLAYER_TEXTURE_KEYS.tunicaCruz,
   dragonNegro: armorBajosTextureKey(PLAYER_TEXTURE_KEYS.dragonNegro),
   dragonNegroBajos: PLAYER_TEXTURE_KEYS.dragonNegroBajos,
   dragonBlanco: armorBajosTextureKey(PLAYER_TEXTURE_KEYS.dragonBlanco),
   dragonBlancoBajos: PLAYER_TEXTURE_KEYS.dragonBlancoBajos,
   dragonRojo: armorBajosTextureKey(PLAYER_TEXTURE_KEYS.dragonRojo),
   dragonRojoBajos: PLAYER_TEXTURE_KEYS.dragonRojoBajos,
-  armaduraAse: armorBajosTextureKey(PLAYER_TEXTURE_KEYS.armaduraAse),
-  dragonBlancoFem: armorBajosTextureKey(PLAYER_TEXTURE_KEYS.dragonBlancoFem),
+  armaduraAse: PLAYER_TEXTURE_KEYS.armaduraAse,
+  dragonBlancoFem: PLAYER_TEXTURE_KEYS.dragonBlancoFem,
   placasDoradas: armorBajosTextureKey(PLAYER_TEXTURE_KEYS.placasDoradas),
-  atuendoBanquero: armorBajosTextureKey(PLAYER_TEXTURE_KEYS.atuendoBanquero),
+  atuendoBanquero: PLAYER_TEXTURE_KEYS.atuendoBanquero,
   ropaEleganteBajos: PLAYER_TEXTURE_KEYS.ropaEleganteBajos,
   tunicaClerigo: armorBajosTextureKey(PLAYER_TEXTURE_KEYS.tunicaClerigo),
   tunicaDruidaBajos: PLAYER_TEXTURE_KEYS.tunicaDruidaBajos,
   tunicaRmQuince: PLAYER_TEXTURE_KEYS.tunicaRmQuince,
   placasRojasBajos: PLAYER_TEXTURE_KEYS.placasRojasBajos,
-  caballeroDeMuerte: armorBajosTextureKey(PLAYER_TEXTURE_KEYS.caballeroDeMuerte),
+  caballeroDeMuerte: PLAYER_TEXTURE_KEYS.caballeroDeMuerteBajos,
   caballeroDeMuerteBajos: PLAYER_TEXTURE_KEYS.caballeroDeMuerteBajos,
-  caballeroOscuro: armorBajosTextureKey(PLAYER_TEXTURE_KEYS.caballeroOscuro),
+  caballeroOscuro: PLAYER_TEXTURE_KEYS.caballeroOscuro,
 };
 
 const PLAYER_BAJOS_SHEET_PATHS: Record<Exclude<Outfit, "base">, string> = {
   citizen: "/assets/ao/armors/citizenClothesBajos_std.png",
   cuero: inferBajosSpritesheetPath(PLAYER_SHEET_PATHS.cuero),
-  placas: inferBajosSpritesheetPath(PLAYER_SHEET_PATHS.placas),
+  placas: PLAYER_SHEET_PATHS.placas,
   placasRojas: inferBajosSpritesheetPath(PLAYER_SHEET_PATHS.placasRojas),
-  placasAzules: inferBajosSpritesheetPath(PLAYER_SHEET_PATHS.placasAzules),
-  tunicaNigro: inferBajosSpritesheetPath(PLAYER_SHEET_PATHS.tunicaNigro),
-  tunicaAzul: inferBajosSpritesheetPath(PLAYER_SHEET_PATHS.tunicaAzul),
-  tunicaCruz: inferBajosSpritesheetPath(PLAYER_SHEET_PATHS.tunicaCruz),
+  placasAzules: PLAYER_SHEET_PATHS.placasAzules,
+  tunicaNigro: PLAYER_SHEET_PATHS.tunicaNigro,
+  tunicaAzul: PLAYER_SHEET_PATHS.tunicaAzul,
+  tunicaCruz: PLAYER_SHEET_PATHS.tunicaCruz,
   dragonNegro: inferBajosSpritesheetPath(PLAYER_SHEET_PATHS.dragonNegro),
   dragonNegroBajos: PLAYER_SHEET_PATHS.dragonNegroBajos,
   dragonBlanco: inferBajosSpritesheetPath(PLAYER_SHEET_PATHS.dragonBlanco),
   dragonBlancoBajos: PLAYER_SHEET_PATHS.dragonBlancoBajos,
   dragonRojo: inferBajosSpritesheetPath(PLAYER_SHEET_PATHS.dragonRojo),
   dragonRojoBajos: PLAYER_SHEET_PATHS.dragonRojoBajos,
-  armaduraAse: inferBajosSpritesheetPath(PLAYER_SHEET_PATHS.armaduraAse),
-  dragonBlancoFem: inferBajosSpritesheetPath(PLAYER_SHEET_PATHS.dragonBlancoFem),
+  armaduraAse: PLAYER_SHEET_PATHS.armaduraAse,
+  dragonBlancoFem: PLAYER_SHEET_PATHS.dragonBlancoFem,
   placasDoradas: inferBajosSpritesheetPath(PLAYER_SHEET_PATHS.placasDoradas),
-  atuendoBanquero: inferBajosSpritesheetPath(PLAYER_SHEET_PATHS.atuendoBanquero),
+  atuendoBanquero: PLAYER_SHEET_PATHS.atuendoBanquero,
   ropaEleganteBajos: PLAYER_SHEET_PATHS.ropaEleganteBajos,
   tunicaClerigo: inferBajosSpritesheetPath(PLAYER_SHEET_PATHS.tunicaClerigo),
   tunicaDruidaBajos: PLAYER_SHEET_PATHS.tunicaDruidaBajos,
   tunicaRmQuince: PLAYER_SHEET_PATHS.tunicaRmQuince,
   placasRojasBajos: PLAYER_SHEET_PATHS.placasRojasBajos,
-  caballeroDeMuerte: inferBajosSpritesheetPath(PLAYER_SHEET_PATHS.caballeroDeMuerte),
+  caballeroDeMuerte: PLAYER_SHEET_PATHS.caballeroDeMuerteBajos,
   caballeroDeMuerteBajos: PLAYER_SHEET_PATHS.caballeroDeMuerteBajos,
-  caballeroOscuro: inferBajosSpritesheetPath(PLAYER_SHEET_PATHS.caballeroOscuro),
+  caballeroOscuro: PLAYER_SHEET_PATHS.caballeroOscuro,
 };
 
 /** Spritesheet de orcos para ropa de ciudadano (mismo ítem, visual distinto). */
@@ -473,12 +473,24 @@ function registerAnimationsForTexture(
 ): void {
   const facings: Facing[] = ["down", "up", "right", "left"];
   const texture = scene.textures.get(textureKey);
+  if (texture.key === "__MISSING") {
+    return;
+  }
   const layout = bodyAnimLayout(textureKey);
   const frameWidth = layout.frameWidth ?? FRAME_W;
   const frameHeight = layout.frameHeight ?? FRAME_H;
   const stepDurationMs = stepDurationMsForBodyTexture(textureKey);
 
   for (const facing of facings) {
+    const walkAnimKey = buildAnimationKey("walk", facing, animOutfitKey);
+    const idleAnimKey = buildAnimationKey("idle", facing, animOutfitKey);
+    if (scene.anims.exists(walkAnimKey)) {
+      scene.anims.remove(walkAnimKey);
+    }
+    if (scene.anims.exists(idleAnimKey)) {
+      scene.anims.remove(idleAnimKey);
+    }
+
     const walkColumnCount = layout.walkColumns[facing];
     const walkStartCol = layout.walkStartCol[facing];
     const walkFrames: Phaser.Types.Animations.AnimationFrame[] = [];
@@ -508,7 +520,7 @@ function registerAnimationsForTexture(
     );
 
     scene.anims.create({
-      key: buildAnimationKey("walk", facing, animOutfitKey),
+      key: walkAnimKey,
       frames: walkFrames,
       frameRate: computeWalkFrameRate(
         facing,
@@ -521,7 +533,7 @@ function registerAnimationsForTexture(
     });
 
     scene.anims.create({
-      key: buildAnimationKey("idle", facing, animOutfitKey),
+      key: idleAnimKey,
       frames: [{ key: textureKey, frame: idleFrameName }],
       frameRate: 1,
     });
@@ -711,7 +723,7 @@ export function buildEquippedArmorVisualFromItem(item: {
   return {
     clasesBajas: item.clasesBajas ?? false,
     spritesheetStdPath: item.spritesheetStdPath ?? defaults.spritesheetStdPath,
-    spritesheetBajosPath: item.spritesheetBajosPath ?? defaults.spritesheetBajosPath,
+    spritesheetBajosPath: item.spritesheetBajosPath,
     spritesheetPathsByRace: item.spritesheetPathsByRace,
   };
 }

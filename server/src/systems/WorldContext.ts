@@ -15,7 +15,8 @@ export interface WorldContext {
 
   sendCombatLog(session: PlayerSession, text: string): void;
   sendPlayerState(session: PlayerSession, options?: { includeAttributeBuffs?: boolean }): void;
-    sendInventoryUpdated(session: PlayerSession): void;
+  broadcastPlayerState(session: PlayerSession, options?: { includeAttributeBuffs?: boolean }): void;
+  sendInventoryUpdated(session: PlayerSession): void;
   persistSession(session: PlayerSession): Promise<void>;
   schedulePersistSessionDebounced(session: PlayerSession): void;
   send(session: PlayerSession, message: ServerMessage): void;
@@ -75,4 +76,9 @@ export interface WorldContext {
   getDynamicMapObjs(mapId: string): { tileX: number; tileY: number; objIndex: number; isOpen: boolean }[] | undefined;
   setDynamicMapObjs(mapId: string, objs: { tileX: number; tileY: number; objIndex: number; isOpen: boolean }[]): void;
   setDoorTileOverride(mapId: string, tileX: number, tileY: number, isOpen: boolean): void;
+  getAuctionRepo(): import("../persistence/repository").AuctionRepository;
+  addToBankSlots(session: PlayerSession, itemId: string, amount: number): { added: number; remaining: number };
+  removeFromBankSlot(session: PlayerSession, slotIndex: number, amount: number): { removed: number; itemId: string | null };
+  areInSameParty(playerIdA: string, playerIdB: string): boolean;
+  notifyPartyOfHpChange(playerId: string): void;
 }

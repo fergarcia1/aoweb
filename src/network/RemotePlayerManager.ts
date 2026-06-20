@@ -1,5 +1,6 @@
 import Phaser from "phaser";
 import { STEP_DURATION_MS, TILE_SIZE } from "../config";
+import { ensureItemAssetsLoaded } from "../scenes/gameSceneModules/gameSceneAssetQueue";
 import { GHOST_PLAYER_ALPHA } from "../game/deathConfig";
 import {
   GHOST_RACE_ID,
@@ -51,6 +52,7 @@ import {
   type MeditationVisualConfig,
 } from "../systems/meditationVisuals";
 import { buildHitboxFrameRect, containsWorldPointInHitArea, type BodyHitboxConfig } from "../game/hitboxUtils";
+import { SpellMagicWordsOverlay } from "../ui/spellMagicWordsOverlay";
 import {
   PLAYER_HITBOX_WIDTH_PX,
   PLAYER_HITBOX_PROFILE_WIDTH_PX,
@@ -129,6 +131,16 @@ export type RemoteEntry = {
   invisibleUntilMs: number;
   isMeditating: boolean;
   isNavigating: boolean;
+  lastSyncBodyX?: number;
+  lastSyncBodyY?: number;
+  lastSyncFacing?: Facing;
+  lastSyncIsMoving?: boolean;
+  lastSyncIsGhost?: boolean;
+  lastSyncIsNavigating?: boolean;
+  lastSyncHp?: number;
+  lastSyncHpMax?: number;
+  lastSyncParty?: boolean;
+  spellMagicWordsOverlay?: SpellMagicWordsOverlay;
 };
 
 export class RemotePlayerManager {
@@ -155,6 +167,25 @@ export class RemotePlayerManager {
     for (const player of visible) {
       this.upsert(player);
     }
+  }
+
+  showSpellMagicWords(playerId: string, words: string): void {
+    const entry = this.entries.get(playerId);
+    if (!entry || entry.isGhost) {
+      return;
+    }
+    if (!entry.spellMagicWordsOverlay) {
+      entry.spellMagicWordsOverlay = new SpellMagicWordsOverlay(
+        this.scene,
+        () => ({
+          x: entry.body.x,
+          y: entry.body.y,
+          depth: this.depthFromFeetY(entry.body.y) + 3,
+        }),
+        this.uiCamera
+      );
+    }
+    entry.spellMagicWordsOverlay.show(words);
   }
 
   clear() {
@@ -470,7 +501,7 @@ export class RemotePlayerManager {
       meditationConfig,
       label,
       playerName: state.name,
-      classId: state.classId,
+      classId: state.classId ?? "paladin",
       factionId: state.factionId,
       level: state.level,
       role: state.role,
@@ -495,6 +526,7 @@ export class RemotePlayerManager {
     this.applyBodyFacing(entry);
     this.playRemoteBodyAnim(entry, "idle");
     this.syncRemoteVisuals(entry);
+    this.triggerOnDemandLoading(entry);
 
     return entry;
   }
@@ -531,6 +563,7 @@ export class RemotePlayerManager {
     }
 
     entry.equipment = netEquipmentToLocal(state.equipment);
+    this.triggerOnDemandLoading(entry);
 
     if (state.hp > 0 && !entry.isNavigating) {
       if (entry.isGhost) {
@@ -648,7 +681,34 @@ export class RemotePlayerManager {
       : getRaceFaceLayout(entry.raceId, entry.genderId);
   }
 
-  private syncRemoteVisuals(entry: RemoteEntry) {
+  private syncRemoteVisuals(entry: RemoteEntry, force = false) {
+    const isParty = this.partyMemberIds.has(entry.id);
+
+    if (
+      !force &&
+      entry.lastSyncBodyX === entry.body.x &&
+      entry.lastSyncBodyY === entry.body.y &&
+      entry.lastSyncFacing === entry.facing &&
+      entry.lastSyncIsMoving === entry.isMoving &&
+      entry.lastSyncIsGhost === entry.isGhost &&
+      entry.lastSyncIsNavigating === entry.isNavigating &&
+      entry.lastSyncHp === entry.hp &&
+      entry.lastSyncHpMax === entry.hpMax &&
+      entry.lastSyncParty === isParty
+    ) {
+      return;
+    }
+
+    entry.lastSyncBodyX = entry.body.x;
+    entry.lastSyncBodyY = entry.body.y;
+    entry.lastSyncFacing = entry.facing;
+    entry.lastSyncIsMoving = entry.isMoving;
+    entry.lastSyncIsGhost = entry.isGhost;
+    entry.lastSyncIsNavigating = entry.isNavigating;
+    entry.lastSyncHp = entry.hp;
+    entry.lastSyncHpMax = entry.hpMax;
+    entry.lastSyncParty = isParty;
+
     const depth = this.depthFromFeetY(entry.body.y);
     entry.body.setDepth(depth);
 
@@ -683,6 +743,7 @@ export class RemotePlayerManager {
     entry.meditationSprite.setDepth(depth + 0.06);
     entry.label.setPosition(entry.body.x, entry.body.y + 2);
     entry.label.setDepth(depth + 2);
+    entry.spellMagicWordsOverlay?.syncPosition();
     this.syncPartyHpBar(entry, depth);
     this.syncRemoteGear(entry, walkSwayX, walkSwayY);
   }
@@ -860,8 +921,61 @@ export class RemotePlayerManager {
     entry.body.play(playOpts(key), true);
   }
 
-  private remove(id: string) {
-    const entry = this.entries.get(id);
+  private triggerOnDemandLoading(entry: RemoteEntry) {
+    const itemsToLoad: ItemId[] = [];
+    if (entry.equipment.weapon) itemsToLoad.push(entry.equipment.weapon);
+    if (entry.equipment.shield) itemsToLoad.push(entry.equipment.shield);
+    if (entry.equipment.helmet) itemsToLoad.push(entry.equipment.helmet);
+    if (entry.equipment.armor) itemsToLoad.push(entry.equipment.armor);
+
+    for (const itemId of itemsToLoad) {
+      ensureItemAssetsLoaded(this.scene, itemId, {
+        raceId: entry.raceId,
+        onComplete: () => {
+          const activeEntry = this.entries.get(entry.id);
+          if (activeEntry) {
+            this.refreshRemoteTexturesAndGear(activeEntry);
+          }
+        }
+      });
+    }
+  }
+
+  private refreshRemoteTexturesAndGear(entry: RemoteEntry) {
+    if (this.isRemoteDead(entry)) {
+      return;
+    }
+
+    const mockStateEquipment = {
+      weaponId: entry.equipment.weapon,
+      shieldId: entry.equipment.shield,
+      helmetId: entry.equipment.helmet,
+      armorId: entry.equipment.armor,
+      equippedOutfit: entry.equippedOutfit,
+    };
+    const nextOutfit = remoteOutfitFromState({ equipment: mockStateEquipment });
+    entry.armorVisual = remoteArmorVisual(
+      entry.equipment,
+      nextOutfit,
+      entry.raceId
+    );
+    const nextBodyKey = textureKeyForPlayer(
+      nextOutfit,
+      raceBodyTextureKey(entry.raceId, entry.genderId),
+      entry.armorVisual,
+      entry.raceId
+    );
+    if (entry.body.texture.key !== nextBodyKey) {
+      entry.body.setTexture(nextBodyKey);
+      entry.body.anims.stop();
+    }
+
+    this.playRemoteBodyAnim(entry, entry.isMoving ? "walk" : "idle");
+    this.syncRemoteVisuals(entry, true);
+  }
+
+  private remove(playerId: string) {
+    const entry = this.entries.get(playerId);
     if (!entry) return;
     this.scene.tweens.killTweensOf(entry.body);
     entry.body.destroy();
@@ -872,6 +986,7 @@ export class RemotePlayerManager {
     entry.meditationSprite.destroy();
     entry.partyHpBar.destroy();
     entry.label.destroy();
-    this.entries.delete(id);
+    entry.spellMagicWordsOverlay?.clear();
+    this.entries.delete(playerId);
   }
 }

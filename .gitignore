@@ -21,10 +21,15 @@ Thumbs.db
 # Local env & secrets
 .env
 .env.*
+!.env.example
+!server/.env.example
 
 # Local clones / scratch (no versionar)
 tmp/
 scratch/
+server/restore*.js
+server/restore*.cjs
+scripts/replace_logger.*
 
 # Heavy reference / extracted game assets (clone locally)
 tools/external/

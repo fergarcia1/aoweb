@@ -215,6 +215,11 @@ export class NpcManager {
       this.uiCamera.ignore([body, face, label]);
     }
 
+    // Asegurar que estén en el worldLayer si el controlador lo soporta
+    if ((this.scene as any).mapController?.addToWorld) {
+      (this.scene as any).mapController.addToWorld([body, face, label]);
+    }
+
     this.entries.set(definition.id, { definition, body, face, label });
   }
 
