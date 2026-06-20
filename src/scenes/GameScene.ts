@@ -2946,7 +2946,7 @@ export class GameScene extends Phaser.Scene {
       justPressedDropSlot: Boolean(
         this.dropSelectedSlotKey && Phaser.Input.Keyboard.JustDown(this.dropSelectedSlotKey)
       ),
-      justPressedPickup: Phaser.Input.Keyboard.JustDown(this.pickupKey),
+      justPressedUseItem: Phaser.Input.Keyboard.JustDown(this.pickupKey),
       isMoving: this.isMoving,
       getPressedDirection: () => this.getPressedDirection(),
       isPlayerImmobilized: () => this.isPlayerImmobilized(),
@@ -2976,7 +2976,7 @@ export class GameScene extends Phaser.Scene {
       onAttack: () => this.combatController.tryAttackDummy(),
       onEquipSelectedSlot: () => this.tryToggleEquipmentFromSelectedSlot(),
       onDropSelectedSlot: () => this.tryDropSelectedItem(),
-      onPickup: () => this.inventoryController.tryPickupAtPlayerTile(),
+      onUseSelectedItem: () => this.inventoryController.tryUseSelectedItem(),
       updateDesiredFacing: () => this.updateDesiredFacing(),
       stopMeditation: (reason) => this.stopMeditation(reason),
       onImmobilizedMoveAttempt: () =>

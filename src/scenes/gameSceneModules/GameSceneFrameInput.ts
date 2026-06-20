@@ -23,7 +23,7 @@ export type GameSceneFrameInputDeps = {
   isAttackKeyDown: boolean;
   justPressedEquipSlot: boolean;
   justPressedDropSlot: boolean;
-  justPressedPickup: boolean;
+  justPressedUseItem: boolean;
   isMoving: boolean;
   getPressedDirection: () => MoveDirection | null;
   isPlayerImmobilized: () => boolean;
@@ -46,7 +46,7 @@ export type GameSceneFrameInputDeps = {
   onAttack: () => void;
   onEquipSelectedSlot: () => void;
   onDropSelectedSlot: () => void;
-  onPickup: () => void;
+  onUseSelectedItem: () => void;
   updateDesiredFacing: () => void;
   stopMeditation: (reason: string) => void;
   onImmobilizedMoveAttempt: () => void;
@@ -169,9 +169,9 @@ export function processGameSceneFrameInput(deps: GameSceneFrameInputDeps): boole
 
   deps.updateDesiredFacing();
 
-  if (deps.justPressedPickup) {
+  if (deps.justPressedUseItem) {
     deps.stopMeditation("Dejaste de meditar.");
-    deps.onPickup();
+    deps.onUseSelectedItem();
   }
 
   if (deps.isMoving) {

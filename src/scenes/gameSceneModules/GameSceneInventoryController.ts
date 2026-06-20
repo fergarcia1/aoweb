@@ -129,6 +129,32 @@ export class GameSceneInventoryController {
     );
   }
 
+  tryUseSelectedItem(): void {
+    const slotIndex = this.deps.getGameUi().getSelectedInventorySlot();
+    if (slotIndex < 0 || slotIndex >= INVENTORY_SLOT_COUNT) {
+      this.deps.addChatLine("Seleccioná un casillero del inventario primero.");
+      return;
+    }
+
+    const stack = this.deps.getInventory()[slotIndex];
+    if (!stack) {
+      this.deps.addChatLine("Ese casillero está vacío.");
+      return;
+    }
+
+    const item = getItemDefinition(stack.itemId);
+    if (item.type === "consumable") {
+      this.deps.useConsumableFromSlot(slotIndex);
+      return;
+    }
+    if (item.type === "misc" && item.usableFromInventory) {
+      this.deps.useMiscItemFromSlot(slotIndex);
+      return;
+    }
+
+    this.deps.addChatLine(`${item.name} no se puede usar.`);
+  }
+
   tryDropGold(): void {
     const gold = this.deps.getPlayerProgress().gold;
     if (gold <= 0) {
