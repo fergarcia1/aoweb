@@ -70,6 +70,7 @@ export type NetworkClientOptions = {
 const RECONNECT_DELAYS_MS = [1_000, 2_000, 4_000, 8_000, 15_000];
 const MAX_RECONNECT_ATTEMPTS = 6;
 const NON_RECONNECT_CLOSE_CODES = new Set([4000, 4001, 4002, 4003, 4004]);
+const HEARTBEAT_INTERVAL_MS = 2_000;
 
 export class NetworkClient {
   private socket: WebSocket | null = null;
@@ -78,6 +79,7 @@ export class NetworkClient {
   private intentionalClose = false;
   private reconnectAttempt = 0;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
   private readonly autoReconnect: boolean;
 
   constructor(
@@ -105,6 +107,7 @@ export class NetworkClient {
         return;
       }
       this.reconnectAttempt = 0;
+      this.startHeartbeat();
       this.handlers.onConnected?.();
     });
 
@@ -112,6 +115,7 @@ export class NetworkClient {
       if (this.socket !== socket) {
         return;
       }
+      this.stopHeartbeat();
       this.socket = null;
       this.playerId = null;
       const willReconnect =
@@ -170,9 +174,25 @@ export class NetworkClient {
     }
   }
 
+  private startHeartbeat() {
+    this.stopHeartbeat();
+    this.sendPing();
+    this.heartbeatTimer = setInterval(() => {
+      this.sendPing();
+    }, HEARTBEAT_INTERVAL_MS);
+  }
+
+  private stopHeartbeat() {
+    if (this.heartbeatTimer) {
+      clearInterval(this.heartbeatTimer);
+      this.heartbeatTimer = null;
+    }
+  }
+
   disconnect() {
     this.intentionalClose = true;
     this.clearReconnectTimer();
+    this.stopHeartbeat();
     const socket = this.socket;
     this.socket = null;
     this.playerId = null;

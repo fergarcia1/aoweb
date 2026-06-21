@@ -10,7 +10,17 @@ export function getMultiplayerWsUrl(): string {
 }
 
 export function getMultiplayerHttpBaseUrl(): string {
-  return getMultiplayerWsUrl().replace(/^ws(s?):\/\//, "http$1://").split("?")[0];
+  const wsUrl = getMultiplayerWsUrl();
+  try {
+    const url = new URL(wsUrl);
+    url.protocol = url.protocol === "wss:" ? "https:" : "http:";
+    url.pathname = "";
+    url.search = "";
+    url.hash = "";
+    return url.toString().replace(/\/$/, "");
+  } catch {
+    return wsUrl.replace(/^ws(s?):\/\//, "http$1://").split(/[?#]/)[0].replace(/\/$/, "");
+  }
 }
 
 /** Siempre MMO salvo tests/build con VITE_MULTIPLAYER=0 explicito. */
