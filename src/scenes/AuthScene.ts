@@ -6,13 +6,19 @@ import {
   login,
   register,
 } from "../network/authApi";
-import { playMenuMusic, preloadMenuMusic } from "../audio/menuMusic";
+import {
+  hasMenuMusicStarted,
+  playMenuMusic,
+  playMenuMusicFromUserGesture,
+  preloadMenuMusic,
+} from "../audio/menuMusic";
 
 const AUTH_REQUIRED = import.meta.env.VITE_AUTH_REQUIRED === "true";
 const HERO_BACKGROUND_URL = "/assets/ui/aoweb-dragon-war-loading.png";
 
 export class AuthScene extends Phaser.Scene {
   private overlay?: HTMLDivElement;
+  private unlockMenuMusic?: (event: Event) => void;
   private mode: "login" | "register" = "login";
 
   constructor() {
@@ -166,7 +172,7 @@ export class AuthScene extends Phaser.Scene {
     document.body.appendChild(overlay);
     this.overlay = overlay;
 
-    overlay.addEventListener("pointerdown", () => playMenuMusic(this), { once: true });
+    this.bindMenuMusicUnlock();
     overlay.querySelector("#auth-switch")?.addEventListener("click", () => {
       this.mode = this.mode === "login" ? "register" : "login";
       this.renderOverlay();
@@ -223,9 +229,32 @@ export class AuthScene extends Phaser.Scene {
   private destroyOverlay(): void {
     this.overlay?.remove();
     this.overlay = undefined;
+    this.unbindMenuMusicUnlock();
   }
 
   shutdown(): void {
     this.destroyOverlay();
+  }
+
+  private bindMenuMusicUnlock(): void {
+    this.unbindMenuMusicUnlock();
+    const unlock = () => {
+      playMenuMusicFromUserGesture(this);
+      if (hasMenuMusicStarted()) {
+        this.unbindMenuMusicUnlock();
+      }
+    };
+    this.unlockMenuMusic = unlock;
+    document.addEventListener("pointerdown", unlock, true);
+    document.addEventListener("keydown", unlock, true);
+  }
+
+  private unbindMenuMusicUnlock(): void {
+    if (!this.unlockMenuMusic) {
+      return;
+    }
+    document.removeEventListener("pointerdown", this.unlockMenuMusic, true);
+    document.removeEventListener("keydown", this.unlockMenuMusic, true);
+    this.unlockMenuMusic = undefined;
   }
 }

@@ -1,11 +1,11 @@
 import Phaser from "phaser";
+import { loadMasterVolume } from "../config/audioSettings";
 
 const MENU_MUSIC_KEY = "aoweb_menu_music_crown";
 const MENU_MUSIC_PATH = "/assets/audio/music/the-crown-of-the-seven-seas.mp3";
 const MENU_MUSIC_VOLUME = 0.42;
 
-let menuMusic: Phaser.Sound.BaseSound | null = null;
-let pendingUnlock = false;
+let menuMusic: HTMLAudioElement | null = null;
 
 export function preloadMenuMusic(scene: Phaser.Scene): void {
   if (scene.cache.audio.exists(MENU_MUSIC_KEY)) {
@@ -14,51 +14,40 @@ export function preloadMenuMusic(scene: Phaser.Scene): void {
   scene.load.audio(MENU_MUSIC_KEY, MENU_MUSIC_PATH);
 }
 
-export function playMenuMusic(scene: Phaser.Scene): void {
-  if (!scene.cache.audio.exists(MENU_MUSIC_KEY)) {
-    return;
+function getMenuMusic(): HTMLAudioElement {
+  if (!menuMusic) {
+    menuMusic = new Audio(MENU_MUSIC_PATH);
+    menuMusic.loop = true;
+    menuMusic.preload = "auto";
   }
-  if (!menuMusic || !scene.sound.get(MENU_MUSIC_KEY)) {
-    menuMusic = scene.sound.add(MENU_MUSIC_KEY, {
-      loop: true,
-      volume: MENU_MUSIC_VOLUME,
-    });
-  }
-  if (menuMusic.isPlaying) {
-    return;
-  }
-
-  const play = () => {
-    pendingUnlock = false;
-    if (menuMusic && !menuMusic.isPlaying) {
-      menuMusic.play();
-    }
-  };
-
-  if (scene.sound.locked) {
-    (scene.sound as Phaser.Sound.BaseSoundManager & { unlock?: () => void }).unlock?.();
-  }
-
-  if (scene.sound.locked) {
-    if (!pendingUnlock) {
-      pendingUnlock = true;
-      scene.sound.once(Phaser.Sound.Events.UNLOCKED, play);
-    }
-    return;
-  }
-
-  play();
+  menuMusic.volume = Math.min(1, Math.max(0, loadMasterVolume() * MENU_MUSIC_VOLUME));
+  return menuMusic;
 }
 
-export function stopMenuMusic(scene?: Phaser.Scene): void {
+export function playMenuMusic(_scene: Phaser.Scene): void {
+  const audio = getMenuMusic();
+  if (!audio.paused) {
+    return;
+  }
+
+  void audio.play().catch(() => {
+    // Browser autoplay policy: a real click/key gesture will retry from AuthScene.
+  });
+}
+
+export function playMenuMusicFromUserGesture(scene: Phaser.Scene): void {
+  playMenuMusic(scene);
+}
+
+export function hasMenuMusicStarted(): boolean {
+  return Boolean(menuMusic && !menuMusic.paused);
+}
+
+export function stopMenuMusic(_scene?: Phaser.Scene): void {
   if (!menuMusic) {
     return;
   }
-  if (menuMusic.isPlaying) {
-    menuMusic.stop();
-  }
-  if (scene?.sound.get(MENU_MUSIC_KEY)) {
-    scene.sound.remove(menuMusic);
-    menuMusic = null;
-  }
+  menuMusic.pause();
+  menuMusic.currentTime = 0;
+  menuMusic = null;
 }
