@@ -1,4 +1,5 @@
 import { MAP_MAPA1 } from "./maps/mapa1";
+import { MAP_MAPA2 } from "./maps/mapa2";
 import { MAP_MAPA37 } from "./maps/mapa37";
 import { MAP_MAPA44 } from "./maps/mapa44";
 import { EDGE_TRANSITION_TARGET_INSET, START_MAP_ID } from "./mapConstants";
@@ -8,6 +9,7 @@ export { EDGE_TRANSITION_TARGET_INSET, EDGE_TRANSITION_TRIGGER_DISTANCE, START_M
 
 const MAPS: Record<string, GameMap> = {
   [MAP_MAPA1.id]: MAP_MAPA1,
+  [MAP_MAPA2.id]: MAP_MAPA2,
   [MAP_MAPA37.id]: MAP_MAPA37,
   [MAP_MAPA44.id]: MAP_MAPA44,
 };
