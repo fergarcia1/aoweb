@@ -1,4 +1,4 @@
-import { getMultiplayerWsUrl } from "./multiplayerConfig";
+import { getMultiplayerHttpBaseUrl, getMultiplayerWsUrl } from "./multiplayerConfig";
 
 const TOKEN_KEY = "aoweb_auth_token";
 const ACCOUNT_KEY = "aoweb_auth_account";
@@ -19,13 +19,9 @@ type AuthServerResponse = {
   error?: string;
 };
 
-function getHttpBaseUrl(): string {
-  return getMultiplayerWsUrl().replace(/^ws(s?):\/\//, "http$1://").split("?")[0];
-}
-
 async function postAuth(path: string, body: unknown): Promise<AuthResult> {
   try {
-    const response = await fetch(`${getHttpBaseUrl()}${path}`, {
+    const response = await fetch(`${getMultiplayerHttpBaseUrl()}${path}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),

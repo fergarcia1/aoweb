@@ -37,6 +37,7 @@ import {
   type EquipmentSlot,
   type ItemId,
 } from "../../game-data/items/definitions";
+import { fetchServerStatus } from "../network/serverStatus";
 import { queueItemAssetsById } from "./gameSceneModules/gameSceneAssetQueue";
 import { GAME_FONT, GAME_TEXT_RESOLUTION } from "../ui/fonts";
 import { playMenuMusic, preloadMenuMusic } from "../audio/menuMusic";
@@ -76,6 +77,7 @@ type CharacterSelectSceneData = {
 export class CharacterSelectScene extends Phaser.Scene {
   private slots: CharacterSlot[] = [];
   private statusText!: Phaser.GameObjects.Text;
+  private serverStatusText!: Phaser.GameObjects.Text;
   private returnMode: "resume" | "enter" = "enter";
 
   constructor() {
@@ -134,6 +136,15 @@ export class CharacterSelectScene extends Phaser.Scene {
       })
       .setOrigin(0.5, 0);
 
+    this.serverStatusText = this.add
+      .text(width / 2, 116, "Servidor: comprobando...", {
+        fontFamily: "Segoe UI, Tahoma, sans-serif",
+        fontSize: "11px",
+        color: MENU_COLORS.muted,
+      })
+      .setOrigin(0.5, 0);
+    void this.refreshServerStatus();
+
     const baseGridWidth = SLOT_COLS * SLOT_WIDTH + (SLOT_COLS - 1) * SLOT_GAP_X;
     const gridScale = Math.min(1, (width - 52) / baseGridWidth);
     const slotW = Math.floor(SLOT_WIDTH * gridScale);
@@ -143,7 +154,7 @@ export class CharacterSelectScene extends Phaser.Scene {
     const gridWidth = SLOT_COLS * slotW + (SLOT_COLS - 1) * gapX;
     const gridHeight = SLOT_ROWS * slotH + (SLOT_ROWS - 1) * gapY;
     const gridStartX = (width - gridWidth) / 2 + slotW / 2;
-    const gridTop = Math.max(132, Math.floor((height - gridHeight) / 2) + 8);
+    const gridTop = Math.max(144, Math.floor((height - gridHeight) / 2) + 8);
     const gridStartY = gridTop + slotH / 2;
 
     for (let index = 0; index < CHARACTER_SLOT_COUNT; index += 1) {
@@ -456,6 +467,18 @@ export class CharacterSelectScene extends Phaser.Scene {
 
   private setStatus(message: string) {
     this.statusText.setText(message);
+  }
+
+  private async refreshServerStatus(): Promise<void> {
+    this.serverStatusText.setText("Servidor: comprobando...");
+    this.serverStatusText.setColor(MENU_COLORS.muted);
+
+    const result = await fetchServerStatus();
+    if (!this.serverStatusText.active) {
+      return;
+    }
+    this.serverStatusText.setText(result.text);
+    this.serverStatusText.setColor(result.online ? "#9ee78b" : MENU_COLORS.danger);
   }
 
   private selectCharacter(slotIndex: number, character: SavedCharacter) {

@@ -12,6 +12,7 @@ import {
   playMenuMusicFromUserGesture,
   preloadMenuMusic,
 } from "../audio/menuMusic";
+import { fetchServerStatus } from "../network/serverStatus";
 
 const AUTH_REQUIRED = import.meta.env.VITE_AUTH_REQUIRED === "true";
 const HERO_BACKGROUND_URL = "/assets/ui/aoweb-dragon-war-loading.png";
@@ -92,6 +93,19 @@ export class AuthScene extends Phaser.Scene {
           text-align: center;
           font-size: 13px;
         }
+        #aoweb-auth .server-status {
+          min-height: 17px;
+          margin: -6px 0 14px;
+          color: #d8b887;
+          text-align: center;
+          font-size: 12px;
+        }
+        #aoweb-auth .server-status.online {
+          color: #9ee78b;
+        }
+        #aoweb-auth .server-status.offline {
+          color: #ff8b8b;
+        }
         #aoweb-auth label {
           display: block;
           margin: 10px 0 5px;
@@ -153,6 +167,7 @@ export class AuthScene extends Phaser.Scene {
       <div class="panel">
         <h1>AOWEB</h1>
         <p>${this.mode === "login" ? "Ingresar a tu cuenta" : "Crear una cuenta nueva"}</p>
+        <div class="server-status" id="auth-server-status">Servidor: comprobando...</div>
         <form id="auth-form">
           <label>Usuario</label>
           <input id="auth-user" autocomplete="username" maxlength="20" />
@@ -173,6 +188,7 @@ export class AuthScene extends Phaser.Scene {
     this.overlay = overlay;
 
     this.bindMenuMusicUnlock();
+    void this.refreshServerStatus();
     overlay.querySelector("#auth-switch")?.addEventListener("click", () => {
       this.mode = this.mode === "login" ? "register" : "login";
       this.renderOverlay();
@@ -199,6 +215,22 @@ export class AuthScene extends Phaser.Scene {
       passEl.addEventListener("keyup", stopPropagation);
       passEl.addEventListener("keypress", stopPropagation);
     }
+  }
+
+  private async refreshServerStatus(): Promise<void> {
+    const statusEl = this.overlay?.querySelector<HTMLDivElement>("#auth-server-status");
+    if (!statusEl) {
+      return;
+    }
+    statusEl.textContent = "Servidor: comprobando...";
+    statusEl.className = "server-status";
+
+    const result = await fetchServerStatus();
+    if (!statusEl.isConnected) {
+      return;
+    }
+    statusEl.textContent = result.text;
+    statusEl.className = `server-status ${result.online ? "online" : "offline"}`;
   }
 
   private async submit(): Promise<void> {

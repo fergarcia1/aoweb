@@ -34,9 +34,18 @@ function getRequestPath(req: IncomingMessage): string {
   return new URL(req.url ?? "/", "http://localhost").pathname;
 }
 
+function corsHeaders(): Record<string, string> {
+  return {
+    "Access-Control-Allow-Origin": process.env.CORS_ORIGIN ?? "*",
+    "Access-Control-Allow-Headers": "Content-Type, Authorization",
+    "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+  };
+}
+
 function sendJson(res: ServerResponse, status: number, body: unknown): void {
   const payload = JSON.stringify(body);
   res.writeHead(status, {
+    ...corsHeaders(),
     "Content-Type": "application/json; charset=utf-8",
     "Content-Length": Buffer.byteLength(payload),
   });
@@ -45,6 +54,7 @@ function sendJson(res: ServerResponse, status: number, body: unknown): void {
 
 function sendText(res: ServerResponse, status: number, text: string): void {
   res.writeHead(status, {
+    ...corsHeaders(),
     "Content-Type": "text/plain; charset=utf-8",
     "Content-Length": Buffer.byteLength(text),
   });
@@ -89,6 +99,12 @@ function healthPayload() {
 
 const httpServer = createServer(async (req, res) => {
   const path = getRequestPath(req);
+
+  if (req.method === "OPTIONS") {
+    res.writeHead(204, corsHeaders());
+    res.end();
+    return;
+  }
 
   if (req.method === "GET" && (path === "/health" || path === "/ready")) {
     sendJson(res, 200, healthPayload());
