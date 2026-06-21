@@ -5,6 +5,7 @@ import { dirname, resolve } from "node:path";
 const serverRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const repoRoot = resolve(serverRoot, "..");
 const renderFreeMapsPath = resolve(repoRoot, "shared/renderFreeMaps.ts");
+const useRenderFreeMaps = process.env.AOWEB_FREE_MAPS === "1";
 
 const sharedMapsAliasPlugin = {
   name: "shared-maps-alias",
@@ -38,5 +39,5 @@ await build({
   format: "esm",
   target: "node22",
   packages: "external",
-  plugins: [sharedMapsAliasPlugin],
+  plugins: useRenderFreeMaps ? [sharedMapsAliasPlugin] : [],
 });

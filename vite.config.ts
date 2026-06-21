@@ -5,6 +5,10 @@ import { fileURLToPath } from "node:url";
 const repoRoot = dirname(fileURLToPath(import.meta.url));
 const renderFreeMapsPath = resolve(repoRoot, "shared/renderFreeMaps.ts");
 
+function shouldUseRenderFreeMaps(): boolean {
+  return process.env.AOWEB_FREE_MAPS === "1" || process.env.VITE_FREE_MAPS === "1";
+}
+
 function isSharedMapsFacade(source: string, importer?: string): boolean {
   const normalizedSource = source.replaceAll("\\", "/");
   const normalizedImporter = importer?.replaceAll("\\", "/") ?? "";
@@ -40,7 +44,7 @@ function renderFreeMapsAliasPlugin(): Plugin {
 }
 
 export default defineConfig({
-  plugins: [renderFreeMapsAliasPlugin()],
+  plugins: shouldUseRenderFreeMaps() ? [renderFreeMapsAliasPlugin()] : [],
   test: {
     include: ["tests/**/*.test.ts"],
   },

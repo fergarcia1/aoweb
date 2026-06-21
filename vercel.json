@@ -1,5 +1,5 @@
 {
-  "buildCommand": "node --max-old-space-size=4096 ./node_modules/vite/bin/vite.js build",
+  "buildCommand": "AOWEB_FREE_MAPS=1 node --max-old-space-size=4096 ./node_modules/vite/bin/vite.js build",
   "outputDirectory": "dist",
   "installCommand": "npm install",
   "framework": "vite"
