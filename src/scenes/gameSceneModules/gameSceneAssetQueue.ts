@@ -110,6 +110,7 @@ export function queueItemDefinitionAssets(
   if (options?.includeAllArmorSheets) {
     if (item.spritesheetStdPath) armorPaths.add(item.spritesheetStdPath);
     if (item.spritesheetBajosPath) armorPaths.add(item.spritesheetBajosPath);
+    if (item.spritesheetFemalePath) armorPaths.add(item.spritesheetFemalePath);
     if (item.spritesheetPathsByRace) {
       for (const path of Object.values(item.spritesheetPathsByRace)) {
         if (path) armorPaths.add(path);
@@ -118,6 +119,7 @@ export function queueItemDefinitionAssets(
   } else {
     if (item.spritesheetStdPath) armorPaths.add(item.spritesheetStdPath);
     if (item.spritesheetBajosPath) armorPaths.add(item.spritesheetBajosPath);
+    if (item.spritesheetFemalePath) armorPaths.add(item.spritesheetFemalePath);
     const racePath =
       options?.raceId && item.spritesheetPathsByRace
         ? item.spritesheetPathsByRace[options.raceId]
@@ -181,6 +183,7 @@ export function queueEquippableVisualAssets(scene: Phaser.Scene): number {
     const armorPaths = new Set<string>();
     if (item.spritesheetStdPath) armorPaths.add(item.spritesheetStdPath);
     if (item.spritesheetBajosPath) armorPaths.add(item.spritesheetBajosPath);
+    if (item.spritesheetFemalePath) armorPaths.add(item.spritesheetFemalePath);
     if (item.spritesheetPathsByRace) {
       for (const path of Object.values(item.spritesheetPathsByRace)) {
         if (path) armorPaths.add(path);

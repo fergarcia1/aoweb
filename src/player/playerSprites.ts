@@ -267,6 +267,7 @@ export type PlayerArmorVisualOptions = {
   clasesBajas?: boolean;
   spritesheetStdPath?: string;
   spritesheetBajosPath?: string;
+  spritesheetFemalePath?: string;
   spritesheetPathsByRace?: Partial<Record<CharacterRaceId, string>>;
 };
 
@@ -634,7 +635,8 @@ export function playerAnimationKey(
   outfit: Outfit,
   baseBodyKey?: string,
   armorVisual?: PlayerArmorVisualOptions,
-  raceId?: CharacterRaceId
+  raceId?: CharacterRaceId,
+  genderId?: CharacterGenderId
 ): string {
   if (outfit === "base" && baseBodyKey) {
     return buildAnimationKey(state, facing, `base_${baseBodyKey}`);
@@ -643,7 +645,7 @@ export function playerAnimationKey(
     return buildAnimationKey(
       state,
       facing,
-      resolveAnimOutfitKey(outfit, armorVisual, raceId)
+      resolveAnimOutfitKey(outfit, armorVisual, raceId, genderId)
     );
   }
   return buildAnimationKey(state, facing, outfit);
@@ -665,13 +667,21 @@ function shouldUseBajosArmorSheet(
 function resolveEquippedArmorSheetPath(
   outfit: Exclude<Outfit, "base">,
   armorVisual?: PlayerArmorVisualOptions,
-  raceId?: CharacterRaceId
+  raceId?: CharacterRaceId,
+  genderId?: CharacterGenderId
 ): string {
   if (raceId && armorVisual?.spritesheetPathsByRace?.[raceId]) {
     return armorVisual.spritesheetPathsByRace[raceId]!;
   }
   const useBajos = shouldUseBajosArmorSheet(armorVisual, raceId);
-  if (armorVisual?.spritesheetStdPath || armorVisual?.spritesheetBajosPath) {
+  if (
+    armorVisual?.spritesheetStdPath ||
+    armorVisual?.spritesheetBajosPath ||
+    armorVisual?.spritesheetFemalePath
+  ) {
+    if (!useBajos && genderId === "female" && armorVisual.spritesheetFemalePath) {
+      return armorVisual.spritesheetFemalePath;
+    }
     return useBajos
       ? armorVisual.spritesheetBajosPath ??
           inferBajosSpritesheetPath(
@@ -686,10 +696,18 @@ function resolveEquippedArmorSheetPath(
 function resolveAnimOutfitKey(
   outfit: Exclude<Outfit, "base">,
   armorVisual?: PlayerArmorVisualOptions,
-  raceId?: CharacterRaceId
+  raceId?: CharacterRaceId,
+  genderId?: CharacterGenderId
 ): string {
-  if (armorVisual?.spritesheetStdPath || armorVisual?.spritesheetBajosPath || armorVisual?.spritesheetPathsByRace) {
-    return textureKeyFromAssetPath(resolveEquippedArmorSheetPath(outfit, armorVisual, raceId));
+  if (
+    armorVisual?.spritesheetStdPath ||
+    armorVisual?.spritesheetBajosPath ||
+    armorVisual?.spritesheetFemalePath ||
+    armorVisual?.spritesheetPathsByRace
+  ) {
+    return textureKeyFromAssetPath(
+      resolveEquippedArmorSheetPath(outfit, armorVisual, raceId, genderId)
+    );
   }
 
   const useBajos = shouldUseBajosArmorSheet(armorVisual, raceId);
@@ -714,10 +732,18 @@ function resolveAnimOutfitKey(
 function resolveArmorTextureKey(
   outfit: Exclude<Outfit, "base">,
   armorVisual?: PlayerArmorVisualOptions,
-  raceId?: CharacterRaceId
+  raceId?: CharacterRaceId,
+  genderId?: CharacterGenderId
 ): string {
-  if (armorVisual?.spritesheetStdPath || armorVisual?.spritesheetBajosPath || armorVisual?.spritesheetPathsByRace) {
-    return textureKeyFromAssetPath(resolveEquippedArmorSheetPath(outfit, armorVisual, raceId));
+  if (
+    armorVisual?.spritesheetStdPath ||
+    armorVisual?.spritesheetBajosPath ||
+    armorVisual?.spritesheetFemalePath ||
+    armorVisual?.spritesheetPathsByRace
+  ) {
+    return textureKeyFromAssetPath(
+      resolveEquippedArmorSheetPath(outfit, armorVisual, raceId, genderId)
+    );
   }
 
   if (shouldUseBajosArmorSheet(armorVisual, raceId)) {
@@ -736,12 +762,13 @@ export function textureKeyForPlayer(
   outfit: Outfit,
   baseBodyKey: string,
   armorVisual?: PlayerArmorVisualOptions,
-  raceId?: CharacterRaceId
+  raceId?: CharacterRaceId,
+  genderId?: CharacterGenderId
 ): string {
   if (outfit === "base") {
     return baseBodyKey;
   }
-  return resolveArmorTextureKey(outfit, armorVisual, raceId);
+  return resolveArmorTextureKey(outfit, armorVisual, raceId, genderId);
 }
 
 export function getDefaultArmorVisualForOutfit(
@@ -763,6 +790,7 @@ export function buildEquippedArmorVisualFromItem(item: {
   clasesBajas?: boolean;
   spritesheetStdPath?: string;
   spritesheetBajosPath?: string;
+  spritesheetFemalePath?: string;
   spritesheetPathsByRace?: Partial<Record<CharacterRaceId, string>>;
 }): PlayerArmorVisualOptions | undefined {
   if (item.equipSlot !== "armor" || !item.outfitOverride || item.outfitOverride === "base") {
@@ -774,6 +802,7 @@ export function buildEquippedArmorVisualFromItem(item: {
     clasesBajas: item.clasesBajas ?? false,
     spritesheetStdPath: item.spritesheetStdPath ?? defaults.spritesheetStdPath,
     spritesheetBajosPath: item.spritesheetBajosPath,
+    spritesheetFemalePath: item.spritesheetFemalePath,
     spritesheetPathsByRace: item.spritesheetPathsByRace,
   };
 }

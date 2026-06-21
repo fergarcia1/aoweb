@@ -2067,7 +2067,8 @@ export class GameScene extends Phaser.Scene {
           visualOutfit,
           this.getVisualBodyTextureKey(),
           this.useGhostAppearance ? undefined : this.equippedArmorVisual,
-          this.getVisualRace()
+          this.getVisualRace(),
+          this.getVisualGender()
         );
 
     this.player.clearTint();
@@ -3221,13 +3222,15 @@ export class GameScene extends Phaser.Scene {
       nextOutfit,
       baseBodyKey,
       nextArmorVisual,
-      this.selectedRace
+      this.selectedRace,
+      this.selectedGender
     );
     const currentTextureKey = textureKeyForPlayer(
       this.equippedOutfit,
       baseBodyKey,
       this.equippedArmorVisual,
-      this.selectedRace
+      this.selectedRace,
+      this.selectedGender
     );
     const outfitChanged = nextOutfit !== this.equippedOutfit;
     const visualChanged =
@@ -3686,7 +3689,8 @@ export class GameScene extends Phaser.Scene {
           visualOutfit,
           this.getVisualBodyTextureKey(),
           this.useGhostAppearance ? undefined : this.equippedArmorVisual,
-          this.getVisualRace()
+          this.getVisualRace(),
+          this.getVisualGender()
         );
 
     // Siempre repeat:-1 para que la animación nunca "complete" y dispare un restart.
@@ -3703,7 +3707,8 @@ export class GameScene extends Phaser.Scene {
         visualOutfit,
         this.getVisualBodyTextureKey(),
         this.useGhostAppearance ? undefined : this.equippedArmorVisual,
-        this.getVisualRace()
+        this.getVisualRace(),
+        this.getVisualGender()
       );
       if (this.anims.exists(fallbackKey)) {
         this.player.play(playOpts(fallbackKey), true);

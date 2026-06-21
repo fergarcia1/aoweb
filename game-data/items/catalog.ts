@@ -323,6 +323,7 @@ export type ArmorData = {
   spritesheetStdPath?: string;
   /** Spritesheet para enanos/gnomos; si omitido se infiere de *_Bajos_std. */
   spritesheetBajosPath?: string;
+  spritesheetFemalePath?: string;
   /** Spritesheet por raza (p. ej. orc → citizenClothesOrc_std). */
   spritesheetPathsByRace?: Partial<
     Record<"human" | "elf" | "drow" | "dwarf" | "gnome" | "orc" | "fantasma", string>
@@ -1063,6 +1064,7 @@ export const ARMORS: ArmorData[] = [
     iconAssetPath: "assets/ao/armors/cuero_icon.png",
     clasesBajas: false,
     spritesheetStdPath: "assets/ao/armors/cuero_std.png",
+    spritesheetFemalePath: "assets/ao/armors/cueroFem_std.png",
     outfitOverride: "cuero",
   },
   {

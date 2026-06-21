@@ -340,7 +340,13 @@ export class CharacterSelectScene extends Phaser.Scene {
     const body = this.add.sprite(
       0,
       0,
-      textureKeyForPlayer(equippedOutfit, bodyKey, armorVisual, character.raceId),
+      textureKeyForPlayer(
+        equippedOutfit,
+        bodyKey,
+        armorVisual,
+        character.raceId,
+        character.genderId
+      ),
       0
     );
     applyPlayerOrigin(body);

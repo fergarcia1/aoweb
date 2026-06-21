@@ -472,7 +472,8 @@ export class RemotePlayerManager {
           equippedOutfit,
           raceBodyTextureKey(raceId, genderId),
           armorVisual,
-          raceId
+          raceId,
+          genderId
         );
     const body = this.scene.add.sprite(feet.x, feet.y, bodyKey, 0);
     applyPlayerOrigin(body);
@@ -630,7 +631,8 @@ export class RemotePlayerManager {
         nextOutfit,
         raceBodyTextureKey(entry.raceId, entry.genderId),
         entry.armorVisual,
-        entry.raceId
+        entry.raceId,
+        entry.genderId
       );
       if (nextOutfit !== entry.equippedOutfit || entry.body.texture.key !== nextBodyKey) {
         entry.equippedOutfit = nextOutfit;
@@ -718,7 +720,8 @@ export class RemotePlayerManager {
       entry.isGhost ? "base" : entry.equippedOutfit,
       raceBodyTextureKey(visualRaceId, visualGenderId),
       entry.isGhost ? undefined : entry.armorVisual,
-      visualRaceId
+      visualRaceId,
+      visualGenderId
     );
   }
 
@@ -921,7 +924,8 @@ export class RemotePlayerManager {
           nextOutfit,
           raceBodyTextureKey(entry.raceId, entry.genderId),
           entry.armorVisual,
-          entry.raceId
+          entry.raceId,
+          entry.genderId
         );
     entry.body.setTexture(bodyKey);
     entry.face.setTexture(faceTextureKey(entry.raceId, entry.genderId));
@@ -950,7 +954,8 @@ export class RemotePlayerManager {
           visualOutfit,
           bodyKey,
           entry.isGhost ? undefined : entry.armorVisual,
-          visualRaceId
+          visualRaceId,
+          visualGenderId
         );
 
     const bodyTextureKey = this.getRemoteBodyTextureKey(entry);
@@ -969,7 +974,8 @@ export class RemotePlayerManager {
         visualOutfit,
         bodyKey,
         entry.isGhost ? undefined : entry.armorVisual,
-        visualRaceId
+        visualRaceId,
+        visualGenderId
       );
       if (this.scene.anims.exists(fallbackKey)) {
         entry.body.play(playOpts(fallbackKey), true);
@@ -1024,7 +1030,8 @@ export class RemotePlayerManager {
       nextOutfit,
       raceBodyTextureKey(entry.raceId, entry.genderId),
       entry.armorVisual,
-      entry.raceId
+      entry.raceId,
+      entry.genderId
     );
     if (entry.body.texture.key !== nextBodyKey) {
       entry.body.setTexture(nextBodyKey);

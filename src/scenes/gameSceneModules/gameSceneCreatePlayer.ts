@@ -90,7 +90,13 @@ export function createGameScenePlayer(params: CreateGameScenePlayerParams): Game
   const bodyTexture =
     useGhostAppearance && deathPhase !== "alive"
       ? textureKeyForPlayer("base", raceBodyTextureKey(GHOST_RACE_ID, "male"), undefined)
-      : textureKeyForPlayer(equippedOutfit, visualBodyTextureKey, equippedArmorVisual, selectedRace);
+      : textureKeyForPlayer(
+          equippedOutfit,
+          visualBodyTextureKey,
+          equippedArmorVisual,
+          selectedRace,
+          selectedGender
+        );
 
   const player = scene.add.sprite(feetX, feetY, bodyTexture, 0);
   applyPlayerOrigin(player);

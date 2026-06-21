@@ -154,6 +154,7 @@ export type ItemDefinition = {
   clasesBajas?: boolean;
   spritesheetStdPath?: string;
   spritesheetBajosPath?: string;
+  spritesheetFemalePath?: string;
   spritesheetPathsByRace?: Partial<
     Record<"human" | "elf" | "drow" | "dwarf" | "gnome" | "orc" | "fantasma", string>
   >;
@@ -335,6 +336,7 @@ function buildArmorItemDefinition(armor: ArmorData): ItemDefinition {
     clasesBajas: armor.clasesBajas,
     spritesheetStdPath: armor.spritesheetStdPath,
     spritesheetBajosPath: armor.spritesheetBajosPath,
+    spritesheetFemalePath: armor.spritesheetFemalePath,
     spritesheetPathsByRace: armor.spritesheetPathsByRace,
     outfitOverride: armor.outfitOverride,
   };
