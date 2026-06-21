@@ -101,6 +101,7 @@ export class NetworkClient {
     }
 
     this.intentionalClose = false;
+    const connectStartedAt = performance.now();
     const socket = new WebSocket(this.url);
     this.socket = socket;
 
@@ -110,6 +111,7 @@ export class NetworkClient {
         return;
       }
       this.reconnectAttempt = 0;
+      this.handlers.onPong?.(Math.max(1, Math.round(performance.now() - connectStartedAt)));
       this.startHeartbeat();
       this.handlers.onConnected?.();
     });

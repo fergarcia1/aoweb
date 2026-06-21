@@ -428,11 +428,21 @@ export class GameSceneMultiplayerController {
     const nextX = tile.x + dir.dx;
     const nextY = tile.y + dir.dy;
 
-    if (
+    const isBlocked =
       !this.deps.isTileWalkable(nextX, nextY) ||
       (!this.deps.isPlayerDeadOrGhost() &&
-        this.deps.isTileOccupiedByRemotePlayer(nextX, nextY))
-    ) {
+        this.deps.isTileOccupiedByRemotePlayer(nextX, nextY));
+
+    const transition = findTransition(this.deps.getCurrentMapId(), nextX, nextY, dir.facing, isBlocked);
+
+    if (transition) {
+      this.networkMovePending = true;
+      this.deps.setFacing(dir.facing);
+      this.bridge!.sendMove(dir.facing);
+      return;
+    }
+
+    if (isBlocked) {
       if (this.deps.isMoving()) {
         this.deps.killPlayerTweens();
         this.deps.setIsMoving(false);
