@@ -97,6 +97,7 @@ export type GameSceneMultiplayerDeps = {
   getUsersKilled: () => number;
   onCharacterAlreadyOnline: (message: string) => void;
   onLogoutComplete: () => void;
+  setLatency: (latency: number) => void;
   handleServerUseItemAck: (ack: ServerUseItemAckMessage) => void;
   handleServerPlayerUpdated: (state: NetPlayerState) => void;
   handleServerPartyUpdate: (message: import("../../../shared/protocol").ServerPartyUpdateMessage) => void;
@@ -214,6 +215,10 @@ export class GameSceneMultiplayerController {
     return Boolean(this.bridge?.isActive());
   }
 
+  sendPing() {
+    this.bridge?.sendPing();
+  }
+
   isConnected(): boolean {
     return Boolean(this.bridge?.isConnected());
   }
@@ -297,6 +302,7 @@ export class GameSceneMultiplayerController {
         onCharacterAlreadyOnline: (message) =>
           this.deps.onCharacterAlreadyOnline(message),
         onLogoutComplete: () => this.deps.onLogoutComplete(),
+        onPong: (latency) => this.deps.setLatency(latency),
         onUseItemAck: (ack) => this.deps.handleServerUseItemAck(ack),
         onAuctionCatalog: (auctions) => {
           this.deps.onAuctionCatalog(auctions);

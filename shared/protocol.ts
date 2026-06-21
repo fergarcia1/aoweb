@@ -242,6 +242,7 @@ export type ClientAuctionFetchMessage = {
 };
 
 export type ClientMessage =
+  | ClientPingMessage
   | ClientJoinMessage
   | ClientMoveMessage
   | ClientChatMessage
@@ -456,6 +457,7 @@ export type ServerAuctionCatalogMessage = {
 };
 
 export type ServerMessage =
+  | ServerPongMessage
   | ServerWelcomeMessage
   | ServerWorldSnapshotMessage
   | ServerPlayerJoinedMessage
@@ -518,3 +520,7 @@ export function deltaFromDirection(direction: MoveDirectionId): { dx: number; dy
   if (direction === "left") return { dx: -1, dy: 0 };
   return { dx: 1, dy: 0 };
 }
+
+export type ClientPingMessage = { type: "ping"; timestamp: number; };
+
+export type ServerPongMessage = { type: "pong"; timestamp: number; };

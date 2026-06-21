@@ -59,6 +59,7 @@ export type NetworkClientHandlers = {
   onLogoutCountdown?: (secondsLeft: number) => void;
   onLogoutComplete?: () => void;
   onError?: (message: string, code?: string) => void;
+  onPong?: (latency: number) => void;
 };
 
 export type NetworkClientOptions = {
@@ -188,6 +189,10 @@ export class NetworkClient {
 
   sendJoin(payload: Omit<Extract<ClientMessage, { type: "join" }>, "type">) {
     this.send({ type: "join", ...payload });
+  }
+
+  sendPing() {
+    this.send({ type: "ping", timestamp: Date.now() });
   }
 
   sendMove(direction: Extract<ClientMessage, { type: "move" }>["direction"]) {
@@ -367,6 +372,11 @@ export class NetworkClient {
   }
 
   private handleServerMessage(message: ServerMessage) {
+    if (message.type === "pong") {
+      const latency = Date.now() - message.timestamp;
+      this.handlers.onPong?.(latency);
+      return;
+    }
     if (message.type === "welcome") {
       const welcome = message as ServerWelcomeMessage;
       this.playerId = welcome.playerId;

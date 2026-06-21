@@ -340,6 +340,9 @@ export class GameScene extends Phaser.Scene {
   private equippedHelmetSprite?: Phaser.GameObjects.Sprite;
 
   private gameUi!: GameUi;
+  private pingFpsText!: Phaser.GameObjects.Text;
+  private lastPingMs: number = 0;
+  private nextPingTime: number = 0;
   private soundController!: GameSceneSoundController;
   private mapController!: GameSceneMapController;
   private entitySync!: GameSceneEntitySync;
@@ -1139,6 +1142,7 @@ export class GameScene extends Phaser.Scene {
       getUsersKilled: () => this.killStats.usersKilled,
       handleServerUseItemAck: (ack) => this.consumableController.handleServerUseItemAck(ack),
       handleServerPlayerUpdated: (state) => this.localPlayerSync.handleServerPlayerUpdated(state),
+      setLatency: (latency) => this.setLatency(latency),
       handleServerPartyUpdate: (message) => {
         this.gameUi.handleServerPartyUpdate(message);
         const localPlayerId = this.mpController?.getLocalPlayerId() ?? null;
@@ -1391,6 +1395,15 @@ export class GameScene extends Phaser.Scene {
     this.mapController.updateRoofTransparency(this.playerTileX, this.playerTileY);
 
     this.gameUi = new GameUi(this);
+    this.pingFpsText = this.add.text(0, 0, "FPS: 0\nPING: 0ms", {
+      fontFamily: "Arial",
+      fontSize: "12px",
+      color: "#ffffff",
+      align: "right",
+      stroke: "#000000",
+      strokeThickness: 3
+    }).setOrigin(1, 0).setScrollFactor(0).setDepth(99999);
+    this.layoutPingFpsText();
     this.gameUi.setMinimapRedrawHandler(() => this.refreshMinimap());
     this.initConsumableController();
     this.initChatCommands();
@@ -2896,7 +2909,27 @@ export class GameScene extends Phaser.Scene {
     refreshGameSceneMinimap(this.getHudDeps());
   }
 
-  update(_time: number, delta: number) {
+  setLatency(latency: number) {
+    this.lastPingMs = latency;
+  }
+
+  private layoutPingFpsText() {
+    if (!this.pingFpsText || !this.mapController) {
+      return;
+    }
+    const viewport = this.getGameViewportRect();
+    this.pingFpsText.setPosition(viewport.x + viewport.width - 12, viewport.y + 10);
+  }
+
+  update(time: number, delta: number) {
+    if (this.pingFpsText) {
+      this.pingFpsText.setText(`FPS: ${Math.round(this.game.loop.actualFps)}\nPING: ${this.lastPingMs || 0}ms`);
+      this.layoutPingFpsText();
+    }
+    if (time > this.nextPingTime && this.mpController?.isConnected()) {
+      this.mpController.sendPing();
+      this.nextPingTime = time + 1000;
+    }
     this.expireAttributePotionBuffsIfNeeded();
     this.mapController.snapCameraScroll();
     this.drawHitboxDebugOverlay();

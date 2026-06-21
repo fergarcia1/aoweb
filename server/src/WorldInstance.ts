@@ -644,6 +644,16 @@ export class WorldInstance implements WorldContext {
           return;
         }
 
+        if (message.type === "ping") {
+          const s = this.socketSessions.get(socket);
+          if (s) {
+            this.send(s, { type: "pong", timestamp: message.timestamp });
+          } else {
+            socket.send(JSON.stringify({ type: "pong", timestamp: message.timestamp }));
+          }
+          return;
+        }
+
         if (message.type === "join") {
           console.log(
             `[join] recibido ${String(message.name ?? "").slice(0, 24)} (${String(
@@ -728,6 +738,11 @@ export class WorldInstance implements WorldContext {
   }
 
   private handleClientMessage(session: PlayerSession, message: ClientMessage) {
+    if (message.type === "ping") {
+      this.send(session, { type: "pong", timestamp: message.timestamp });
+      return;
+    }
+
     if (message.type === "join") {
       this.handleJoin(session, message);
       return;

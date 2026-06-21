@@ -27,14 +27,33 @@ const BLACKSMITH_CATALOG: ItemId[] = [
   "shield_tortuga",
   "weapon_daga_mas_dos",
   "weapon_baculo_aqualin",
-  "weapon_baston_esmeralda"
+  "weapon_baston_esmeralda",
+  "weapon_arco_cazador",
+  "weapon_arco_largo",
+  "weapon_baston",
+  "weapon_daga_mas_uno",
+  "weapon_espada_larga",
+  "weapon_hacha_guerra",
+  "weapon_hacha_escarlata",
+  "weapon_sable",
+  "weapon_varita_dm_cuatro"
 ];
 
 const ARMORER_CATALOG: ItemId[] = [
   "armor_placas",
   "armor_placas_rojas",
   "armor_placas_azules",
-  "armor_cuero"
+  "armor_cuero",
+  "armor_asesino",
+  "armor_coraza",
+  "armor_coraza_bajos",
+  "armor_cuero_bajos",
+  "armor_placas_azules_fem",
+  "armor_placas_rojas_bajos",
+  "armor_placas_verdes",
+  "helmet_casco_soldado",
+  "helmet_celada",
+  "helmet_yelmo"
 ];
 
 const ALCHEMIST_CATALOG: ItemId[] = [
@@ -51,7 +70,12 @@ const TAILOR_CATALOG: ItemId[] = [
   "armor_tunica_cruz",
   "armor_tunica_azul",
   "helmet_gorro_gris",
-  "helmet_gorro_negro"
+  "helmet_gorro_negro",
+  "armor_tunica_clerigo_bajos",
+  "armor_tunica_druida",
+  "armor_tunica_mago_bajos",
+  "armor_tunica_roja",
+  "armor_tunica_roja_bajos"
 ];
 
 const MAGE_CATALOG: ItemId[] = [

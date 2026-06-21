@@ -28,7 +28,17 @@ export type Outfit =
   | "placasRojasBajos"
   | "caballeroDeMuerte"
   | "caballeroDeMuerteBajos"
-  | "caballeroOscuro";
+  | "caballeroOscuro"
+  | "coraza"
+  | "corazaBajos"
+  | "cueroBajos"
+  | "placasAzulesFem"
+  | "placasVerdes"
+  | "tunicaMagoBajos"
+  | "tunicaRoja"
+  | "tunicaRojaBajos"
+  | "tunicaClerigoBajos"
+  | "tunicaDruida";
 
 const VALID_OUTFITS = new Set<string>([
   "base",

@@ -62,6 +62,7 @@ export type MultiplayerBridgeCallbacks = {
   getWorldInteractiveCursor?: () => string;
   onCharacterAlreadyOnline?: (message: string) => void;
   onLogoutComplete?: () => void;
+  onPong?: (latency: number) => void;
 };
 
 /**
@@ -241,6 +242,10 @@ export class MultiplayerBridge {
 
   isActive() {
     return Boolean(this.networkClient?.isConnected() && this.playerId);
+  }
+
+  sendPing() {
+    this.networkClient?.sendPing();
   }
 
   isConnected() {

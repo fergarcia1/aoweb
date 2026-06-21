@@ -93,6 +93,16 @@ const PLAYER_TEXTURE_KEYS: Record<Exclude<Outfit, "base">, string> = {
   caballeroDeMuerte: "caballeroDeMuerte_std",
   caballeroDeMuerteBajos: "caballeroDeMuerteBajos_std",
   caballeroOscuro: "caballeroOscuro_std",
+  coraza: "coraza_std",
+  corazaBajos: "corazaBajos_std",
+  cueroBajos: "cueroBajos_std",
+  placasAzulesFem: "placasAzulesFem_std",
+  placasVerdes: "placasVerdes_std",
+  tunicaMagoBajos: "tunicaMagoBajos_std",
+  tunicaRoja: "tunicaRoja_std",
+  tunicaRojaBajos: "tunicaRojaBajos_std",
+  tunicaClerigoBajos: "tunicaClerigoBajos_std",
+  tunicaDruida: "tunicaDruida_std",
 };
 const OUTFIT_FEET_OFFSET: Record<Outfit, { x: number; y: number }> = {
   base: { x: 0, y: 0 },
@@ -122,6 +132,16 @@ const OUTFIT_FEET_OFFSET: Record<Outfit, { x: number; y: number }> = {
   caballeroDeMuerte: { x: 0, y: 0 },
   caballeroDeMuerteBajos: { x: 0, y: 0 },
   caballeroOscuro: { x: 0, y: 0 },
+  coraza: { x: 0, y: 0 },
+  corazaBajos: { x: 0, y: 0 },
+  cueroBajos: { x: 0, y: 0 },
+  placasAzulesFem: { x: 0, y: 0 },
+  placasVerdes: { x: 0, y: 0 },
+  tunicaMagoBajos: { x: 0, y: 0 },
+  tunicaRoja: { x: 0, y: 0 },
+  tunicaRojaBajos: { x: 0, y: 0 },
+  tunicaClerigoBajos: { x: 0, y: 0 },
+  tunicaDruida: { x: 0, y: 0 },
 };
 const PLAYER_SHEET_PATHS: Record<Exclude<Outfit, "base">, string> = {
   citizen: "/assets/ao/armors/citizenClothes_std.png",
@@ -150,6 +170,16 @@ const PLAYER_SHEET_PATHS: Record<Exclude<Outfit, "base">, string> = {
   caballeroDeMuerte: "/assets/ao/armors/caballeroDeMuerte_std.png",
   caballeroDeMuerteBajos: "/assets/ao/armors/caballeroDeMuerteBajos_std.png",
   caballeroOscuro: "/assets/ao/armors/caballeroOscuro_std.png",
+  coraza: "/assets/ao/armors/coraza_std.png",
+  corazaBajos: "/assets/ao/armors/corazaBajos_std.png",
+  cueroBajos: "/assets/ao/armors/cueroBajos_std.png",
+  placasAzulesFem: "/assets/ao/armors/placasAzulesFem_std.png",
+  placasVerdes: "/assets/ao/armors/placasVerdes_std.png",
+  tunicaMagoBajos: "/assets/ao/armors/tunicaMagoBajos.png",
+  tunicaRoja: "/assets/ao/armors/tunicaRoja_std.png",
+  tunicaRojaBajos: "/assets/ao/armors/tunicaRojaBajos_std.png",
+  tunicaClerigoBajos: "/assets/ao/armors/tunicaClerigoBajos_std.png",
+  tunicaDruida: "/assets/ao/armors/tunicaDruida_std.png",
 };
 
 const PLAYER_BAJOS_TEXTURE_KEYS: Record<Exclude<Outfit, "base">, string> = {
@@ -179,6 +209,16 @@ const PLAYER_BAJOS_TEXTURE_KEYS: Record<Exclude<Outfit, "base">, string> = {
   caballeroDeMuerte: PLAYER_TEXTURE_KEYS.caballeroDeMuerteBajos,
   caballeroDeMuerteBajos: PLAYER_TEXTURE_KEYS.caballeroDeMuerteBajos,
   caballeroOscuro: PLAYER_TEXTURE_KEYS.caballeroOscuro,
+  coraza: armorBajosTextureKey(PLAYER_TEXTURE_KEYS.coraza),
+  corazaBajos: PLAYER_TEXTURE_KEYS.corazaBajos,
+  cueroBajos: PLAYER_TEXTURE_KEYS.cueroBajos,
+  placasAzulesFem: armorBajosTextureKey(PLAYER_TEXTURE_KEYS.placasAzulesFem),
+  placasVerdes: armorBajosTextureKey(PLAYER_TEXTURE_KEYS.placasVerdes),
+  tunicaMagoBajos: PLAYER_TEXTURE_KEYS.tunicaMagoBajos,
+  tunicaRoja: armorBajosTextureKey(PLAYER_TEXTURE_KEYS.tunicaRoja),
+  tunicaRojaBajos: PLAYER_TEXTURE_KEYS.tunicaRojaBajos,
+  tunicaClerigoBajos: PLAYER_TEXTURE_KEYS.tunicaClerigoBajos,
+  tunicaDruida: armorBajosTextureKey(PLAYER_TEXTURE_KEYS.tunicaDruida),
 };
 
 const PLAYER_BAJOS_SHEET_PATHS: Record<Exclude<Outfit, "base">, string> = {
@@ -208,6 +248,16 @@ const PLAYER_BAJOS_SHEET_PATHS: Record<Exclude<Outfit, "base">, string> = {
   caballeroDeMuerte: PLAYER_SHEET_PATHS.caballeroDeMuerteBajos,
   caballeroDeMuerteBajos: PLAYER_SHEET_PATHS.caballeroDeMuerteBajos,
   caballeroOscuro: PLAYER_SHEET_PATHS.caballeroOscuro,
+  coraza: inferBajosSpritesheetPath(PLAYER_SHEET_PATHS.coraza),
+  corazaBajos: PLAYER_SHEET_PATHS.corazaBajos,
+  cueroBajos: PLAYER_SHEET_PATHS.cueroBajos,
+  placasAzulesFem: inferBajosSpritesheetPath(PLAYER_SHEET_PATHS.placasAzulesFem),
+  placasVerdes: inferBajosSpritesheetPath(PLAYER_SHEET_PATHS.placasVerdes),
+  tunicaMagoBajos: PLAYER_SHEET_PATHS.tunicaMagoBajos,
+  tunicaRoja: inferBajosSpritesheetPath(PLAYER_SHEET_PATHS.tunicaRoja),
+  tunicaRojaBajos: PLAYER_SHEET_PATHS.tunicaRojaBajos,
+  tunicaClerigoBajos: PLAYER_SHEET_PATHS.tunicaClerigoBajos,
+  tunicaDruida: inferBajosSpritesheetPath(PLAYER_SHEET_PATHS.tunicaDruida),
 };
 
 /** Spritesheet de orcos para ropa de ciudadano (mismo ítem, visual distinto). */

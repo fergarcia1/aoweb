@@ -6,6 +6,7 @@
     "dev": "tsx watch src/index.ts",
     "build": "node scripts/build.mjs",
     "start": "node dist/index.js",
+    "start:render": "node scripts/migrate-if-configured.mjs && node dist/index.js",
     "db:migrate": "tsx scripts/migrate.ts"
   },
   "dependencies": {

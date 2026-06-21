@@ -1,5 +1,6 @@
 import type { WorldContext } from "./WorldContext";
 import { MobEntity } from "../MobEntity";
+import { logger } from "../logger";
 import type { PlayerSession } from "../PlayerSession";
 import { isMapTileWalkable } from "../../../shared/mapWalkability";
 import type { Facing } from "../../../shared/types";
@@ -217,7 +218,7 @@ export class MobSystem {
   }
 
   private tryWanderMob(mob: MobEntity) {
-    if (mob.isAggressive) {
+    if (mob.isAggroed) {
       return;
     }
     const dirs: Facing[] = ["up", "down", "left", "right"];

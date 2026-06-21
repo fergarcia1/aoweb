@@ -202,56 +202,75 @@ export class ChatSystem {
   }
 
   private handleAdminSet(session: PlayerSession, args: string[]) {
-    const target = args[0]?.toLowerCase();
-    if (target !== "lvl" && target !== "level") {
-      this.world.sendCombatLog(session, "Uso: /set lvl <1-50>");
+    const targetAction = args[0]?.toLowerCase();
+    if (targetAction !== "lvl" && targetAction !== "level") {
+      this.world.sendCombatLog(session, "Uso: /set lvl <1-50> [personaje]");
       return;
     }
 
     const rawLevel = Number(args[1]);
     if (!Number.isFinite(rawLevel)) {
-      this.world.sendCombatLog(session, "Uso: /set lvl <1-50>");
+      this.world.sendCombatLog(session, "Uso: /set lvl <1-50> [personaje]");
+      return;
+    }
+
+    const targetName = args.slice(2).join(" ").trim() || session.name;
+    const targetPlayer = [...this.world.getPlayers().values()].find(
+      (player) => player.joined && player.name.toLowerCase() === targetName.toLowerCase()
+    );
+    if (!targetPlayer) {
+      this.world.sendCombatLog(session, `No se encontro al personaje "${targetName}".`);
       return;
     }
 
     const level = Math.max(1, Math.min(VITAL_GROWTH_MAX_LEVEL, Math.floor(rawLevel)));
-    const classId = session.classId as CharacterClassId;
-    session.level = level;
-    session.exp = 0;
-    session.expToNext = expRequiredForLevel(level);
+    const classId = targetPlayer.classId as CharacterClassId;
+    targetPlayer.level = level;
+    targetPlayer.exp = 0;
+    targetPlayer.expToNext = expRequiredForLevel(level);
 
-    if (session.isAdmin()) {
-      session.hpMax = ADMIN_GM_HP_MAX;
-      session.mpMax = ADMIN_GM_MP_MAX;
+    if (targetPlayer.isAdmin()) {
+      targetPlayer.hpMax = ADMIN_GM_HP_MAX;
+      targetPlayer.mpMax = ADMIN_GM_MP_MAX;
     } else {
-      const vitals = getMaxVitalsAtLevel(session.raceId, classId, level);
-      session.hpMax = vitals.hpMax;
-      session.mpMax = vitals.mpMax;
+      const vitals = getMaxVitalsAtLevel(targetPlayer.raceId, classId, level);
+      targetPlayer.hpMax = vitals.hpMax;
+      targetPlayer.mpMax = vitals.mpMax;
     }
 
-    session.hp = session.hpMax;
-    session.mp = CLASS_USES_MANA[classId] ? session.mpMax : 0;
-    session.isMeditating = false;
-    session.nextMeditationRegenAt = 0;
+    targetPlayer.hp = targetPlayer.hpMax;
+    targetPlayer.mp = CLASS_USES_MANA[classId] ? targetPlayer.mpMax : 0;
+    targetPlayer.isMeditating = false;
+    targetPlayer.nextMeditationRegenAt = 0;
 
-    this.world.send(session, {
+    this.world.send(targetPlayer, {
       type: "player_progress_updated",
-      exp: session.exp,
-      expToNext: session.expToNext,
-      level: session.level,
+      exp: targetPlayer.exp,
+      expToNext: targetPlayer.expToNext,
+      level: targetPlayer.level,
     });
     const update = {
       type: "player_updated" as const,
-      player: session.toNetState(),
+      player: targetPlayer.toNetState(),
     };
-    this.world.send(session, update);
-    this.world.broadcastToAoi(session.mapId, session.tileX, session.tileY, update, session.id);
-    this.world.notifyPartyOfHpChange(session.id);
-    this.world.schedulePersistSessionDebounced(session);
+    this.world.send(targetPlayer, update);
+    this.world.broadcastToAoi(
+      targetPlayer.mapId,
+      targetPlayer.tileX,
+      targetPlayer.tileY,
+      update,
+      targetPlayer.id
+    );
+    this.world.notifyPartyOfHpChange(targetPlayer.id);
+    this.world.schedulePersistSessionDebounced(targetPlayer);
+
     this.world.sendCombatLog(
-      session,
+      targetPlayer,
       `Nivel seteado a ${level}. Mana restaurado.`
     );
+    if (targetPlayer.id !== session.id) {
+      this.world.sendCombatLog(session, `Seteaste el nivel de ${targetPlayer.name} a ${level}.`);
+    }
   }
 
   private handleAdminTeleport(session: PlayerSession, args: string[]) {
