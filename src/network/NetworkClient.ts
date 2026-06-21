@@ -71,6 +71,7 @@ const RECONNECT_DELAYS_MS = [1_000, 2_000, 4_000, 8_000, 15_000];
 const MAX_RECONNECT_ATTEMPTS = 6;
 const NON_RECONNECT_CLOSE_CODES = new Set([4000, 4001, 4002, 4003, 4004]);
 const HEARTBEAT_INTERVAL_MS = 2_000;
+const HEARTBEAT_FALLBACK_TIMEOUT_MS = 1_200;
 
 export class NetworkClient {
   private socket: WebSocket | null = null;
@@ -80,6 +81,8 @@ export class NetworkClient {
   private reconnectAttempt = 0;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
+  private lastPongTimestamp = 0;
+  private lastHttpProbeAt = 0;
   private readonly autoReconnect: boolean;
 
   constructor(
@@ -212,7 +215,14 @@ export class NetworkClient {
   }
 
   sendPing() {
-    this.send({ type: "ping", timestamp: performance.now() });
+    const timestamp = performance.now();
+    this.send({ type: "ping", timestamp });
+    window.setTimeout(() => {
+      if (!this.isConnected() || this.lastPongTimestamp >= timestamp) {
+        return;
+      }
+      this.probeHttpLatencyFallback();
+    }, HEARTBEAT_FALLBACK_TIMEOUT_MS);
   }
 
   sendMove(direction: Extract<ClientMessage, { type: "move" }>["direction"]) {
@@ -394,6 +404,7 @@ export class NetworkClient {
   private handleServerMessage(message: ServerMessage) {
     if (message.type === "pong") {
       const latency = Math.max(1, Math.round(performance.now() - message.timestamp));
+      this.lastPongTimestamp = Math.max(this.lastPongTimestamp, message.timestamp);
       this.handlers.onPong?.(latency);
       return;
     }
@@ -528,5 +539,36 @@ export class NetworkClient {
     }
 
   }
+
+  private probeHttpLatencyFallback() {
+    const now = performance.now();
+    if (now - this.lastHttpProbeAt < HEARTBEAT_INTERVAL_MS) {
+      return;
+    }
+    this.lastHttpProbeAt = now;
+    const startedAt = performance.now();
+    const httpBaseUrl = wsUrlToHttpBaseUrl(this.url);
+    fetch(`${httpBaseUrl}/health`, { cache: "no-store" })
+      .then((response) => {
+        if (!response.ok) {
+          return;
+        }
+        const latency = Math.max(1, Math.round(performance.now() - startedAt));
+        this.handlers.onPong?.(latency);
+      })
+      .catch(() => {});
+  }
 }
 
+function wsUrlToHttpBaseUrl(wsUrl: string): string {
+  try {
+    const url = new URL(wsUrl);
+    url.protocol = url.protocol === "wss:" ? "https:" : "http:";
+    url.pathname = "";
+    url.search = "";
+    url.hash = "";
+    return url.toString().replace(/\/$/, "");
+  } catch {
+    return wsUrl.replace(/^ws(s?):\/\//, "http$1://").split(/[?#]/)[0].replace(/\/$/, "");
+  }
+}
