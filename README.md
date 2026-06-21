@@ -161,6 +161,7 @@ Guía: [`tools/ao-export/README.md`](tools/ao-export/README.md)
 
 - **Tests**: `npm test` o `npm run test:watch`
 - **Smoke tests**: [docs/SMOKE_TESTS.md](docs/SMOKE_TESTS.md)
+- **Playtest alpha online**: [docs/ALPHA_PLAYTEST.md](docs/ALPHA_PLAYTEST.md)
 - **Comandos de chat en juego**: `/gold`, `/give`, `/meditar`, `/hogar`, `/marcarhogar`, edición de mobs (`/mob`), etc. (ver `GameSceneChatCommands.ts`)
 - Personaje admin de prueba: nombre `Lonler` (nombre verde en mundo)
 

@@ -25,3 +25,5 @@ npm test
 ## Manual (no automatizado aún)
 
 Ver checklist al final de [GAMESCENE_INIT.md](./GAMESCENE_INIT.md).
+
+Para pruebas online con amigos, usar tambien [ALPHA_PLAYTEST.md](./ALPHA_PLAYTEST.md).

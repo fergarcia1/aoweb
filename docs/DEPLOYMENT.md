@@ -128,19 +128,38 @@ RATE_LIMIT_TEMP_BAN_MS=300000
 
 Si `DATABASE_URL` no existe, el server usa memoria. Sirve para pruebas rapidas, pero al reiniciar se pierden cuentas/personajes.
 
-## Modo Persistente Mas Adelante
+## Modo Persistente Con PostgreSQL
 
-Cuando quieras persistencia real de cuentas/personajes:
+Para persistencia real de cuentas/personajes:
 
 1. Crear una base PostgreSQL.
 2. Agregar `DATABASE_URL` al server.
-3. Cambiar `AUTH_REQUIRED=true`.
-4. Cambiar en Vercel `VITE_AUTH_REQUIRED=true`.
-5. Restaurar el build command con migraciones:
+3. Reiniciar o redeployar el server.
+4. Verificar `/health`.
 
-```bash
-npm install --prefix server && npm run db:migrate --prefix server
+El `render.yaml` actual usa `npm run start:render --prefix server`. Ese comando aplica `server/db/schema.sql` automaticamente al arrancar si `DATABASE_URL` existe, y si no existe arranca en memoria sin fallar.
+
+Variables recomendadas para alpha con DB real:
+
+```env
+DATABASE_URL=postgres://...
+AUTH_REQUIRED=true
+AUTH_TOKEN_SECRET=generar-un-secreto-largo
+CORS_ORIGIN=https://tu-aoweb.vercel.app
+RATE_LIMIT_MAX_CONNECTIONS_PER_IP=3
+RATE_LIMIT_MAX_ACTIONS_PER_SECOND=20
+RATE_LIMIT_TEMP_BAN_MS=300000
 ```
+
+En Vercel:
+
+```env
+VITE_AUTH_REQUIRED=true
+VITE_MULTIPLAYER=1
+VITE_WS_URL=wss://URL_DEL_SERVER
+```
+
+El health-check debe mostrar `persistence: "postgres"`. Si muestra `persistence: "memory"`, el servidor todavia no esta usando la DB real.
 
 ## Orden De Deploy
 
