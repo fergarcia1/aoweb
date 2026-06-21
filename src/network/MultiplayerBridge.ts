@@ -202,6 +202,7 @@ export class MultiplayerBridge {
       onPartyUpdate: (message) => this.callbacks.onPartyUpdate?.(message),
       onPartyInviteRequest: (message) => this.callbacks.onPartyInviteRequest?.(message),
       onLogoutComplete: () => this.callbacks.onLogoutComplete?.(),
+      onPong: (latency) => this.callbacks.onPong?.(latency),
       onChat: (from, text, fromPlayerId) => {
         this.callbacks.onChatLine(`${from}: ${text}`);
         if (fromPlayerId) {
