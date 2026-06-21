@@ -50,7 +50,18 @@ export class MovementSystem {
     const nextX = session.tileX + dx;
     const nextY = session.tileY + dy;
 
-    const transition = findTransition(session.mapId, nextX, nextY, session.facing);
+    const map = getMap(session.mapId);
+    const tileOverrides = this.ctx.getMapTileOverrides(session.mapId);
+    const mapAllowsMove = session.isNavigating
+      ? canNavigateToTile(map, nextX, nextY, tileOverrides)
+      : isMapTileWalkable(session.mapId, nextX, nextY, tileOverrides);
+    const blocked =
+      !mapAllowsMove ||
+      isTileBlockedByMapObject(map.objects, nextX, nextY) ||
+      (!isGhost &&
+        this.ctx.isTileOccupied(nextX, nextY, session.mapId, session.id, { ignoreGhosts: true }));
+
+    const transition = findTransition(session.mapId, nextX, nextY, session.facing, blocked);
     if (transition) {
       const moveCheck = validateMoveIntent(now, session.nextMoveAt);
       if (!moveCheck.ok) {
@@ -62,21 +73,19 @@ export class MovementSystem {
         this.rejectPlayerMove(session, prevX, prevY);
         return;
       }
+      
       session.nextMoveAt = moveCooldownUntil(now, session.speedMultiplier);
-      this.changeMap(session, transition);
+      const directMapTransition = map.transitions.some(
+        (entry) => entry.tileX === nextX && entry.tileY === nextY
+      );
+      this.changeMap(
+        session,
+        directMapTransition
+          ? transition
+          : this.resolveEdgeTransitionEntryDestination(session, transition, direction)
+      );
       return;
     }
-
-    const map = getMap(session.mapId);
-    const tileOverrides = this.ctx.getMapTileOverrides(session.mapId);
-    const mapAllowsMove = session.isNavigating
-      ? canNavigateToTile(map, nextX, nextY, tileOverrides)
-      : isMapTileWalkable(session.mapId, nextX, nextY, tileOverrides);
-    const blocked =
-      !mapAllowsMove ||
-      isTileBlockedByMapObject(map.objects, nextX, nextY) ||
-      (!isGhost &&
-        this.ctx.isTileOccupied(nextX, nextY, session.mapId, session.id, { ignoreGhosts: true }));
 
     if (blocked) {
       this.rejectPlayerMove(session, prevX, prevY);
@@ -127,6 +136,44 @@ export class MovementSystem {
       player: session.toNetState(),
     });
     this.broadcastPlayerMoved(session);
+  }
+
+  private resolveEdgeTransitionEntryDestination(
+    session: PlayerSession,
+    transition: MapTransition,
+    direction: Extract<ClientMessage, { type: "move" }>["direction"]
+  ): MapTransition {
+    const targetMap = getMap(transition.toMapId);
+    const clampX = Math.max(0, Math.min(targetMap.width - 1, transition.toTileX));
+    const clampY = Math.max(0, Math.min(targetMap.height - 1, transition.toTileY));
+
+    if (direction === "down") {
+      for (let y = 0; y < targetMap.height; y += 1) {
+        if (this.canUseTransitionDestination(session, targetMap.id, clampX, y)) {
+          return { ...transition, toTileX: clampX, toTileY: y };
+        }
+      }
+    } else if (direction === "up") {
+      for (let y = targetMap.height - 1; y >= 0; y -= 1) {
+        if (this.canUseTransitionDestination(session, targetMap.id, clampX, y)) {
+          return { ...transition, toTileX: clampX, toTileY: y };
+        }
+      }
+    } else if (direction === "right") {
+      for (let x = 0; x < targetMap.width; x += 1) {
+        if (this.canUseTransitionDestination(session, targetMap.id, x, clampY)) {
+          return { ...transition, toTileX: x, toTileY: clampY };
+        }
+      }
+    } else if (direction === "left") {
+      for (let x = targetMap.width - 1; x >= 0; x -= 1) {
+        if (this.canUseTransitionDestination(session, targetMap.id, x, clampY)) {
+          return { ...transition, toTileX: x, toTileY: clampY };
+        }
+      }
+    }
+
+    return { ...transition, toTileX: clampX, toTileY: clampY };
   }
 
   public broadcastPlayerMoved(session: PlayerSession) {

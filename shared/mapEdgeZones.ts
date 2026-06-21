@@ -13,17 +13,17 @@ export function isMapEdgeTransitionZoneTile(
     return true;
   }
 
-  const margin = EDGE_TRANSITION_TRIGGER_DISTANCE;
-  if (tileY <= margin && findTransition(mapId, tileX, tileY, "up")) {
+  const margin = 15;
+  if (tileY <= margin && findTransition(mapId, tileX, tileY, "up", false, true)) {
     return true;
   }
-  if (tileY >= map.height - 1 - margin && findTransition(mapId, tileX, tileY, "down")) {
+  if (tileY >= map.height - 1 - margin && findTransition(mapId, tileX, tileY, "down", false, true)) {
     return true;
   }
-  if (tileX <= margin && findTransition(mapId, tileX, tileY, "left")) {
+  if (tileX <= margin && findTransition(mapId, tileX, tileY, "left", false, true)) {
     return true;
   }
-  if (tileX >= map.width - 1 - margin && findTransition(mapId, tileX, tileY, "right")) {
+  if (tileX >= map.width - 1 - margin && findTransition(mapId, tileX, tileY, "right", false, true)) {
     return true;
   }
 

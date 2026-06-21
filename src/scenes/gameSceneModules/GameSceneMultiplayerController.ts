@@ -21,6 +21,7 @@ import {
   buildJoinInventorySlots,
   buildMultiplayerJoinPayload,
 } from "./multiplayerJoinPayload";
+import { findTransition } from "../../../shared/maps";
 import { normalizeNetPlayerState } from "../../../shared/types";
 import type { ServerWelcomeMessage } from "../../../shared/protocol";
 import { getSpellMagicWordsForCast } from "../../spells/spellMagicWords";

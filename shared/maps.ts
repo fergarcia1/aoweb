@@ -646,7 +646,9 @@ export function findTransition(
   mapId: string,
   tileX: number,
   tileY: number,
-  facing?: "up" | "down" | "left" | "right"
+  facing?: "up" | "down" | "left" | "right",
+  isBlocked: boolean = false,
+  ignoreBlockedCheck: boolean = false
 ): MapTransition | undefined {
   const map = getMap(mapId);
   const directTransition = map.transitions.find((t) => t.tileX === tileX && t.tileY === tileY);
@@ -654,7 +656,7 @@ export function findTransition(
     return directTransition;
   }
 
-  const margin = EDGE_TRANSITION_TRIGGER_DISTANCE;
+  const margin = 15;
   const directionalEdge =
     facing === "up" && tileY <= margin
       ? "up"
@@ -665,6 +667,11 @@ export function findTransition(
       : facing === "right" && tileX >= map.width - 1 - margin
       ? "right"
       : undefined;
+
+  const isOutOfBounds = tileX < 0 || tileX >= map.width || tileY < 0 || tileY >= map.height;
+  if (!ignoreBlockedCheck && !isBlocked && !isOutOfBounds) {
+    return undefined;
+  }
 
   if (directionalEdge) {
     const edgeTransition =
