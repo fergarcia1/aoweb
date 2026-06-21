@@ -77,6 +77,7 @@ import {
   type MacroEditorItemOption,
   type MacroEditorSpellOption,
 } from "../ui/gameUi";
+import { getAowebSkinRegions, scaleSkinRect } from "../ui/aowebSkinLayout";
 import { isPhaserObjectLive } from "../ui/phaserObjectUtils";
 import {
   registerInventoryPanelAssets,
@@ -2917,8 +2918,14 @@ export class GameScene extends Phaser.Scene {
     if (!this.pingFpsText || !this.mapController) {
       return;
     }
-    const viewport = this.getGameViewportRect();
-    this.pingFpsText.setPosition(viewport.x + viewport.width - 12, viewport.y + 10);
+    const screenW = this.scale.width;
+    const screenH = this.scale.height;
+    const regions = getAowebSkinRegions();
+    const agility = scaleSkinRect(regions.agilitySlot, screenW, screenH);
+    const minimap = scaleSkinRect(regions.minimap, screenW, screenH);
+    const x = minimap.x - 12;
+    const y = Math.min(screenH - 44, agility.y + agility.h + 6);
+    this.pingFpsText.setPosition(x, y);
   }
 
   update(time: number, delta: number) {
