@@ -342,7 +342,7 @@ export class GameScene extends Phaser.Scene {
 
   private gameUi!: GameUi;
   private pingFpsText!: Phaser.GameObjects.Text;
-  private lastPingMs: number = 0;
+  private lastPingMs: number | null = null;
   private nextPingTime: number = 0;
   private soundController!: GameSceneSoundController;
   private mapController!: GameSceneMapController;
@@ -2930,7 +2930,8 @@ export class GameScene extends Phaser.Scene {
 
   update(time: number, delta: number) {
     if (this.pingFpsText) {
-      this.pingFpsText.setText(`FPS: ${Math.round(this.game.loop.actualFps)}\nPING: ${this.lastPingMs || 0}ms`);
+      const pingText = this.lastPingMs == null ? "--" : `${this.lastPingMs}ms`;
+      this.pingFpsText.setText(`FPS: ${Math.round(this.game.loop.actualFps)}\nPING: ${pingText}`);
       this.layoutPingFpsText();
     }
     if (time > this.nextPingTime && this.mpController?.isConnected()) {

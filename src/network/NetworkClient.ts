@@ -192,7 +192,7 @@ export class NetworkClient {
   }
 
   sendPing() {
-    this.send({ type: "ping", timestamp: Date.now() });
+    this.send({ type: "ping", timestamp: performance.now() });
   }
 
   sendMove(direction: Extract<ClientMessage, { type: "move" }>["direction"]) {
@@ -373,7 +373,7 @@ export class NetworkClient {
 
   private handleServerMessage(message: ServerMessage) {
     if (message.type === "pong") {
-      const latency = Date.now() - message.timestamp;
+      const latency = Math.max(1, Math.round(performance.now() - message.timestamp));
       this.handlers.onPong?.(latency);
       return;
     }
