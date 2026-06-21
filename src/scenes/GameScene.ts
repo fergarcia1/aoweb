@@ -207,6 +207,7 @@ import {
   playNamedWav,
   preloadNamedWavs,
 } from "../audio/namedWav";
+import { stopMenuMusic } from "../audio/menuMusic";
 import { preloadSpellWavs, playSpellNamedWav, playSpellWav } from "../audio/spellWav";
 import { getSpellNamedWav } from "../../game-data/spellEffects";
 import { resolveMobHitSoundId } from "../../game-data/mobCombatSounds";
@@ -1328,6 +1329,7 @@ export class GameScene extends Phaser.Scene {
    */
   create() {
     this.dismissLoadingOverlay();
+    stopMenuMusic(this);
 
     ensureAoFont2TransparentBackground(this);
     this.initSoundController();

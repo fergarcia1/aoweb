@@ -39,6 +39,7 @@ import {
 } from "../player/playerSprites";
 import { GAME_FONT, GAME_TEXT_RESOLUTION } from "../ui/fonts";
 import { START_MAP_ID } from "../maps";
+import { playMenuMusic, preloadMenuMusic } from "../audio/menuMusic";
 
 const UI = {
   bg: 0x080607,
@@ -129,6 +130,7 @@ export class CharacterCreationScene extends Phaser.Scene {
   }
 
   preload() {
+    preloadMenuMusic(this);
     this.load.image(HERO_BACKGROUND_KEY, HERO_BACKGROUND_URL);
     this.load.image(IMPERIAL_SHIELD_KEY, IMPERIAL_SHIELD_URL);
     registerRaceFaces(this);
@@ -136,6 +138,7 @@ export class CharacterCreationScene extends Phaser.Scene {
   }
 
   create() {
+    playMenuMusic(this);
     setupPlayerTexture(this);
     setupRaceFacesTextures(this);
 

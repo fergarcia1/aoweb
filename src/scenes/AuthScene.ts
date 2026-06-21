@@ -6,6 +6,7 @@ import {
   login,
   register,
 } from "../network/authApi";
+import { playMenuMusic, preloadMenuMusic } from "../audio/menuMusic";
 
 const AUTH_REQUIRED = import.meta.env.VITE_AUTH_REQUIRED === "true";
 const HERO_BACKGROUND_URL = "/assets/ui/aoweb-dragon-war-loading.png";
@@ -18,7 +19,12 @@ export class AuthScene extends Phaser.Scene {
     super("AuthScene");
   }
 
+  preload(): void {
+    preloadMenuMusic(this);
+  }
+
   create(): void {
+    playMenuMusic(this);
     if (isAuthenticated()) {
       this.scene.start("CharacterSelectScene");
       return;
@@ -160,6 +166,7 @@ export class AuthScene extends Phaser.Scene {
     document.body.appendChild(overlay);
     this.overlay = overlay;
 
+    overlay.addEventListener("pointerdown", () => playMenuMusic(this), { once: true });
     overlay.querySelector("#auth-switch")?.addEventListener("click", () => {
       this.mode = this.mode === "login" ? "register" : "login";
       this.renderOverlay();

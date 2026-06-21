@@ -39,6 +39,7 @@ import {
 } from "../../game-data/items/definitions";
 import { queueItemAssetsById } from "./gameSceneModules/gameSceneAssetQueue";
 import { GAME_FONT, GAME_TEXT_RESOLUTION } from "../ui/fonts";
+import { playMenuMusic, preloadMenuMusic } from "../audio/menuMusic";
 
 const MENU_COLORS = {
   bg: 0x080607,
@@ -86,6 +87,7 @@ export class CharacterSelectScene extends Phaser.Scene {
   }
 
   preload() {
+    preloadMenuMusic(this);
     this.load.image(HERO_BACKGROUND_KEY, HERO_BACKGROUND_URL);
     registerRaceFaces(this);
     registerPlayerSprites(this);
@@ -93,6 +95,7 @@ export class CharacterSelectScene extends Phaser.Scene {
   }
 
   create() {
+    playMenuMusic(this);
     this.slots = loadCharacterSlots();
     setupPlayerTexture(this);
     setupRaceFacesTextures(this);
