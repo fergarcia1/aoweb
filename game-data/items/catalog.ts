@@ -307,6 +307,16 @@ export type ArmorData = {
     | "armor_placas_rojas_bajos"
     | "armor_caballero_muerte"
     | "armor_caballero_muerte_bajos"
+    | "armor_coraza"
+    | "armor_corazaBajos"
+    | "armor_cueroBajos"
+    | "armor_placasAzulesFem"
+    | "armor_placasVerdes"
+    | "armor_tunicaMagoBajos"
+    | "armor_tunicaRoja"
+    | "armor_tunicaRojaBajos"
+    | "armor_tunicaClerigoBajos"
+    | "armor_tunicaDruida"
     | "armor_caballero_oscuro";
   idItem: number;
   nivelMinimo: number;
@@ -354,7 +364,17 @@ export type ArmorData = {
     | "placasRojasBajos"
     | "caballeroDeMuerte"
     | "caballeroDeMuerteBajos"
-    | "caballeroOscuro";
+    | "caballeroOscuro"
+    | "coraza"
+    | "corazaBajos"
+    | "cueroBajos"
+    | "placasAzulesFem"
+    | "placasVerdes"
+    | "tunicaMagoBajos"
+    | "tunicaRoja"
+    | "tunicaRojaBajos"
+    | "tunicaClerigoBajos"
+    | "tunicaDruida";
   /** Si true, no se dropea al morir. */
   noDropeaAlMorir?: boolean;
 };
@@ -1421,6 +1441,146 @@ export const ARMORS: ArmorData[] = [
     clasesBajas: false,
     spritesheetStdPath: "assets/ao/armors/placasDoradas_std.png",
     outfitOverride: "placasDoradas",
+  },
+  {
+    itemId: "armor_coraza",
+    idItem: 2501,
+    nivelMinimo: 1,
+    nombre: "Coraza Negra",
+    reduccionDanioPercent: 0.19,
+    resistenciaMagicaPercent: 0.05,
+    valor: 12000,
+    equipablePor: ["clerigo", "nigromante"],
+    iconAssetPath: "assets/ao/armors/coraza_icon.png",
+    clasesBajas: false,
+    spritesheetStdPath: "assets/ao/armors/coraza_std.png",
+    outfitOverride: "coraza",
+  },
+  {
+    itemId: "armor_corazaBajos",
+    idItem: 2502,
+    nivelMinimo: 1,
+    nombre: "Coraza Negra(Bajos)",
+    reduccionDanioPercent: 0.19,
+    resistenciaMagicaPercent: 0.05,
+    valor: 12000,
+    equipablePor: ["clerigo", "nigromante"],
+    iconAssetPath: "assets/ao/armors/corazaBajos_icon.png",
+    clasesBajas: true,
+    spritesheetBajosPath: "assets/ao/armors/corazaBajos_std.png",
+    outfitOverride: "corazaBajos",
+  },
+  {
+    itemId: "armor_cueroBajos",
+    idItem: 2503,
+    nivelMinimo: 1,
+    nombre: "Armadura de Cuero (Bajos)",
+    reduccionDanioPercent: 0.14,
+    resistenciaMagicaPercent: 0.0,
+    valor: 2800,
+    equipablePor: HEAVY_ARMOR_CLASSES,
+    iconAssetPath: "assets/ao/armors/cueroBajos_icon.png",
+    clasesBajas: true,
+    spritesheetBajosPath: "assets/ao/armors/cueroBajos_std.png",
+    outfitOverride: "cueroBajos",
+  },
+  {
+    itemId: "armor_placasAzulesFem",
+    idItem: 2504,
+    nivelMinimo: 18,
+    nombre: "Armadura de Placas Azules (Fem)",
+    reduccionDanioPercent: 0.22,
+    resistenciaMagicaPercent: 0.0,
+    valor: 13000,
+    equipablePor: HEAVY_ARMOR_CLASSES,
+    iconAssetPath: "assets/ao/armors/placasAzulesFem_icon.png",
+    clasesBajas: false,
+    spritesheetFemalePath: "assets/ao/armors/placasAzulesFem_std.png",
+    outfitOverride: "placasAzulesFem",
+  },
+  {
+    itemId: "armor_placasVerdes",
+    idItem: 2505,
+    nivelMinimo: 18,
+    nombre: "Armadura de Placas Verdes",
+    reduccionDanioPercent: 0.22,
+    resistenciaMagicaPercent: 0.0,
+    valor: 13000,
+    equipablePor: HEAVY_ARMOR_CLASSES,
+    iconAssetPath: "assets/ao/armors/placasVerdes_icon.png",
+    clasesBajas: false,
+    spritesheetStdPath: "assets/ao/armors/placasVerdes_std.png",
+    outfitOverride: "placasVerdes",
+  },
+  {
+    itemId: "armor_tunicaMagoBajos",
+    idItem: 2506,
+    nivelMinimo: 1,
+    nombre: "Túnica de Mago (Bajos)",
+    reduccionDanioPercent: 0.10,
+    resistenciaMagicaPercent: 0.05,
+    valor: 5000,
+    equipablePor: ROBES_CLASSES,
+    iconAssetPath: "assets/ao/armors/tunicaMagoBajos_icon.png",
+    clasesBajas: true,
+    spritesheetBajosPath: "assets/ao/armors/tunicaMagoBajos_std.png",
+    outfitOverride: "tunicaMagoBajos",
+  },
+  {
+    itemId: "armor_tunicaRoja",
+    idItem: 2507,
+    nivelMinimo: 10,
+    nombre: "Túnica Roja",
+    reduccionDanioPercent: 0.10,
+    resistenciaMagicaPercent: 0.05,
+    valor: 8000,
+    equipablePor: ROBES_CLASSES,
+    iconAssetPath: "assets/ao/armors/tunicaRoja_icon.png",
+    clasesBajas: false,
+    spritesheetStdPath: "assets/ao/armors/tunicaRoja_std.png",
+    outfitOverride: "tunicaRoja",
+  },
+  {
+    itemId: "armor_tunicaRojaBajos",
+    idItem: 2508,
+    nivelMinimo: 10,
+    nombre: "Túnica Roja (Bajos)",
+    reduccionDanioPercent: 0.10,
+    resistenciaMagicaPercent: 0.05,
+    valor: 8000,
+    equipablePor: ROBES_CLASSES,
+    iconAssetPath: "assets/ao/armors/tunicaRojaBajos_icon.png",
+    clasesBajas: true,
+    spritesheetBajosPath: "assets/ao/armors/tunicaRojaBajos_std.png",
+    outfitOverride: "tunicaRojaBajos",
+  },
+  {
+    itemId: "armor_tunicaClerigoBajos",
+    idItem: 2509,
+    nivelMinimo: 10,
+    nombre: "Túnica de Clérigo (Bajos)",
+    reduccionDanioPercent: 0.10,
+    resistenciaMagicaPercent: 0.05,
+    valor: 8000,
+    equipablePor: ["clerigo"],
+    iconAssetPath: "assets/ao/armors/tunicaClerigoBajos_icon.png",
+    clasesBajas: true,
+    spritesheetBajosPath: "assets/ao/armors/tunicaClerigoBajos_std.png",
+    outfitOverride: "tunicaClerigoBajos",
+  },
+  {
+    itemId: "armor_tunicaDruida",
+    idItem: 2510,
+    nivelMinimo: 10,
+    nombre: "Túnica de Druida",
+    reduccionDanioPercent: 0.10,
+    resistenciaMagicaPercent: 0.05,
+    valor: 8000,
+    equipablePor: ["druida"],
+    iconAssetPath: "assets/ao/armors/tunicaDruida_icon.png",
+    clasesBajas: false,
+    spritesheetStdPath: "assets/ao/armors/tunicaDruida_std.png",
+    outfitOverride: "tunicaDruida",
   }
 ];
 

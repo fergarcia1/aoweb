@@ -1,4 +1,4 @@
-﻿import Phaser from "phaser";
+import Phaser from "phaser";
 import {
   isMinimapLegacyRoofTile,
   MINIMAP_LEGACY_ROOF_COLOR,
@@ -1128,8 +1128,13 @@ export class GameUi {
           color = 0xc9b060;
         }
 
-        if (map.legacyCsmData && isMinimapLegacyRoofTile(map, tx, ty)) {
-          color = MINIMAP_LEGACY_ROOF_COLOR;
+        if (map.legacyCsmData) {
+          const l1 = map.legacyCsmData.L1[ty]?.[tx] ?? 0;
+          if ((l1 >= 6000 && l1 <= 6015) || (l1 >= 7704 && l1 <= 7719)) {
+            color = 0xb99a5a; // Sand color
+          } else if (isMinimapLegacyRoofTile(map, tx, ty)) {
+            color = MINIMAP_LEGACY_ROOF_COLOR;
+          }
         }
 
         const cellX = offsetX + (tx - minTileX) * cell;

@@ -68,6 +68,16 @@ const VALID_OUTFITS = new Set<string>([
   "caballeroDeMuerte",
   "caballeroDeMuerteBajos",
   "caballeroOscuro",
+  "coraza",
+  "corazaBajos",
+  "cueroBajos",
+  "placasAzulesFem",
+  "placasVerdes",
+  "tunicaMagoBajos",
+  "tunicaRoja",
+  "tunicaRojaBajos",
+  "tunicaClerigoBajos",
+  "tunicaDruida",
 ]);
 
 /** itemId de armadura → outfit visual. */
