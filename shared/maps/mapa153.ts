@@ -8,7 +8,7 @@ const L4 = [[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
 
 export const MAP_MAPA153: GameMap = {
   id: "mapa153",
-  name: "Rmo Nueva Esperanza                                             ",
+  name: "Rio Nueva Esperanza                                             ",
   width: 100,
   height: 100,
   backgroundColor: '#000000',

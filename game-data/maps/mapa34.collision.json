@@ -1,0 +1,16 @@
+{
+  "mapId": "mapa34",
+  "description": "Collision overrides para mapa34 (Nix) — paredes del templo y banco",
+  "allow": [],
+  "deny": [],
+  "denyRects": [
+    { "x0": 19, "y0": 65, "x1": 19, "y1": 67, "label": "pared oeste templo nix" },
+    { "x0": 13, "y0": 67, "x1": 16, "y1": 67, "label": "pared sur templo nix izq" },
+    { "x0": 20, "y0": 67, "x1": 23, "y1": 67, "label": "pared sur templo nix centro" },
+    { "x0": 28, "y0": 67, "x1": 28, "y1": 67, "label": "pared sur templo nix der" },
+    { "x0": 30, "y0": 51, "x1": 30, "y1": 67, "label": "pared este templo nix" },
+    { "x0": 19, "y0": 51, "x1": 23, "y1": 51, "label": "pared norte templo nix centro" },
+    { "x0": 13, "y0": 51, "x1": 15, "y1": 51, "label": "pared norte templo nix izq" },
+    { "x0": 13, "y0": 51, "x1": 13, "y1": 66, "label": "pared oeste templo nix completa" }
+  ]
+}

@@ -37,14 +37,48 @@ export class ChatSystem {
       if (this.handlePartyCommand(session, command, args)) {
         return;
       }
+      if (command === "alistar") {
+        this.world.tryEnlistArmada(session);
+        return;
+      }
+      if (command === "crearclan") {
+        this.world.tryStartClanCreation(session);
+        return;
+      }
     }
 
-    this.world.broadcastToAoi(session.mapId, session.tileX, session.tileY, {
+    if (trimmed.startsWith("#")) {
+      const globalText = trimmed.slice(1).trim();
+      if (!globalText) {
+        return;
+      }
+      const message = {
+        type: "chat" as const,
+        from: session.name,
+        text: globalText,
+        fromPlayerId: session.id,
+        channel: "global" as const,
+      };
+      for (const player of this.world.getPlayers().values()) {
+        if (player.joined) {
+          this.world.send(player, message);
+        }
+      }
+      return;
+    }
+
+    const message = {
       type: "chat",
       from: session.name,
       text: trimmed,
       fromPlayerId: session.id,
-    });
+      channel: "general",
+    } as const;
+    for (const player of this.world.getPlayers().values()) {
+      if (player.joined && player.mapId === session.mapId) {
+        this.world.send(player, message);
+      }
+    }
   }
 
   private handlePartyCommand(session: PlayerSession, command: string, args: string[]): boolean {
@@ -103,11 +137,9 @@ export class ChatSystem {
     }
 
     if (command === "pvp") {
-      const isEnabled = this.world.isGlobalPvpEnabled();
-      this.world.setGlobalPvpEnabled(!isEnabled);
       this.world.sendCombatLog(
         session,
-        `PvP global (ignora zonas seguras) esta ahora: ${!isEnabled ? "ACTIVADO" : "DESACTIVADO"}`
+        "El PvP ya es libre fuera de ciudades. Las ciudades usan reglas de jurisdicción."
       );
       return;
     }

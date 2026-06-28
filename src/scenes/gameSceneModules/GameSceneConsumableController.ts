@@ -117,19 +117,23 @@ export class GameSceneConsumableController {
       return;
     }
 
-    this.deps.deferConsumableUiWork(() => {
-      const ackItem = getItemDefinition(ack.itemId as ItemId);
-      if (isHpOrMpPotion(ackItem)) {
-        this.deps.playPotionUseSound?.();
+    const ackItem = getItemDefinition(ack.itemId as ItemId);
+    if (isHpOrMpPotion(ackItem)) {
+      this.deps.playPotionUseSound?.();
+      const slotIndex = this.resolveInventorySlotForItemAck(ack);
+      if (slotIndex >= 0) {
+        this.consumeOneFromSlot(slotIndex, ackItem.textureKey);
       }
+      return;
+    }
+
+    this.deps.deferConsumableUiWork(() => {
       this.deps.addChatLine(ack.message);
 
       const slotIndex = this.resolveInventorySlotForItemAck(ack);
       if (slotIndex >= 0) {
-        const item = getItemDefinition(ack.itemId as ItemId);
-        this.consumeOneFromSlot(slotIndex, item.textureKey);
+        this.consumeOneFromSlot(slotIndex, ackItem.textureKey);
       }
-      this.persistInventoryAfterConsume();
     });
   }
 

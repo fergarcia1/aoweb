@@ -84,7 +84,7 @@ export function setupAoTerrainTexture(scene: Phaser.Scene): void {
     return;
   }
 
-  texture.setFilter(Phaser.Textures.FilterMode.NEAREST);
+  texture.setFilter(Phaser.Textures.FilterMode.LINEAR);
 
   for (const frame of AO_GRASS_FRAMES) {
     registerInsetFrame(texture, frame);
@@ -96,7 +96,7 @@ export function setupAoTerrainTexture(scene: Phaser.Scene): void {
 
   const grassTex = scene.textures.get(AO_GRASS_TEXTURE_KEY);
   if (grassTex.key !== "__MISSING") {
-    grassTex.setFilter(Phaser.Textures.FilterMode.NEAREST);
+    grassTex.setFilter(Phaser.Textures.FilterMode.LINEAR);
   }
 }
 

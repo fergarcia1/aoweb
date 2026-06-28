@@ -49,6 +49,10 @@ export type GameSceneLocalPlayerSyncDeps = {
   ) => void;
   getPlayerTile: () => { x: number; y: number };
   onLocalPlayerDeath: () => void;
+  playWeaponEquipSound: () => void;
+  playArmorEquipSound: () => void;
+  playPlayerDeathSound: () => void;
+  applyLocalRevivedFromServer: (hp: number) => void;
   addCombatLine: (text: string) => void;
   setRemotePlayerGhost: (playerId: string) => void;
   updateRemotePlayer: (state: NetPlayerState, mapId: string) => void;
@@ -65,6 +69,7 @@ export type GameSceneLocalPlayerSyncDeps = {
   ) => void;
   refreshKnownSpellsUi: () => void;
   applyLocalFaction: (factionId: CharacterFactionId) => void;
+  applyLocalClanName: (clanName: string | null | undefined) => void;
   recordLocalUserKill: () => void;
   setInvisibleUntilMs: (ms: number) => void;
   setPlayerImmobilizedUntilMs: (ms: number) => void;
@@ -78,6 +83,8 @@ export type GameSceneLocalPlayerSyncDeps = {
  * Aplica estado autoritativo del servidor al jugador local (vitales, oro, inventario, ├¡tems en el suelo).
  */
 export class GameSceneLocalPlayerSync {
+  private hasSyncedEquipment = false;
+
   constructor(private readonly deps: GameSceneLocalPlayerSyncDeps) {}
 
   handleServerPlayerUpdated(state: NetPlayerState): void {
@@ -98,6 +105,7 @@ export class GameSceneLocalPlayerSync {
       this.syncLocalEquipmentFromServer(state);
       const faction = normalizeFactionId(state.factionId);
       this.deps.applyLocalFaction(faction);
+      this.deps.applyLocalClanName(state.clanName);
     }
   }
 
@@ -121,6 +129,7 @@ export class GameSceneLocalPlayerSync {
       this.deps.addCombatLine(`Has sido asesinado por ${killerName}.`);
       return;
     }
+    this.deps.playPlayerDeathSound();
     this.deps.setRemotePlayerGhost(playerId);
   }
 
@@ -150,6 +159,9 @@ export class GameSceneLocalPlayerSync {
       return;
     }
     if (state.hp > 0) {
+      if (this.deps.getDeathPhase() !== "alive") {
+        this.deps.applyLocalRevivedFromServer(state.hp);
+      }
       this.deps.clearServerReviveSyncPending();
     }
     this.deps.setPlayerProgressFromServer({
@@ -170,6 +182,10 @@ export class GameSceneLocalPlayerSync {
     const now = Date.now();
     const invisUntil = state.invisibleUntilMs ?? 0;
     this.deps.setInvisibleUntilMs(invisUntil > now ? invisUntil : 0);
+    const immobilizedUntil = state.immobilizedUntilMs ?? 0;
+    this.deps.setPlayerImmobilizedUntilMs(
+      immobilizedUntil > now ? immobilizedUntil : 0
+    );
     this.deps.setNavigatingFromServer(state.isNavigating === true);
 
     const hasBuffPayload =
@@ -196,7 +212,19 @@ export class GameSceneLocalPlayerSync {
     if (!state?.equipment) {
       return;
     }
+    const previous = { ...this.deps.getEquipment() };
+    const shouldPlayEquipSound = this.hasSyncedEquipment;
     this.deps.setEquipmentFromServer(state.equipment);
+    const current = this.deps.getEquipment();
+    if (shouldPlayEquipSound) {
+      if (previous.weapon !== current.weapon && current.weapon != null) {
+        this.deps.playWeaponEquipSound();
+      }
+      if (previous.armor !== current.armor && current.armor != null) {
+        this.deps.playArmorEquipSound();
+      }
+    }
+    this.hasSyncedEquipment = true;
     this.deps.syncEquippedArmorOutfit();
     this.deps.syncEquippedHeldItemVisuals();
     const equipment = this.deps.getEquipment();

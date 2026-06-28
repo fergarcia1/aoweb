@@ -1,5 +1,6 @@
 import { CLASS_USES_MANA } from "./classes";
 import type { CharacterClassId } from "./items/catalog";
+import { ARROW_ITEM_ID } from "./rangedCombat";
 
 /** Hechizos iniciales (ids alineados con `src/data/spells.ts` / SPELL_ID). */
 export const STARTER_SPELL_CURAR_VENENO = 1;
@@ -17,6 +18,7 @@ export const STARTER_SEMI_MAGIC_CLASS_IDS: readonly CharacterClassId[] = [
 
 export const STARTER_ARMOR_ITEM_ID = "armor_citizen" as const;export const STARTER_POTION_MP_AMOUNT = 1500;
 export const STARTER_POTION_HP_AMOUNT = 800;
+export const STARTER_ARROW_AMOUNT = 500;
 
 export function getStarterWeaponItemId(classId: CharacterClassId): string {
   switch (classId) {
@@ -49,6 +51,10 @@ export type StarterLoadout = {
 
 export function buildStarterLoadout(classId: CharacterClassId): StarterLoadout {
   const weaponItemId = getStarterWeaponItemId(classId);
+  const extraSlots =
+    classId === "cazador"
+      ? [{ slotIndex: 4, itemId: ARROW_ITEM_ID, amount: STARTER_ARROW_AMOUNT }]
+      : [];
   return {
     weaponItemId,
     armorItemId: STARTER_ARMOR_ITEM_ID,
@@ -57,6 +63,7 @@ export function buildStarterLoadout(classId: CharacterClassId): StarterLoadout {
       { slotIndex: 1, itemId: STARTER_ARMOR_ITEM_ID, amount: 1 },
       { slotIndex: 2, itemId: "potion_mp", amount: STARTER_POTION_MP_AMOUNT },
       { slotIndex: 3, itemId: "potion_hp", amount: STARTER_POTION_HP_AMOUNT },
+      ...extraSlots,
     ],
     equipment: {
       weaponId: weaponItemId,

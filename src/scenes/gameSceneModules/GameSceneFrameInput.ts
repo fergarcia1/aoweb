@@ -16,6 +16,7 @@ export type GameSceneFrameInputDeps = {
   justPressedWorldMapToggle: boolean;
   justPressedPartyToggle: boolean;
   hasPendingSpellCast: boolean;
+  hasPendingRangedAttack: boolean;
   justPressedCancelTargeting: boolean;
   isWorldMapOpen: boolean;
   isPlayerDeadOrGhost: boolean;
@@ -36,6 +37,7 @@ export type GameSceneFrameInputDeps = {
   toggleWorldMap: () => void;
   togglePartyOverlay: () => void;
   cancelSpellTargeting: (message: string) => void;
+  cancelRangedTargeting: (message: string) => void;
   handleShopEscape: () => void;
   handleBankEscape: () => void;
   handleAuctionEscape: () => void;
@@ -120,6 +122,11 @@ export function processGameSceneFrameInput(deps: GameSceneFrameInputDeps): boole
 
   if (deps.hasPendingSpellCast && deps.justPressedCancelTargeting) {
     deps.cancelSpellTargeting("Lanzamiento cancelado.");
+    return true;
+  }
+
+  if (deps.hasPendingRangedAttack && deps.justPressedCancelTargeting) {
+    deps.cancelRangedTargeting("Apuntado cancelado.");
     return true;
   }
 

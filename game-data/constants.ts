@@ -2,6 +2,7 @@
  * Constantes de balance y red compartidas entre cliente, servidor y tests.
  * Sin dependencias de Phaser ni del DOM.
  */
+import { CITY_MAP_IDS } from "../shared/worldMapZones";
 
 /** Vitales de personajes GM/admin (Lonler, etc.). */
 export const ADMIN_GM_HP_MAX = 10_000;
@@ -44,7 +45,7 @@ export const GOLD_DROP_MAX_AMOUNT = 100_000;
 /** Máximo por pila de oro en el suelo. */
 export const GOLD_WORLD_STACK_MAX = 10_000;
 
-export const SAFE_ZONE_MAP_IDS: ReadonlySet<string> = new Set(["mapa1"]);
+export const SAFE_ZONE_MAP_IDS: ReadonlySet<string> = new Set(CITY_MAP_IDS);
 
 /** Tiempo que el personaje permanece en el mundo tras desconectarse en zona insegura. */
 export const LOGOUT_GRACE_MS = 10_000;

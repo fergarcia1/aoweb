@@ -26,7 +26,6 @@ import {
 } from "../../../game-data/antiOneshot";
 import { mitigatePhysicalDamage } from "../../../game-data/physicalDamageMitigation";
 import { MECHANICS } from "../../../shared/gameMechanics";
-import { SAFE_ZONE_MAP_IDS } from "../../../game-data/constants";
 import {
   ATTACK_COOLDOWN_MS,
   getImmobilizeMobDurationMs,
@@ -41,9 +40,26 @@ import { mobTargetFootprintOccupiesTile } from "../../../shared/mobFootprint";
 import { spellRequiresAnilloEspectral } from "../../../game-data/spells";
 import { validateAttackIntent } from "../../../shared/multiplayerIntents";
 import { canFactionsFight, normalizeFactionId } from "../../../shared/faction";
-import type { ServerMessage } from "../../../shared/protocol";
+import {
+  ARROW_ITEM_ID,
+  isBowItemId,
+  isWithinRangedAttackRange,
+} from "../../../game-data/rangedCombat";
+import {
+  CHAOS_CITY_MAP_ID_SET,
+  IMPERIAL_CITY_MAP_ID_SET,
+  NEUTRAL_CITY_MAP_ID_SET,
+} from "../../../shared/worldMapZones";
+import {
+  applyAgilityMissReduction,
+  getClassEvasionChance,
+  rollChance,
+} from "../../../game-data/evasion";
+import { resolveEffectiveAgility } from "../../../game-data/characterCoreStats";
+import type { ClientRangedAttackMessage, ServerMessage } from "../../../shared/protocol";
 
 const INMOVILIZAR_SPELL_ID = 8;
+const CITY_AGGRESSION_RETALIATION_MS = 30_000;
 
 type ResurrectChannelState = {
   casterId: string;
@@ -65,6 +81,77 @@ export class CombatSystem {
       normalizeFactionId(attackerFaction),
       normalizeFactionId(defenderFaction)
     );
+  }
+
+  private isImperialFaction(faction: string): boolean {
+    const normalized = normalizeFactionId(faction);
+    return normalized === "ciudadano" || normalized === "armada";
+  }
+
+  private isChaosFaction(faction: string): boolean {
+    const normalized = normalizeFactionId(faction);
+    return normalized === "caos" || normalized === "renegado";
+  }
+
+  private pruneExpiredPvpAggression(session: PlayerSession, now = Date.now()): void {
+    for (const [targetId, expiresAt] of session.recentPvpAggressionUntilByTargetId.entries()) {
+      if (expiresAt <= now) {
+        session.recentPvpAggressionUntilByTargetId.delete(targetId);
+      }
+    }
+  }
+
+  private markPvpAggression(attacker: PlayerSession, target: PlayerSession): void {
+    if (attacker.id === target.id) {
+      return;
+    }
+    attacker.recentPvpAggressionUntilByTargetId.set(
+      target.id,
+      Date.now() + CITY_AGGRESSION_RETALIATION_MS
+    );
+  }
+
+  private hasRecentPvpAggressionToward(attacker: PlayerSession, target: PlayerSession): boolean {
+    this.pruneExpiredPvpAggression(attacker);
+    return (attacker.recentPvpAggressionUntilByTargetId.get(target.id) ?? 0) > Date.now();
+  }
+
+  private validatePvpAttack(attacker: PlayerSession, defender: PlayerSession): string | null {
+    if (attacker.id === defender.id) {
+      return null;
+    }
+
+    if (NEUTRAL_CITY_MAP_ID_SET.has(defender.mapId)) {
+      return "Esta es una ciudad neutral: no se permite el combate.";
+    }
+
+    if (IMPERIAL_CITY_MAP_ID_SET.has(defender.mapId)) {
+      if (!this.isImperialFaction(defender.factionId)) {
+        return null;
+      }
+      if (this.isImperialFaction(attacker.factionId)) {
+        return this.canFactionsFight(attacker.factionId, defender.factionId)
+          ? null
+          : "No podés atacar a otro imperial en ciudad imperial.";
+      }
+      return this.hasRecentPvpAggressionToward(defender, attacker)
+        ? null
+        : "No podés atacar imperiales en ciudad imperial salvo que ataquen primero.";
+    }
+
+    if (CHAOS_CITY_MAP_ID_SET.has(defender.mapId)) {
+      if (!this.isChaosFaction(defender.factionId)) {
+        return null;
+      }
+      if (this.isChaosFaction(attacker.factionId)) {
+        return null;
+      }
+      return this.hasRecentPvpAggressionToward(defender, attacker)
+        ? null
+        : "No podés atacar caos o renegados en ciudad caos salvo que ataquen primero.";
+    }
+
+    return null;
   }
 
   private canAttackMob(session: PlayerSession, mob: MobEntity, silent: boolean = false): boolean {
@@ -120,27 +207,43 @@ export class CombatSystem {
 
     const targetPlayer = this.findPlayerAtTile(session.mapId, front.x, front.y, session.id);
     if (targetPlayer) {
-      if (this.isInSafeZone(session)) {
-        this.world.sendCombatLog(session, "No podés atacar jugadores en zona segura.");
+      if (this.world.canArenaPlayersFight(session.id, targetPlayer.id)) {
+        this.markMeleeAttackCooldown(session, now);
+        if (this.tryPlayerEvadesPhysicalAttack(session, targetPlayer, "golpe", "melee")) {
+          return;
+        }
+        const roll = rollAttackDamage(session.attackMin, session.attackMax, {
+          canCrit: session.canCrit,
+          critChance: session.critChance,
+          critDamage: session.critDamage,
+        });
+        this.applyDamageToPlayer(session, targetPlayer, roll.damage, undefined, {
+          attackKind: "melee",
+          critical: roll.isCrit,
+        });
+        if (roll.isCrit) {
+          this.world.sendCombatLog(session, "Golpe critico!");
+        }
         return;
       }
-      if (this.isInSafeZone(targetPlayer)) {
-        this.world.sendCombatLog(session, "Esta es zona segura.");
-        return;
-      }
-      const attackerFaction = normalizeFactionId(session.factionId);
-      const defenderFaction = normalizeFactionId(targetPlayer.factionId);
-      if (!canFactionsFight(attackerFaction, defenderFaction)) {
-        this.world.sendCombatLog(session, "No podés atacar a este jugador (misma facción o alianza).");
+      const pvpError = this.validatePvpAttack(session, targetPlayer);
+      if (pvpError) {
+        this.world.sendCombatLog(session, pvpError);
         return;
       }
       this.markMeleeAttackCooldown(session, now);
+      if (this.tryPlayerEvadesPhysicalAttack(session, targetPlayer, "golpe", "melee")) {
+        return;
+      }
       const roll = rollAttackDamage(session.attackMin, session.attackMax, {
         canCrit: session.canCrit,
         critChance: session.critChance,
         critDamage: session.critDamage,
       });
-      this.applyDamageToPlayer(session, targetPlayer, roll.damage);
+      this.applyDamageToPlayer(session, targetPlayer, roll.damage, undefined, {
+        attackKind: "melee",
+        critical: roll.isCrit,
+      });
       if (roll.isCrit) {
         this.world.sendCombatLog(session, "Golpe critico!");
       }
@@ -152,12 +255,18 @@ export class CombatSystem {
       if (!this.canAttackMob(session, targetMob)) return;
 
       this.markMeleeAttackCooldown(session, now);
+      if (this.tryMobAvoidsPhysicalAttack(session, targetMob, "golpe", "melee")) {
+        return;
+      }
       const roll = rollAttackDamage(session.attackMin, session.attackMax, {
         canCrit: session.canCrit,
         critChance: session.critChance,
         critDamage: session.critDamage,
       });
-      this.applyDamageToMob(session, targetMob, roll.damage);
+      this.applyDamageToMob(session, targetMob, roll.damage, undefined, {
+        attackKind: "melee",
+        critical: roll.isCrit,
+      });
       if (roll.isCrit) {
         this.world.sendCombatLog(session, "Golpe critico!");
       }
@@ -167,12 +276,224 @@ export class CombatSystem {
     this.world.sendCombatLog(session, "No hay nadie para golpear.");
   }
 
+  public handleRangedAttack(session: PlayerSession, message: ClientRangedAttackMessage) {
+    const now = Date.now();
+    if (!validateAttackIntent(now, session.nextAttackAt).ok) return;
+    if (session.hp <= 0) {
+      this.world.sendCombatLog(session, "EstÃ¡s muerto.");
+      return;
+    }
+    if (!isBowItemId(session.equipment.weaponId)) {
+      this.world.sendCombatLog(session, "NecesitÃ¡s equipar un arco.");
+      return;
+    }
+
+    const targetTileX = Math.floor(Number(message.targetTileX));
+    const targetTileY = Math.floor(Number(message.targetTileY));
+    if (!Number.isFinite(targetTileX) || !Number.isFinite(targetTileY)) {
+      return;
+    }
+
+    const targetPlayer = this.resolveRangedTargetPlayer(session, message, targetTileX, targetTileY);
+    const targetMob = targetPlayer
+      ? undefined
+      : this.resolveRangedTargetMob(session, message, targetTileX, targetTileY);
+
+    if (!targetPlayer && !targetMob) {
+      this.world.sendCombatLog(session, "No hay objetivo para disparar.");
+      return;
+    }
+
+    const rangeTile = targetPlayer
+      ? { x: targetPlayer.tileX, y: targetPlayer.tileY }
+      : { x: targetTileX, y: targetTileY };
+    if (!isWithinRangedAttackRange(session.tileX, session.tileY, rangeTile.x, rangeTile.y)) {
+      this.world.sendCombatLog(session, "El objetivo estÃ¡ demasiado lejos.");
+      return;
+    }
+
+    if (targetPlayer) {
+      if (!this.world.canArenaPlayersFight(session.id, targetPlayer.id)) {
+        const pvpError = this.validatePvpAttack(session, targetPlayer);
+        if (pvpError) {
+          this.world.sendCombatLog(session, pvpError);
+          return;
+        }
+      }
+    } else if (targetMob && !this.canAttackMob(session, targetMob)) {
+      return;
+    }
+
+    if (!this.consumeArrow(session)) {
+      this.world.sendCombatLog(session, "No tenÃ©s flechas.");
+      return;
+    }
+
+    this.markRangedAttackCooldown(session, now);
+    if (targetPlayer && this.tryPlayerEvadesPhysicalAttack(session, targetPlayer, "disparo", "ranged")) {
+      return;
+    }
+    if (targetMob && this.tryMobAvoidsPhysicalAttack(session, targetMob, "disparo", "ranged")) {
+      return;
+    }
+    const roll = rollAttackDamage(session.attackMin, session.attackMax, {
+      canCrit: session.canCrit,
+      critChance: session.critChance,
+      critDamage: session.critDamage,
+    });
+
+    if (targetPlayer) {
+      this.applyDamageToPlayer(session, targetPlayer, roll.damage, undefined, {
+        attackKind: "ranged",
+        critical: roll.isCrit,
+      });
+    } else if (targetMob) {
+      this.applyDamageToMob(session, targetMob, roll.damage, undefined, {
+        attackKind: "ranged",
+        critical: roll.isCrit,
+      });
+    }
+    if (roll.isCrit) {
+      this.world.sendCombatLog(session, "Disparo critico!");
+    }
+  }
+
   private markMeleeAttackCooldown(session: PlayerSession, now: number): void {
     session.nextAttackAt = now + ATTACK_COOLDOWN_MS;
     session.nextSpellAt = Math.max(
       session.nextSpellAt,
       now + MECHANICS.INTERVAL_MELEE_TO_SPELL
     );
+  }
+
+  private markRangedAttackCooldown(session: PlayerSession, now: number): void {
+    session.nextAttackAt = now + ATTACK_COOLDOWN_MS;
+    session.nextSpellAt = Math.max(
+      session.nextSpellAt,
+      now + MECHANICS.INTERVAL_MELEE_TO_SPELL
+    );
+  }
+
+  private consumeArrow(session: PlayerSession): boolean {
+    const slot = session.inventorySlots.find(
+      (entry) => entry.itemId === ARROW_ITEM_ID && entry.amount > 0
+    );
+    if (!slot) {
+      return false;
+    }
+    slot.amount -= 1;
+    if (slot.amount <= 0) {
+      slot.itemId = null;
+      slot.amount = 0;
+      slot.isEquipped = false;
+    }
+    this.world.syncInventoryEquippedFlags(session);
+    this.world.sendInventoryUpdated(session);
+    this.world.schedulePersistSessionDebounced(session);
+    return true;
+  }
+
+  private tryPlayerEvadesPhysicalAttack(
+    attacker: PlayerSession,
+    victim: PlayerSession,
+    attackLabel: "golpe" | "disparo",
+    attackKind: "melee" | "ranged"
+  ): boolean {
+    this.markPvpAggression(attacker, victim);
+    const missChance = this.getAttackMissChance(
+      getClassEvasionChance(victim.classId),
+      attacker
+    );
+    if (!rollChance(missChance)) {
+      return false;
+    }
+    this.world.broadcastCombatLog(
+      victim.mapId,
+      victim.tileX,
+      victim.tileY,
+      `${victim.name} esquiva el ${attackLabel} de ${attacker.name}.`
+    );
+    this.broadcastPlayerAttackMiss(attacker, attackKind);
+    return true;
+  }
+
+  private tryMobAvoidsPhysicalAttack(
+    attacker: PlayerSession,
+    mob: MobEntity,
+    attackLabel: "golpe" | "disparo",
+    attackKind: "melee" | "ranged"
+  ): boolean {
+    const missChance = this.getAttackMissChance(mob.missChance, attacker);
+    if (!rollChance(missChance)) {
+      return false;
+    }
+    this.world.aggroMobOnPlayerHit(mob, attacker);
+    this.world.broadcastCombatLog(
+      attacker.mapId,
+      mob.tileX,
+      mob.tileY,
+      `${attacker.name} falla el ${attackLabel} contra ${mob.name}.`
+    );
+    this.broadcastPlayerAttackMiss(attacker, attackKind);
+    return true;
+  }
+
+  private getAttackMissChance(baseChance: number, attacker: PlayerSession): number {
+    const agility = resolveEffectiveAgility(
+      attacker.raceId,
+      attacker.classId,
+      attacker.attributeBuffs
+    );
+    return applyAgilityMissReduction(baseChance, agility);
+  }
+
+  private broadcastPlayerAttackMiss(
+    attacker: PlayerSession,
+    attackKind: "melee" | "ranged"
+  ): void {
+    this.world.broadcastGameEvent(attacker.mapId, attacker.tileX, attacker.tileY, {
+      kind: "miss",
+      sourcePlayerId: attacker.id,
+      tileX: attacker.tileX,
+      tileY: attacker.tileY,
+      attackKind,
+    });
+  }
+
+  private resolveRangedTargetPlayer(
+    session: PlayerSession,
+    message: ClientRangedAttackMessage,
+    targetTileX: number,
+    targetTileY: number
+  ): PlayerSession | undefined {
+    if (message.targetPlayerId) {
+      const player = this.world.getPlayers().get(message.targetPlayerId);
+      if (
+        player &&
+        player.joined &&
+        player.mapId === session.mapId &&
+        player.id !== session.id &&
+        player.hp > 0
+      ) {
+        return player;
+      }
+    }
+    return this.findPlayerAtTile(session.mapId, targetTileX, targetTileY, session.id);
+  }
+
+  private resolveRangedTargetMob(
+    session: PlayerSession,
+    message: ClientRangedAttackMessage,
+    targetTileX: number,
+    targetTileY: number
+  ): MobEntity | undefined {
+    if (message.targetMobId) {
+      const mob = this.world.getMobs().get(message.targetMobId);
+      if (mob?.alive && mob.mapId === session.mapId) {
+        return mob;
+      }
+    }
+    return this.findMobAtTile(session.mapId, targetTileX, targetTileY);
   }
 
   private getPlayersInRange(
@@ -390,6 +711,7 @@ export class CombatSystem {
         session.clearImmobilized();
         session.clearInvisible();
         session.attributeBuffs = { strength: 0, agility: 0, expiresAtMs: 0 };
+        session.recalcAttackStats();
         this.world.sendPlayerState(session, { includeAttributeBuffs: true });
         this.world.broadcastCombatLog(
           session.mapId,
@@ -437,16 +759,28 @@ export class CombatSystem {
 
     if (targetPlayer && isImmobilizeSpell(spellId)) {
       if (targetsSelf && !spell.puedeUsarseEnAliados) return false;
-      if (this.isInSafeZone(session) || this.isInSafeZone(targetPlayer)) {
-        if (!isAoE) this.world.sendCombatLog(session, "Esta es zona segura.");
+      if (this.world.canArenaPlayersFight(session.id, targetPlayer.id)) {
+        const durationMs = getImmobilizePlayerDurationMs(spellId);
+        targetPlayer.immobilizedUntil = Math.max(
+          targetPlayer.immobilizedUntil,
+          Date.now() + durationMs
+        );
+        const label = spellId === INMOVILIZAR_SPELL_ID ? "inmoviliza" : "paraliza";
+        this.world.broadcastCombatLog(
+          session.mapId,
+          targetPlayer.tileX,
+          targetPlayer.tileY,
+          `${session.name}: ${spell.nombre} ${label} a ${targetPlayer.name}.`
+        );
+        this.world.sendPlayerState(targetPlayer);
+        return true;
+      }
+      const pvpError = this.validatePvpAttack(session, targetPlayer);
+      if (pvpError) {
+        if (!isAoE) this.world.sendCombatLog(session, pvpError);
         return false;
       }
-      const attackerFaction = normalizeFactionId(session.factionId);
-      const defenderFaction = normalizeFactionId(targetPlayer.factionId);
-      if (!canFactionsFight(attackerFaction, defenderFaction)) {
-        if (!isAoE) this.world.sendCombatLog(session, "No podés atacar a este jugador (misma facción o alianza).");
-        return false;
-      }
+      this.markPvpAggression(session, targetPlayer);
       const durationMs = getImmobilizePlayerDurationMs(spellId);
       targetPlayer.immobilizedUntil = Math.max(
         targetPlayer.immobilizedUntil,
@@ -478,14 +812,18 @@ export class CombatSystem {
 
     if (targetPlayer && (spell.danioMax > 0 || spell.danioMin > 0)) {
       if (targetsSelf && !spell.puedeUsarseEnAliados) return false;
-      if (this.isInSafeZone(session) || this.isInSafeZone(targetPlayer)) {
-        if (!isAoE) this.world.sendCombatLog(session, "Esta es zona segura.");
-        return false;
+      if (this.world.canArenaPlayersFight(session.id, targetPlayer.id)) {
+        const base = rollInt(spell.danioMin, spell.danioMax);
+        const damage = Math.max(
+          0,
+          Math.floor(base * (1 + session.magicDamageBonusPercent))
+        );
+        this.applyDamageToPlayer(session, targetPlayer, damage, spell.nombre);
+        return true;
       }
-      const attackerFaction = normalizeFactionId(session.factionId);
-      const defenderFaction = normalizeFactionId(targetPlayer.factionId);
-      if (!canFactionsFight(attackerFaction, defenderFaction)) {
-        if (!isAoE) this.world.sendCombatLog(session, "No podés atacar a este jugador (misma facción o alianza).");
+      const pvpError = this.validatePvpAttack(session, targetPlayer);
+      if (pvpError) {
+        if (!isAoE) this.world.sendCombatLog(session, pvpError);
         return false;
       }
       const base = rollInt(spell.danioMin, spell.danioMax);
@@ -518,6 +856,7 @@ export class CombatSystem {
         targetTileY
       );
       if (buffTarget && this.applySpellBuffsToPlayer(session, buffTarget, spellId, spell.nombre)) {
+        this.markPvpAggression(session, buffTarget);
         return true;
       }
     }
@@ -647,6 +986,7 @@ export class CombatSystem {
       tileY: targetTileY,
       sourcePlayerId: session.id,
       targetPlayerId: targetPlayer?.id ?? (targetsSelf ? session.id : undefined),
+      targetMobId: targetMob?.id,
       sourceTileX: session.tileX,
       sourceTileY: session.tileY,
     });
@@ -676,19 +1016,26 @@ export class CombatSystem {
       return `${spell.nombre} no puede lanzarse sobre ese objetivo.`;
     }
 
-    if (targetMob) {
-      return `${spell.nombre} no puede lanzarse sobre NPCs.`;
-    }
-    if (targetPlayer?.isImmobilized()) {
+    if (targetPlayer) {
       if (
         spell.puedeUsarseEnAliados &&
         this.canFactionsFight(session.factionId, targetPlayer.factionId)
       ) {
         return `${spell.nombre} no puede lanzarse sobre enemigos.`;
       }
+    }
+
+    if (targetMob) {
+      return `${spell.nombre} no puede lanzarse sobre NPCs.`;
+    }
+
+    if (targetPlayer?.isImmobilized()) {
       return null;
     }
-    if ((targetsSelf || onCasterTile) && session.isImmobilized()) {
+    if (targetsSelf && session.isImmobilized()) {
+      return null;
+    }
+    if (onCasterTile && session.isImmobilized()) {
       return null;
     }
 
@@ -703,29 +1050,37 @@ export class CombatSystem {
     targetsSelf: boolean,
     onCasterTile: boolean
   ): boolean {
-    if (targetPlayer?.isImmobilized()) {
-      targetPlayer.clearImmobilized();
-      this.world.broadcastCombatLog(
-        session.mapId,
-        targetPlayer.tileX,
-        targetPlayer.tileY,
-        `${session.name}: ${spell.nombre} libera a ${targetPlayer.name}.`
-      );
-      return true;
-    }
-
-    if ((targetsSelf || onCasterTile) && session.isImmobilized()) {
+    if (targetsSelf && session.isImmobilized()) {
       session.clearImmobilized();
+      this.world.sendPlayerState(session);
       this.world.broadcastCombatLog(
         session.mapId,
         session.tileX,
         session.tileY,
         `${session.name}: ${spell.nombre} te libera.`
       );
-      return true;
+    } else if (targetPlayer?.isImmobilized()) {
+      targetPlayer.clearImmobilized();
+      this.world.sendPlayerState(targetPlayer);
+      this.world.broadcastCombatLog(
+        session.mapId,
+        targetPlayer.tileX,
+        targetPlayer.tileY,
+        `${targetPlayer.name} es liberado por ${session.name}.`
+      );
+    } else if (onCasterTile && session.isImmobilized()) {
+      session.clearImmobilized();
+      this.world.sendPlayerState(session);
+      this.world.broadcastCombatLog(
+        session.mapId,
+        session.tileX,
+        session.tileY,
+        `${session.name}: ${spell.nombre} te libera.`
+      );
+    } else {
+      return false;
     }
-
-    return false;
+    return true;
   }
 
   /** Un solo push de vitales tras gastar maná (evita pisar cura con HP viejo). */
@@ -824,7 +1179,7 @@ export class CombatSystem {
         }
         return targetPlayer;
       }
-      if (this.canFactionsFight(caster.factionId, targetPlayer.factionId)) {
+      if (!this.validatePvpAttack(caster, targetPlayer)) {
         return targetPlayer;
       }
       return undefined;
@@ -865,6 +1220,7 @@ export class CombatSystem {
       }
     }
     target.attributeBuffs.expiresAtMs = now + ATTRIBUTE_POTION_BUFF_DURATION_MS;
+    target.recalcAttackStats();
 
     this.world.sendPlayerState(target, { includeAttributeBuffs: true });
 
@@ -887,7 +1243,8 @@ export class CombatSystem {
     session: PlayerSession,
     mob: MobEntity,
     rawDamage: number,
-    spellName?: string
+    spellName?: string,
+    options?: { attackKind?: "melee" | "ranged" | "spell"; critical?: boolean }
   ) {
     this.world.aggroMobOnPlayerHit(mob, session);
     const damage = Math.max(0, Math.floor(rawDamage));
@@ -909,6 +1266,8 @@ export class CombatSystem {
       sourcePlayerId: session.id,
       sourceTileX: session.tileX,
       sourceTileY: session.tileY,
+      attackKind: options?.attackKind ?? (spellName ? "spell" : "melee"),
+      critical: options?.critical === true ? true : undefined,
     });
     this.world.broadcastMobUpdated(mob);
 
@@ -1007,8 +1366,10 @@ export class CombatSystem {
     attacker: PlayerSession,
     victim: PlayerSession,
     rawDamage: number,
-    spellName?: string
+    spellName?: string,
+    options?: { attackKind?: "melee" | "ranged" | "spell"; critical?: boolean }
   ) {
+    this.markPvpAggression(attacker, victim);
     let spellDamage = rawDamage;
     if (spellName && attacker.id !== victim.id) {
       const antiOneshot = applyAntiOneshotToSpellDamage(
@@ -1037,6 +1398,12 @@ export class CombatSystem {
       mitigated = physical.damage;
       shieldBlocked = physical.blocked;
     }
+    if (
+      victim.hp - mitigated <= 0 &&
+      this.world.handleArenaPlayerDefeated(attacker, victim, mitigated)
+    ) {
+      return;
+    }
     victim.hp = Math.max(0, victim.hp - mitigated);
 
     this.world.broadcastGameEvent(victim.mapId, victim.tileX, victim.tileY, {
@@ -1049,6 +1416,9 @@ export class CombatSystem {
       sourcePlayerId: attacker.id,
       sourceTileX: attacker.tileX,
       sourceTileY: attacker.tileY,
+      attackKind: options?.attackKind ?? (spellName ? "spell" : "melee"),
+      critical: options?.critical === true ? true : undefined,
+      shieldBlocked,
     });
 
     this.world.broadcastToAoi(victim.mapId, victim.tileX, victim.tileY, {
@@ -1073,11 +1443,6 @@ export class CombatSystem {
     this.handlePlayerKilled(attacker, victim);
   }
 
-  private isInSafeZone(player: PlayerSession): boolean {
-    if (this.world.isGlobalPvpEnabled()) return false;
-    return SAFE_ZONE_MAP_IDS.has(player.mapId);
-  }
-
   public handleSuicide(session: PlayerSession): void {
     if (!session.joined) {
       return;
@@ -1091,6 +1456,9 @@ export class CombatSystem {
 
   private handlePlayerKilled(killer: PlayerSession, victim: PlayerSession) {
     if (victim.isDead) {
+      return;
+    }
+    if (this.world.handleArenaPlayerDefeated(killer, victim, 0)) {
       return;
     }
     const suicide = killer.id === victim.id;

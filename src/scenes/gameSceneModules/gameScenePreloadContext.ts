@@ -184,7 +184,7 @@ export function resolveGameScenePreloadContext(input: {
 
 
 
-function collectMobModelIdsForMaps(mapIds: Iterable<string>): ReadonlySet<MobModelId> {
+export function collectMobModelIdsForMaps(mapIds: Iterable<string>): ReadonlySet<MobModelId> {
 
   const models = new Set<MobModelId>();
 
@@ -218,7 +218,7 @@ function collectMobModelIdsForMaps(mapIds: Iterable<string>): ReadonlySet<MobMod
 
 
 
-function collectImperiumBodyIdsForMaps(mapIds: Iterable<string>): ReadonlySet<number> {
+export function collectImperiumBodyIdsForMaps(mapIds: Iterable<string>): ReadonlySet<number> {
 
   const bodyIds = new Set<number>();
 

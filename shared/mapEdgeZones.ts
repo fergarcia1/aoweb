@@ -13,7 +13,7 @@ export function isMapEdgeTransitionZoneTile(
     return true;
   }
 
-  const margin = 15;
+  const margin = 10;
   if (tileY <= margin && findTransition(mapId, tileX, tileY, "up", false, true)) {
     return true;
   }

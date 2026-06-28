@@ -1,4 +1,4 @@
-import type { AuctionSnapshot, PersistedCharacterSnapshot } from "./types";
+import type { AuctionSnapshot, ClanSnapshot, PersistedCharacterSnapshot } from "./types";
 
 export interface CharacterRepository {
   getByName(name: string): Promise<PersistedCharacterSnapshot | null>;
@@ -12,4 +12,9 @@ export interface AuctionRepository {
   remove(id: string): Promise<void>;
 }
 
+export interface ClanRepository {
+  getClanByName(name: string): Promise<ClanSnapshot | null>;
+  getClanByLeaderId(leaderCharacterId: string): Promise<ClanSnapshot | null>;
+  addClan(clan: ClanSnapshot): Promise<void>;
+}
 

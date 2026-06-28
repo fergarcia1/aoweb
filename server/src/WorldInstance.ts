@@ -16,6 +16,8 @@ import { MobSystem } from "./systems/MobSystem";
 import { MovementSystem } from "./systems/MovementSystem";
 import { InteractionSystem } from "./systems/InteractionSystem";
 import { AuctionSystem } from "./systems/AuctionSystem";
+import { ArenaSystem } from "./systems/ArenaSystem";
+import { ClanSystem } from "./systems/ClanSystem";
 import type { WorldContext } from "./systems/WorldContext";
 import type { WebSocket } from "ws";
 import { MAX_ACTIONS_PER_SECOND, tempBanIp } from "./networkSecurity";
@@ -138,7 +140,21 @@ import {
   type PersistedCharacterSnapshot,
 } from "./persistence";
 
-const JOIN_TIMEOUT_MS = 15_000;
+function parsePositiveIntEnv(value: string | undefined, fallback: number, minimum: number): number {
+  const parsed = Number(value ?? fallback);
+  if (!Number.isFinite(parsed) || parsed < minimum) {
+    return fallback;
+  }
+  return Math.floor(parsed);
+}
+
+const JOIN_TIMEOUT_MS = parsePositiveIntEnv(process.env.WS_JOIN_TIMEOUT_MS, 10_000, 1_000);
+const MAX_WS_PAYLOAD_BYTES = parsePositiveIntEnv(process.env.WS_MAX_PAYLOAD_BYTES, 16_384, 1_024);
+const MAX_INVALID_MESSAGES_PER_SOCKET = parsePositiveIntEnv(
+  process.env.WS_MAX_INVALID_MESSAGES_PER_SOCKET,
+  3,
+  1
+);
 const AUTOSAVE_INTERVAL_MS = 30_000;
 const MOVE_PERSIST_DEBOUNCE_MS = 3_000;
 const PENDING_RECONNECT_TTL_MS = 120_000;
@@ -204,6 +220,8 @@ export class WorldInstance implements WorldContext {
   >();
   private readonly logoutCompletingIds = new Set<string>();
   private readonly auctionSystem: AuctionSystem;
+  private readonly arenaSystem: ArenaSystem;
+  private readonly clanSystem: ClanSystem;
 
   constructor(characterRepo: CharacterRepository = new MemoryCharacterRepository()) {
     this.characterRepo = characterRepo;
@@ -215,12 +233,18 @@ export class WorldInstance implements WorldContext {
     this.movementSystem = new MovementSystem(this);
     this.interactionSystem = new InteractionSystem(this);
     this.auctionSystem = new AuctionSystem(this);
+    this.arenaSystem = new ArenaSystem(this);
+    this.clanSystem = new ClanSystem(this);
     this.initAllMobs();
     void this.auctionSystem.init();
   }
 
   public getAuctionRepo() {
     return this.characterRepo as unknown as import("./persistence/repository").AuctionRepository;
+  }
+
+  public getClanRepo() {
+    return this.characterRepo as unknown as import("./persistence/repository").ClanRepository;
   }
 
   public addToBankSlots(
@@ -309,7 +333,7 @@ export class WorldInstance implements WorldContext {
               overrides = new Map();
               this.tileOverridesByMap.set(mapId, overrides);
             }
-            setDoorTileOverride(overrides, o.tileX, o.tileY, isOpen);
+            setDoorTileOverride(mapId, overrides, o.tileX, o.tileY, isOpen);
           }
         }
       }
@@ -467,6 +491,32 @@ export class WorldInstance implements WorldContext {
     this.factionSystem.tryBecomeRenegade(session);
   }
 
+  tryEnlistArmada(session: PlayerSession): void {
+    this.factionSystem.tryEnlistArmada(session);
+  }
+
+  tryStartClanCreation(session: PlayerSession): void {
+    void this.clanSystem.tryStartCreation(session).catch((error) => {
+      logger.error("worldinstance", "[clan_start] failed:", error);
+      this.send(session, {
+        type: "chat",
+        from: "Thrandil",
+        text: "No se pudo iniciar la creacion del clan.",
+      });
+    });
+  }
+
+  submitClanCreation(session: PlayerSession, name: string, description: string): void {
+    void this.clanSystem.submitCreation(session, name, description).catch((error) => {
+      logger.error("worldinstance", "[clan_submit] failed:", error);
+      this.send(session, {
+        type: "chat",
+        from: "Thrandil",
+        text: "No se pudo crear el clan.",
+      });
+    });
+  }
+
   onUserKill(killer: PlayerSession, victim: PlayerSession): void {
     this.factionSystem.onUserKill(killer, victim);
   }
@@ -482,7 +532,7 @@ export class WorldInstance implements WorldContext {
       overrides = new Map();
       this.tileOverridesByMap.set(mapId, overrides);
     }
-    setDoorTileOverride(overrides, tileX, tileY, isOpen);
+    setDoorTileOverride(mapId, overrides, tileX, tileY, isOpen);
   }
 
   private autosavePlayersIfDue() {
@@ -610,8 +660,8 @@ export class WorldInstance implements WorldContext {
       try {
         const raw = typeof data === "string" ? data : data.toString("utf8");
 
-        // Anti-Spam: Payload size limit (16KB max)
-        if (raw.length > 16384) {
+        // Anti-Spam: Payload size limit.
+        if (raw.length > MAX_WS_PAYLOAD_BYTES) {
           logger.warn("worldinstance", `[AntiSpam] Payload demasiado grande (${raw.length} bytes). Cortando conexión.`);
           socket.close(4009, "Payload too large");
           return;
@@ -636,10 +686,20 @@ export class WorldInstance implements WorldContext {
 
         const message = parseClientMessage(raw);
         if (!message) {
+          const invalidCount = ((socket as any)._invalidMessageCount ?? 0) + 1;
+          (socket as any)._invalidMessageCount = invalidCount;
           logger.warn("worldinstance", `[ws] mensaje invalido antes/durante join: ${raw.slice(0, 500)}`);
           const session = this.socketSessions.get(socket);
           if (session) {
             this.send(session, { type: "error", message: "Mensaje inválido." });
+          }
+          if (invalidCount >= MAX_INVALID_MESSAGES_PER_SOCKET) {
+            logger.warn(
+              "worldinstance",
+              `[AntiSpam] Demasiados mensajes invalidos (${invalidCount}). Cortando conexion.`
+            );
+            tempBanIp((socket as any).realIp || "unknown");
+            socket.close(4007, "Invalid protocol");
           }
           return;
         }
@@ -676,9 +736,7 @@ export class WorldInstance implements WorldContext {
         const session = this.socketSessions.get(socket);
         if (!session) {
           logger.warn("worldinstance", `[join] mensaje ${message.type} recibido antes de join`);
-          if (Date.now() > joinDeadline) {
-            socket.close(4001, "join required");
-          }
+          socket.close(4001, "join required");
           return;
         }
         this.handleClientMessage(session, message);
@@ -716,6 +774,7 @@ export class WorldInstance implements WorldContext {
       this.clearPendingLogout(session.id);
       session.isMeditating = false;
       session.nextMeditationRegenAt = 0;
+      this.arenaSystem.handlePlayerDisconnected(session);
       this.capturePendingReconnectPosition(session);
       const snapshot = buildSnapshotFromPlayerSession(session);
       void this.characterRepo
@@ -755,6 +814,10 @@ export class WorldInstance implements WorldContext {
       this.handleRequestLogout(session);
       return;
     }
+    if (message.type === "arena_action") {
+      this.arenaSystem.handleAction(session, message);
+      return;
+    }
     if (message.type === "move") {
       if (this.pendingLogoutCountdownTimers.has(session.id)) {
         this.cancelLogoutCountdown(session);
@@ -769,6 +832,7 @@ export class WorldInstance implements WorldContext {
     }
     if (message.type === "attack") {
       this.stopMeditationForAction(session);
+      this.arenaSystem.cancelQueueForCombat(session);
       if (message.facing) {
         session.facing = normalizeFacing(message.facing);
         this.movementSystem.broadcastPlayerMoved(session);
@@ -776,8 +840,15 @@ export class WorldInstance implements WorldContext {
       this.combatSystem.handleAttack(session);
       return;
     }
+    if (message.type === "ranged_attack") {
+      this.stopMeditationForAction(session);
+      this.arenaSystem.cancelQueueForCombat(session);
+      this.combatSystem.handleRangedAttack(session, message);
+      return;
+    }
     if (message.type === "cast_spell") {
       this.stopMeditationForAction(session);
+      this.arenaSystem.cancelQueueForCombat(session);
       const raw = message as {
         spellId?: unknown;
         idSpell?: unknown;
@@ -797,6 +868,7 @@ export class WorldInstance implements WorldContext {
     }
     if (message.type === "suicide") {
       this.stopMeditationForAction(session);
+      this.arenaSystem.cancelQueueForCombat(session);
       this.combatSystem.handleSuicide(session);
       return;
     }
@@ -810,6 +882,10 @@ export class WorldInstance implements WorldContext {
     }
     if (message.type === "chat") {
       this.chatSystem.handleChat(session, message.text);
+      return;
+    }
+    if (message.type === "clan_create") {
+      this.submitClanCreation(session, message.name, message.description);
       return;
     }
     if (message.type === "admin_command") {
@@ -993,6 +1069,9 @@ export class WorldInstance implements WorldContext {
       typeof message.characterId === "string" && message.characterId.trim()
         ? message.characterId.trim().slice(0, 64)
         : session.id;
+    if (this.tryResumeDisconnectedSession(session)) {
+      return;
+    }
     void this.tryHydrateSessionFromRepository(session, message)
       .catch((error) => {
         logger.error("worldinstance", "[join] failed to hydrate from repository:", error);
@@ -1006,6 +1085,30 @@ export class WorldInstance implements WorldContext {
       .finally(() => {
         session.joining = false;
       });
+  }
+
+  private tryResumeDisconnectedSession(session: PlayerSession): boolean {
+    const existing = this.findJoinedSessionByCharacterId(session.characterId, session.id);
+    if (!existing || existing.socket.readyState === existing.socket.OPEN) {
+      return false;
+    }
+
+    this.clearPendingLogout(existing.id);
+    this.players.delete(session.id);
+    this.socketSessions.delete(session.socket);
+
+    existing.socket = session.socket;
+    existing.accountId = session.accountId ?? existing.accountId;
+    this.socketSessions.set(existing.socket, existing);
+
+    this.sendWelcome(existing);
+    this.movementSystem.sendSnapshot(existing);
+    this.arenaSystem.sendState(existing, "Reconectaste.");
+    logger.info(
+      "worldinstance",
+      `[join] ${existing.name} (${existing.id.slice(0, 8)}) reconectado sin perder sesion`
+    );
+    return true;
   }
 
   private applyJoinFallback(
@@ -1027,6 +1130,10 @@ export class WorldInstance implements WorldContext {
     session.faceIndex = Math.max(0, Math.floor(message.faceIndex ?? 0));
     session.level = 1;
     session.exp = 0;
+    session.armadaEnemyKills = 0;
+    session.arenaWins1v1 = 0;
+    session.pendingClanCreationPaid = false;
+    session.clanName = null;
     session.gold = 0;
     session.bankGold = 0;
     session.equipment = sanitizeJoinEquipment(undefined);
@@ -1048,6 +1155,9 @@ export class WorldInstance implements WorldContext {
           : 0
       )
     );
+    session.armadaEnemyKills = 0;
+    session.pendingClanCreationPaid = false;
+    session.clanName = null;
 
     const resolvedTile = this.resolveJoinTilePosition(session, message, message.mapId);
     session.tileX = resolvedTile.tileX;
@@ -1078,24 +1188,7 @@ export class WorldInstance implements WorldContext {
       this.applyJoinFallback(session, message);
       return;
     }
-    if (session.accountId && persisted.character.accountId !== session.accountId) {
-      this.send(session, {
-        type: "error",
-        message: persisted.character.accountId
-          ? "Ese personaje pertenece a otra cuenta."
-          : "Ese personaje todavia no esta vinculado a ninguna cuenta.",
-      });
-      session.socket.close(4004, "character ownership mismatch");
-      return;
-    }
-    if (!session.accountId && persisted.character.accountId) {
-      this.send(session, {
-        type: "error",
-        message: "Inicia sesion con la cuenta dueña de ese personaje.",
-      });
-      session.socket.close(4004, "character requires account");
-      return;
-    }
+
     if (
       requestedCharacterId &&
       persisted.character.id.trim() &&
@@ -1106,12 +1199,35 @@ export class WorldInstance implements WorldContext {
           type: "error",
           message: "Ya existe un personaje con ese nombre.",
         });
-        session.socket.close(4004, "character name already exists");
+        session.socket.close(4004, "El nombre ya existe. Debes usar otro.");
         return;
       }
       this.applyJoinFallback(session, message);
       return;
     }
+
+    if (
+      session.accountId &&
+      persisted.character.accountId &&
+      persisted.character.accountId !== session.accountId
+    ) {
+      this.send(session, {
+        type: "error",
+        message: "Ese personaje pertenece a otra cuenta.",
+      });
+      session.socket.close(4004, "Ese personaje es de otra cuenta.");
+      return;
+    }
+
+    if (!session.accountId && persisted.character.accountId) {
+      this.send(session, {
+        type: "error",
+        message: "Inicia sesion con la cuenta dueña de ese personaje.",
+      });
+      session.socket.close(4004, "Requiere iniciar sesion en su cuenta.");
+      return;
+    }
+
     this.applyPersistedSnapshot(session, persisted);
     this.applyPendingReconnectPosition(session);
     this.applyJoinClientOverrides(session, message, { trustPersistedSnapshot: true });
@@ -1137,6 +1253,10 @@ export class WorldInstance implements WorldContext {
     session.faceIndex = Math.max(0, Math.floor(c.faceIndex));
     session.level = clampPlayerLevel(c.level);
     session.usersKilled = Math.max(0, Math.floor(c.usersKilled || 0));
+    session.armadaEnemyKills = Math.max(0, Math.floor(c.armadaEnemyKills || 0));
+    session.arenaWins1v1 = Math.max(0, Math.floor(c.arenaWins1v1 || 0));
+    session.pendingClanCreationPaid = c.pendingClanCreationPaid === true;
+    session.clanName = c.clanName?.trim() || null;
     session.equipment = sanitizeJoinEquipment({
       weaponId: c.equipment.weaponItemId,
       shieldId: c.equipment.shieldItemId,
@@ -1157,6 +1277,7 @@ export class WorldInstance implements WorldContext {
       expiresAtMs: Math.max(0, Math.floor(c.attributeBuffs.expiresAtMs)),
     };
     this.expireAttributeBuffsIfNeeded(session);
+    session.recalcAttackStats();
     session.inventorySlots = sanitizeJoinInventory(persisted.inventorySlots);
     if (clearOrphanServerEquipment(session.equipment, session.inventorySlots)) {
       session.recalcDefenseStats();
@@ -1488,6 +1609,7 @@ export class WorldInstance implements WorldContext {
       expToNext: session.expToNext,
       level: session.level,
     });
+    this.arenaSystem.sendState(session);
   }
 
   public isGlobalPvpEnabled(): boolean {
@@ -1496,6 +1618,37 @@ export class WorldInstance implements WorldContext {
 
   public setGlobalPvpEnabled(enabled: boolean): void {
     this.globalPvpEnabled = enabled;
+  }
+
+  public canArenaPlayersFight(attackerId: string, defenderId: string): boolean {
+    return this.arenaSystem.canArenaPlayersFight(attackerId, defenderId);
+  }
+
+  public canArenaPlayerMove(session: PlayerSession, tileX: number, tileY: number): boolean {
+    return this.arenaSystem.canMoveWithinArena(session, tileX, tileY);
+  }
+
+  public handleArenaPlayerDefeated(
+    attacker: PlayerSession,
+    victim: PlayerSession,
+    damage: number
+  ): boolean {
+    return this.arenaSystem.handlePlayerDefeated(attacker, victim, damage);
+  }
+
+  public teleportPlayerToArena(
+    session: PlayerSession,
+    mapId: string,
+    destination: { tileX: number; tileY: number; facing?: Facing }
+  ): void {
+    this.movementSystem.changeMap(session, {
+      tileX: session.tileX,
+      tileY: session.tileY,
+      toMapId: mapId,
+      toTileX: destination.tileX,
+      toTileY: destination.tileY,
+      facing: destination.facing,
+    });
   }
 
   public async persistSession(session: PlayerSession) {
@@ -1795,8 +1948,9 @@ export class WorldInstance implements WorldContext {
   }
 
   private expireAttributeBuffsIfNeeded(session: PlayerSession, now = Date.now()): void {
-    if (session.attributeBuffs.expiresAtMs <= now) {
+    if (session.attributeBuffs.expiresAtMs > 0 && session.attributeBuffs.expiresAtMs <= now) {
       session.attributeBuffs = { strength: 0, agility: 0, expiresAtMs: 0 };
+      session.recalcAttackStats();
     }
   }
 
@@ -1905,6 +2059,8 @@ export class WorldInstance implements WorldContext {
     this.clearPersistDebounceTimer(playerId);
     const session = this.players.get(playerId);
     if (!session) return;
+
+    this.arenaSystem.handlePlayerRemoved(playerId);
 
     if (session.joined) {
       for (const otherId of session.aoiVisiblePlayerIds) {

@@ -17,6 +17,7 @@ import {
   type MobModelId,
   type MobSpawnConfig,
 } from "../../../game-data/mobs";
+import { DEFAULT_MOB_MISS_CHANCE } from "../../../game-data/evasion";
 import { createMobSprite } from "../../game/mobs/mobVisualRuntime";
 import {
   PEACEFUL_WANDER_MIN_MS,
@@ -643,6 +644,7 @@ export class GameSceneMobController {
       leashRangeTiles: 0,
       minHit: 0,
       maxHit: 0,
+      missChance: DEFAULT_MOB_MISS_CHANCE,
       attackCooldownMs: 1000,
       respawnMs: 10_000,
       expReward: 0,
@@ -909,6 +911,7 @@ export class GameSceneMobController {
       leashRangeTiles: 0,
       minHit: 0,
       maxHit: 0,
+      missChance: DEFAULT_MOB_MISS_CHANCE,
       attackCooldownMs: 1000,
       respawnMs: 0,
       expReward: 0,

@@ -9,9 +9,10 @@ import {
 
 const FACINGS: MobDirection[] = ["down", "up", "left", "right"];
 
-function queueMobVisualModel(scene: Phaser.Scene, modelId: MobModelId): void {
+function queueMobVisualModel(scene: Phaser.Scene, modelId: MobModelId): number {
   const visual = MOB_VISUAL_CONFIGS[modelId];
-  if (!visual) return;
+  if (!visual) return 0;
+  let queued = 0;
 
   if (visual.type === "directionSheets") {
     FACINGS.forEach((facing) => {
@@ -24,27 +25,31 @@ function queueMobVisualModel(scene: Phaser.Scene, modelId: MobModelId): void {
         frameWidth: layout.frameWidth,
         frameHeight: layout.frameHeight,
       });
+      queued += 1;
     });
-    return;
+    return queued;
   }
 
   const textureKey = mobTextureKey(modelId);
-  if (scene.textures.exists(textureKey)) return;
+  if (scene.textures.exists(textureKey)) return 0;
   scene.load.spritesheet(textureKey, visual.path, {
     frameWidth: visual.frameWidth,
     frameHeight: visual.frameHeight,
   });
+  return 1;
 }
 
 export function loadMobVisualAssetsForModels(
   scene: Phaser.Scene,
   modelIds: Iterable<MobModelId>
-): void {
+): number {
+  let queued = 0;
   for (const modelId of modelIds) {
-    queueMobVisualModel(scene, modelId);
+    queued += queueMobVisualModel(scene, modelId);
   }
+  return queued;
 }
 
-export function loadMobVisualAssets(scene: Phaser.Scene): void {
-  loadMobVisualAssetsForModels(scene, Object.keys(MOB_VISUAL_CONFIGS) as MobModelId[]);
+export function loadMobVisualAssets(scene: Phaser.Scene): number {
+  return loadMobVisualAssetsForModels(scene, Object.keys(MOB_VISUAL_CONFIGS) as MobModelId[]);
 }

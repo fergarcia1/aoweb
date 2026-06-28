@@ -105,9 +105,7 @@ export class InventorySystem {
         message: result.message,
         clientOnly: true,
       });
-      void this.world.persistSession(session).catch((error) => {
-        logger.error("inventorysystem", "[use_item] persist failed:", error);
-      });
+      this.world.schedulePersistSessionDebounced(session);
       return;
     }
 
@@ -119,6 +117,7 @@ export class InventorySystem {
     }
     if (result.attributeBuffs) {
       session.attributeBuffs = result.attributeBuffs;
+      session.recalcAttackStats();
     }
     if (typeof result.hp === "number" || result.attributeBuffs) {
       this.world.broadcastToAoi(session.mapId, session.tileX, session.tileY, {
@@ -146,10 +145,7 @@ export class InventorySystem {
       }),
       message: result.message,
     });
-    this.world.sendInventoryUpdated(session);
-    void this.world.persistSession(session).catch((error) => {
-      logger.error("inventorysystem", "[use_item] persist failed:", error);
-    });
+    this.world.schedulePersistSessionDebounced(session);
   }
 
   private findInventorySlot(
@@ -369,7 +365,6 @@ export class InventorySystem {
       slot.isEquipped = false;
     }
     this.syncInventoryEquippedFlags(session);
-    this.world.sendInventoryUpdated(session);
   }
 
   public syncInventoryEquippedFlags(session: PlayerSession) {

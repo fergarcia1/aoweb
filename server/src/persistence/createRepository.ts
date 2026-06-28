@@ -1,10 +1,11 @@
 import { logger } from "../logger";
 import { MemoryCharacterRepository } from "./memoryRepository";
-import type { AuctionRepository, CharacterRepository } from "./repository";
+import type { AuctionRepository, CharacterRepository, ClanRepository } from "./repository";
 import { SqlCharacterRepository } from "./sqlRepository";
 
 export type CharacterRepositoryRuntime = CharacterRepository &
-  AuctionRepository & {
+  AuctionRepository &
+  ClanRepository & {
     close?: () => Promise<void>;
   };
 

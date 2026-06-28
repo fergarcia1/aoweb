@@ -16,6 +16,7 @@
     "skin:viewport-alpha": "node scripts/ui-skin-punch-viewport.mjs",
     "skin:viewport-alpha:white": "node scripts/ui-skin-punch-viewport.mjs \"\" white",
     "skin:viewport-alpha:red": "node scripts/ui-skin-punch-viewport.mjs \"\" red",
+    "audit:assets": "node tools/audit-assets.mjs",
     "audit:sprites": "node tools/audit-sprites.mjs",
     "audit:mobs": "node tools/audit-mob-sprites.mjs",
     "normalize:sprites": "node tools/normalize-sprites.mjs",

@@ -8,12 +8,13 @@ import { listReadyImperiumBodyVisuals } from "../../../game-data/imperium/npcBod
 export function loadImperiumNpcVisualAssetsForBodyIds(
   scene: Phaser.Scene,
   bodyIds: Iterable<number>
-): void {
+): number {
   const wanted = new Set(bodyIds);
   if (wanted.size === 0) {
-    return;
+    return 0;
   }
 
+  let queued = 0;
   for (const visual of listReadyImperiumBodyVisuals()) {
     if (!wanted.has(visual.bodyId)) {
       continue;
@@ -25,11 +26,13 @@ export function loadImperiumNpcVisualAssetsForBodyIds(
       frameWidth: visual.frameWidth,
       frameHeight: visual.frameHeight,
     });
+    queued += 1;
   }
+  return queued;
 }
 
-export function loadAllImperiumNpcVisualAssets(scene: Phaser.Scene): void {
-  loadImperiumNpcVisualAssetsForBodyIds(
+export function loadAllImperiumNpcVisualAssets(scene: Phaser.Scene): number {
+  return loadImperiumNpcVisualAssetsForBodyIds(
     scene,
     listReadyImperiumBodyVisuals().map((visual) => visual.bodyId)
   );

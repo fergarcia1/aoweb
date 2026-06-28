@@ -1,6 +1,7 @@
 import type { WebSocket } from "ws";
 import type { PvpSpellHitRecord } from "../../game-data/antiOneshot";
 import { createEmptyPvpSpellHitRecords } from "../../game-data/antiOneshot";
+import { resolveEffectiveStrength } from "../../game-data/characterCoreStats";
 import type { AttributeBuffState } from "../../game-data/consumables";
 import { ADMIN_GM_HP_MAX, ADMIN_GM_MP_MAX, BANK_SLOT_COUNT, INVENTORY_SLOT_COUNT } from "../../game-data/constants";
 import { expRequiredForLevel } from "../../game-data/progressFormulas";
@@ -52,6 +53,8 @@ export class PlayerSession {
   exp = 0;
   expToNext = expRequiredForLevel(1);
   usersKilled = 0;
+  armadaEnemyKills = 0;
+  arenaWins1v1 = 0;
   hp = 100;
   hpMax = 100;
   mp = 50;
@@ -77,10 +80,21 @@ export class PlayerSession {
   nextMeditationRegenAt = 0;
   /** Hasta cuándo no puede moverse (inmovilizar / paralizar). */
   immobilizedUntil = 0;
+  /** Evita responder/loguear cada frame si el cliente intenta moverse paralizado. */
+  nextImmobilizedMoveRejectAt = 0;
   /** Hasta cuándo aplica invisibilidad (hechizo 14). */
   invisibleUntil = 0;
   /** Hechizos PvP recibidos (anti-oneshot por fuente distinta). */
   recentPvpSpellHits: PvpSpellHitRecord[] = createEmptyPvpSpellHitRecords();
+  /** Jugadores contra los que este personaje inició agresión PvP recientemente. */
+  readonly recentPvpAggressionUntilByTargetId = new Map<string, number>();
+  /** Ultima vez que hablo con el NPC de alistamiento imperial. */
+  lastArmadaManagerInteractionAt = 0;
+  /** Ultima vez que hablo con el NPC de creacion de clanes. */
+  lastClanManagerInteractionAt = 0;
+  /** Pago de fundacion cobrado; habilita el formulario de creacion de clan. */
+  pendingClanCreationPaid = false;
+  clanName: string | null = null;
   attributeBuffs: AttributeBuffState = { strength: 0, agility: 0, expiresAtMs: 0 };
   inventorySlots: ServerInventorySlot[] = Array.from(
     { length: INVENTORY_SLOT_COUNT },
@@ -145,7 +159,8 @@ export class PlayerSession {
   }
 
   recalcAttackStats() {
-    const stats = getAttackStatsFromEquipment(this.equipment);
+    const strength = resolveEffectiveStrength(this.raceId, this.classId, this.attributeBuffs);
+    const stats = getAttackStatsFromEquipment(this.equipment, { strength });
     this.attackMin = stats.attackMin;
     this.attackMax = stats.attackMax;
     this.canCrit = stats.canCrit;
@@ -178,6 +193,7 @@ export class PlayerSession {
     const state: NetPlayerState = {
       id: this.id,
       name: this.name,
+      clanName: this.clanName?.trim() || undefined,
       mapId: this.mapId,
       tileX: this.tileX,
       tileY: this.tileY,
@@ -197,6 +213,7 @@ export class PlayerSession {
       isMeditating: this.isMeditating,
       isNavigating: this.isNavigating,
       invisibleUntilMs: Math.max(0, Math.floor(this.invisibleUntil)),
+      immobilizedUntilMs: Math.max(0, Math.floor(this.immobilizedUntil)),
     };
     if (options?.includeAttributeBuffs) {
       state.attributeBuffs = {

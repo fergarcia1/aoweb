@@ -15,10 +15,10 @@ const config: Phaser.Types.Core.GameConfig = {
   height: 600,
   // Fondo fuera de los tiles del mapa (cuando la cámara sale del borde).
   backgroundColor: "#0d1117",
-  antialias: false,
-  pixelArt: true,
-  autoRound: true,
-  roundPixels: true,
+  antialias: true,
+  pixelArt: false,
+  autoRound: false,
+  roundPixels: false,
   dom: {
     createContainer: true,
   },

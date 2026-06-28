@@ -15,7 +15,7 @@ import type {
 } from "../../shared/types";
 import { NetworkClient } from "./NetworkClient";
 import { isMultiplayerEnabled } from "./multiplayerConfig";
-import { buildAuthenticatedWsUrl, clearAuthSession } from "./authApi";
+import { buildAuthenticatedWsUrlAsync, clearAuthSession } from "./authApi";
 import {
   disconnectActiveMultiplayer,
   registerMultiplayerClient,
@@ -28,6 +28,7 @@ export type MultiplayerJoinPayload = Omit<Extract<ClientMessage, { type: "join" 
 export type MultiplayerBridgeCallbacks = {
   onStatus: (message: string) => void;
   onChatLine: (text: string) => void;
+  onGlobalLine: (text: string) => void;
   onChatBubble?: (playerId: string, text: string) => void;
   onCombatLine: (text: string) => void;
   onWelcome: (welcome: ServerWelcomeMessage) => void;
@@ -57,6 +58,11 @@ export type MultiplayerBridgeCallbacks = {
   onPartyUpdate?: (message: import("../../shared/protocol").ServerPartyUpdateMessage) => void;
   onPartyInviteRequest?: (message: import("../../shared/protocol").ServerPartyInviteRequestMessage) => void;
   onAuctionCatalog?: (auctions: import("../../shared/types").NetAuctionState[]) => void;
+  onArenaState?: (message: import("../../shared/protocol").ServerArenaStateMessage) => void;
+  onArenaReadyCheck?: (message: import("../../shared/protocol").ServerArenaReadyCheckMessage) => void;
+  onArenaRound?: (message: import("../../shared/protocol").ServerArenaRoundMessage) => void;
+  onClanCreationStarted?: () => void;
+  onClanCreated?: (clan: Extract<import("../../shared/protocol").ServerMessage, { type: "clan_created" }>["clan"]) => void;
   getJoinPayload: () => MultiplayerJoinPayload;
 
   getWorldInteractiveCursor?: () => string;
@@ -85,7 +91,7 @@ export class MultiplayerBridge {
     private readonly callbacks: MultiplayerBridgeCallbacks
   ) {}
 
-  connect() {
+  async connect() {
     if (!isMultiplayerEnabled()) {
       this.callbacks.onStatus("Solo (multijugador desactivado)");
       return;
@@ -100,7 +106,7 @@ export class MultiplayerBridge {
       () => this.callbacks.getWorldInteractiveCursor?.() ?? "pointer"
     );
 
-    const wsUrl = buildAuthenticatedWsUrl();
+    const wsUrl = await buildAuthenticatedWsUrlAsync();
     this.networkClient = new NetworkClient(
       wsUrl,
       {
@@ -201,9 +207,18 @@ export class MultiplayerBridge {
         this.callbacks.onWorldItemRemoved(mapId, worldItemId),
       onPartyUpdate: (message) => this.callbacks.onPartyUpdate?.(message),
       onPartyInviteRequest: (message) => this.callbacks.onPartyInviteRequest?.(message),
+      onArenaState: (message) => this.callbacks.onArenaState?.(message),
+      onArenaReadyCheck: (message) => this.callbacks.onArenaReadyCheck?.(message),
+      onArenaRound: (message) => this.callbacks.onArenaRound?.(message),
+      onClanCreationStarted: () => this.callbacks.onClanCreationStarted?.(),
+      onClanCreated: (clan) => this.callbacks.onClanCreated?.(clan),
       onLogoutComplete: () => this.callbacks.onLogoutComplete?.(),
       onPong: (latency) => this.callbacks.onPong?.(latency),
-      onChat: (from, text, fromPlayerId) => {
+      onChat: (from, text, fromPlayerId, channel) => {
+        if (channel === "global") {
+          this.callbacks.onGlobalLine(`${from}: ${text}`);
+          return;
+        }
         this.callbacks.onChatLine(`${from}: ${text}`);
         if (fromPlayerId) {
           this.callbacks.onChatBubble?.(fromPlayerId, text);
@@ -338,8 +353,21 @@ export class MultiplayerBridge {
     this.sendIfJoined((client) => client.sendChat(message));
   }
 
+  sendClanCreate(name: string, description: string) {
+    this.sendIfJoined((client) => client.sendClanCreate(name, description));
+  }
+
   sendAttack(facing: Facing) {
     this.sendIfJoined((client) => client.sendAttack(facing));
+  }
+
+  sendRangedAttack(payload: {
+    targetTileX: number;
+    targetTileY: number;
+    targetMobId?: string;
+    targetPlayerId?: string;
+  }) {
+    this.sendIfJoined((client) => client.sendRangedAttack(payload));
   }
 
   sendCastSpell(spellId: number, tileX: number, tileY: number, targetPlayerId?: string) {
@@ -458,6 +486,13 @@ export class MultiplayerBridge {
 
   sendAuctionCancel(auctionId: string) {
     this.sendIfJoined((client) => client.sendAuctionCancel(auctionId));
+  }
+
+  sendArenaAction(
+    action: Extract<import("../../shared/protocol").ClientMessage, { type: "arena_action" }>["action"],
+    mode?: Extract<import("../../shared/protocol").ClientMessage, { type: "arena_action" }>["mode"]
+  ) {
+    this.sendIfJoined((client) => client.sendArenaAction(action, mode));
   }
 
   sendRequestLogout() {

@@ -35,20 +35,29 @@ export class MovementSystem {
 
     const prevX = session.tileX;
     const prevY = session.tileY;
-    session.facing = facingFromDirection(direction);
+    const requestedFacing = facingFromDirection(direction);
 
     const now = Date.now();
     if (session.isImmobilized(now)) {
-      this.ctx.sendCombatLog(session, "Estás inmovilizado.");
-      this.rejectPlayerMove(session, prevX, prevY);
+      if (now >= session.nextImmobilizedMoveRejectAt) {
+        session.nextImmobilizedMoveRejectAt = now + 900;
+        this.ctx.sendCombatLog(session, "Estas inmovilizado.");
+        this.rejectPlayerMove(session, prevX, prevY);
+      }
       return;
     }
+    session.facing = requestedFacing;
 
     const isGhost = session.hp <= 0 || session.isDead;
 
     const { dx, dy } = deltaFromDirection(direction);
     const nextX = session.tileX + dx;
     const nextY = session.tileY + dy;
+
+    if (!this.ctx.canArenaPlayerMove(session, nextX, nextY)) {
+      this.rejectPlayerMove(session, prevX, prevY);
+      return;
+    }
 
     const map = getMap(session.mapId);
     const tileOverrides = this.ctx.getMapTileOverrides(session.mapId);
@@ -61,7 +70,14 @@ export class MovementSystem {
       (!isGhost &&
         this.ctx.isTileOccupied(nextX, nextY, session.mapId, session.id, { ignoreGhosts: true }));
 
-    const transition = findTransition(session.mapId, nextX, nextY, session.facing, blocked);
+    let effectiveBlocked = blocked;
+    if (session.isNavigating && !blocked) {
+      if (nextX <= 9 || nextX >= 90 || nextY <= 6 || nextY >= 93) {
+        effectiveBlocked = true;
+      }
+    }
+
+    const transition = findTransition(session.mapId, nextX, nextY, session.facing, effectiveBlocked);
     if (transition) {
       const moveCheck = validateMoveIntent(now, session.nextMoveAt);
       if (!moveCheck.ok) {

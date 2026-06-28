@@ -8,7 +8,7 @@ const L4 = [[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
 
 export const MAP_MAPA151: GameMap = {
   id: "mapa151",
-  name: "Arghbl Central                                                  ",
+  name: "Arghal                                                         ",
   width: 100,
   height: 100,
   backgroundColor: '#000000',

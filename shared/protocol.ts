@@ -8,6 +8,13 @@ import type {
   PlayerRole,
   WorldSnapshot,
 } from "./types";
+import type {
+  ArenaClientAction,
+  ArenaMode,
+  ArenaPlayerSummary,
+  ArenaScore,
+  ArenaStatePayload,
+} from "./arena";
 
 export type {
   Facing,
@@ -84,6 +91,14 @@ export type ClientAttackMessage = {
   type: "attack";
   /** Dirección visual del cliente al golpear (el servidor no recibe giros sin movimiento). */
   facing?: Facing;
+};
+
+export type ClientRangedAttackMessage = {
+  type: "ranged_attack";
+  targetTileX: number;
+  targetTileY: number;
+  targetMobId?: string;
+  targetPlayerId?: string;
 };
 
 export type ClientCastSpellMessage = {
@@ -241,12 +256,25 @@ export type ClientAuctionFetchMessage = {
   type: "auction_fetch";
 };
 
+export type ClientArenaActionMessage = {
+  type: "arena_action";
+  action: ArenaClientAction;
+  mode?: ArenaMode;
+};
+
+export type ClientClanCreateMessage = {
+  type: "clan_create";
+  name: string;
+  description: string;
+};
+
 export type ClientMessage =
   | ClientPingMessage
   | ClientJoinMessage
   | ClientMoveMessage
   | ClientChatMessage
   | ClientAttackMessage
+  | ClientRangedAttackMessage
   | ClientCastSpellMessage
   | ClientAdminCommandMessage
   | ClientUseItemMessage
@@ -271,7 +299,49 @@ export type ClientMessage =
   | ClientAuctionListMessage
   | ClientAuctionBuyMessage
   | ClientAuctionCancelMessage
-  | ClientAuctionFetchMessage;
+  | ClientAuctionFetchMessage
+  | ClientArenaActionMessage
+  | ClientClanCreateMessage;
+
+const CLIENT_MESSAGE_TYPES: ReadonlySet<string> = new Set([
+  "ping",
+  "join",
+  "move",
+  "chat",
+  "attack",
+  "ranged_attack",
+  "cast_spell",
+  "admin_command",
+  "use_item",
+  "equip_item",
+  "sync_inventory",
+  "sync_bank",
+  "drop_item",
+  "drop_gold",
+  "pickup_world_item",
+  "bank_action",
+  "shop_buy",
+  "shop_sell",
+  "spell_shop_buy",
+  "meditation",
+  "suicide",
+  "revive",
+  "interact_map",
+  "sync_vitals",
+  "party_action",
+  "become_renegade",
+  "request_logout",
+  "auction_list",
+  "auction_buy",
+  "auction_cancel",
+  "auction_fetch",
+  "arena_action",
+  "clan_create",
+]);
+
+function isClientMessageType(value: unknown): value is ClientMessage["type"] {
+  return typeof value === "string" && CLIENT_MESSAGE_TYPES.has(value);
+}
 
 
 export type NetInventorySlotState = {
@@ -342,6 +412,7 @@ export type ServerChatMessage = {
   from: string;
   text: string;
   fromPlayerId?: string;
+  channel?: "general" | "global";
 };
 
 export type ServerCombatLogMessage = {
@@ -456,6 +527,42 @@ export type ServerAuctionCatalogMessage = {
   auctions: import("./types").NetAuctionState[];
 };
 
+export type ServerArenaStateMessage = {
+  type: "arena_state";
+  state: ArenaStatePayload;
+};
+
+export type ServerArenaReadyCheckMessage = {
+  type: "arena_ready_check";
+  mode: ArenaMode;
+  opponent: ArenaPlayerSummary;
+  expiresAtMs: number;
+};
+
+export type ServerArenaRoundMessage = {
+  type: "arena_round";
+  mode: ArenaMode;
+  status: "countdown" | "started" | "round_won" | "match_won" | "match_lost";
+  secondsLeft?: number;
+  score?: ArenaScore;
+  opponent?: ArenaPlayerSummary;
+  message?: string;
+};
+
+export type ServerClanCreationStartedMessage = {
+  type: "clan_creation_started";
+};
+
+export type ServerClanCreatedMessage = {
+  type: "clan_created";
+  clan: {
+    id: string;
+    name: string;
+    description: string;
+    leaderName: string;
+  };
+};
+
 export type ServerMessage =
   | ServerPongMessage
   | ServerWelcomeMessage
@@ -483,16 +590,21 @@ export type ServerMessage =
   | ServerPartyUpdateMessage
   | ServerPartyInviteRequestMessage
   | ServerAuctionCatalogMessage
+  | ServerArenaStateMessage
+  | ServerArenaReadyCheckMessage
+  | ServerArenaRoundMessage
+  | ServerClanCreationStartedMessage
+  | ServerClanCreatedMessage
   | ServerErrorMessage;
 
 
 export function parseClientMessage(raw: string): ClientMessage | null {
   try {
-    const data = JSON.parse(raw) as ClientMessage;
-    if (!data || typeof data !== "object" || !("type" in data)) {
+    const data = JSON.parse(raw) as Partial<ClientMessage>;
+    if (!data || typeof data !== "object" || !isClientMessageType(data.type)) {
       return null;
     }
-    return data;
+    return data as ClientMessage;
   } catch {
     return null;
   }

@@ -136,7 +136,7 @@ export function setupInventoryPanelTextures(scene: Phaser.Scene): void {
     const texture = scene.textures.get(key);
 
     if (texture.key !== "__MISSING") {
-      texture.setFilter(Phaser.Textures.FilterMode.NEAREST);
+      texture.setFilter(Phaser.Textures.FilterMode.LINEAR);
     }
   }
   setupPlayerHudTextures(scene);

@@ -1,5 +1,5 @@
-import type { AuctionRepository, CharacterRepository } from "./repository";
-import type { AuctionSnapshot, PersistedCharacterSnapshot } from "./types";
+import type { AuctionRepository, CharacterRepository, ClanRepository } from "./repository";
+import type { AuctionSnapshot, ClanSnapshot, PersistedCharacterSnapshot } from "./types";
 import { Pool, type PoolClient } from "pg";
 import {
   mapCharacterRowToSnapshot,
@@ -11,9 +11,11 @@ import type { CharacterRow } from "./types";
  * PostgreSQL-backed repository.
  */
 export class SqlCharacterRepository
-  implements CharacterRepository, AuctionRepository
+  implements CharacterRepository, AuctionRepository, ClanRepository
 {
   private readonly pool: Pool;
+  private latestCharacterColumnsReady = false;
+  private clanTablesReady = false;
 
   constructor(private readonly connectionString: string) {
     this.pool = new Pool({ connectionString: this.connectionString });
@@ -53,17 +55,77 @@ export class SqlCharacterRepository
     await this.pool.query(`DELETE FROM auctions WHERE id = $1`, [id]);
   }
 
+  async getClanByName(name: string): Promise<ClanSnapshot | null> {
+    await this.ensureClanTables();
+    const result = await this.pool.query<ClanSnapshot>(
+      `
+      SELECT
+        id,
+        name,
+        description,
+        leader_character_id AS "leaderCharacterId",
+        leader_name AS "leaderName",
+        created_at_ms AS "createdAtMs"
+      FROM clans
+      WHERE lower(name) = lower($1)
+      LIMIT 1
+      `,
+      [name.trim()]
+    );
+    return result.rows[0] ?? null;
+  }
+
+  async getClanByLeaderId(leaderCharacterId: string): Promise<ClanSnapshot | null> {
+    await this.ensureClanTables();
+    const result = await this.pool.query<ClanSnapshot>(
+      `
+      SELECT
+        id,
+        name,
+        description,
+        leader_character_id AS "leaderCharacterId",
+        leader_name AS "leaderName",
+        created_at_ms AS "createdAtMs"
+      FROM clans
+      WHERE leader_character_id = $1
+      LIMIT 1
+      `,
+      [leaderCharacterId]
+    );
+    return result.rows[0] ?? null;
+  }
+
+  async addClan(clan: ClanSnapshot): Promise<void> {
+    await this.ensureClanTables();
+    await this.pool.query(
+      `
+      INSERT INTO clans (
+        id, name, description, leader_character_id, leader_name, created_at_ms
+      ) VALUES ($1, $2, $3, $4, $5, $6)
+      `,
+      [
+        clan.id,
+        clan.name,
+        clan.description,
+        clan.leaderCharacterId,
+        clan.leaderName,
+        clan.createdAtMs,
+      ]
+    );
+  }
+
   async getByName(name: string): Promise<PersistedCharacterSnapshot | null> {
 
     const normalized = name.trim();
     if (!normalized) return null;
+    await this.ensureLatestCharacterColumns();
 
     const result = await this.pool.query<CharacterRow>(
       `
       SELECT
         id, account_id, name, role, map_id, tile_x, tile_y, facing,
         race_id, gender_id, class_id, faction_id, face_index,
-        level, exp, exp_to_next, users_killed, hp, hp_max, mp, mp_max, gold, bank_gold,
+        level, exp, exp_to_next, users_killed, armada_enemy_kills, arena_wins_1v1, pending_clan_creation_paid, clan_name, hp, hp_max, mp, mp_max, gold, bank_gold,
         weapon_item_id, shield_item_id, helmet_item_id, armor_item_id,
         equipped_outfit, attr_strength_bonus, attr_agility_bonus, attr_buffs_expires_at_ms
       FROM characters
@@ -135,22 +197,59 @@ export class SqlCharacterRepository
     await this.pool.end();
   }
 
+  private async ensureLatestCharacterColumns(): Promise<void> {
+    if (this.latestCharacterColumnsReady) {
+      return;
+    }
+    await this.pool.query(
+      `ALTER TABLE characters ADD COLUMN IF NOT EXISTS armada_enemy_kills INTEGER NOT NULL DEFAULT 0`
+    );
+    await this.pool.query(
+      `ALTER TABLE characters ADD COLUMN IF NOT EXISTS arena_wins_1v1 INTEGER NOT NULL DEFAULT 0`
+    );
+    await this.pool.query(
+      `ALTER TABLE characters ADD COLUMN IF NOT EXISTS pending_clan_creation_paid BOOLEAN NOT NULL DEFAULT FALSE`
+    );
+    await this.pool.query(
+      `ALTER TABLE characters ADD COLUMN IF NOT EXISTS clan_name TEXT`
+    );
+    this.latestCharacterColumnsReady = true;
+  }
+
+  private async ensureClanTables(): Promise<void> {
+    if (this.clanTablesReady) {
+      return;
+    }
+    await this.pool.query(`
+      CREATE TABLE IF NOT EXISTS clans (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL UNIQUE,
+        description TEXT NOT NULL DEFAULT '',
+        leader_character_id TEXT NOT NULL UNIQUE REFERENCES characters(id) ON DELETE CASCADE,
+        leader_name TEXT NOT NULL,
+        created_at_ms BIGINT NOT NULL
+      )
+    `);
+    await this.pool.query(`CREATE INDEX IF NOT EXISTS idx_clans_lower_name ON clans(lower(name))`);
+    this.clanTablesReady = true;
+  }
+
   private async upsertCharacterRow(client: PoolClient, row: CharacterRow) {
     await client.query(
       `
       INSERT INTO characters (
         id, account_id, name, role, map_id, tile_x, tile_y, facing,
         race_id, gender_id, class_id, faction_id, face_index,
-        level, exp, exp_to_next, users_killed, hp, hp_max, mp, mp_max, gold, bank_gold,
+        level, exp, exp_to_next, users_killed, armada_enemy_kills, arena_wins_1v1, pending_clan_creation_paid, clan_name, hp, hp_max, mp, mp_max, gold, bank_gold,
         weapon_item_id, shield_item_id, helmet_item_id, armor_item_id,
         equipped_outfit, attr_strength_bonus, attr_agility_bonus, attr_buffs_expires_at_ms,
         updated_at
       ) VALUES (
         $1, $2, $3, $4, $5, $6, $7, $8,
         $9, $10, $11, $12, $13,
-        $14, $15, $16, $17, $18, $19, $20, $21, $22, $23,
-        $24, $25, $26, $27,
+        $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27,
         $28, $29, $30, $31,
+        $32, $33, $34, $35,
         NOW()
       )
       ON CONFLICT (id) DO UPDATE SET
@@ -170,6 +269,10 @@ export class SqlCharacterRepository
         exp = EXCLUDED.exp,
         exp_to_next = EXCLUDED.exp_to_next,
         users_killed = EXCLUDED.users_killed,
+        armada_enemy_kills = EXCLUDED.armada_enemy_kills,
+        arena_wins_1v1 = EXCLUDED.arena_wins_1v1,
+        pending_clan_creation_paid = EXCLUDED.pending_clan_creation_paid,
+        clan_name = EXCLUDED.clan_name,
         hp = EXCLUDED.hp,
         hp_max = EXCLUDED.hp_max,
         mp = EXCLUDED.mp,
@@ -204,6 +307,10 @@ export class SqlCharacterRepository
         row.exp,
         row.exp_to_next,
         row.users_killed,
+        row.armada_enemy_kills,
+        row.arena_wins_1v1,
+        row.pending_clan_creation_paid,
+        row.clan_name,
         row.hp,
         row.hp_max,
         row.mp,
@@ -278,6 +385,7 @@ export class SqlCharacterRepository
   }
 
   async upsert(snapshot: PersistedCharacterSnapshot): Promise<void> {
+    await this.ensureLatestCharacterColumns();
     const row = mapCharacterSnapshotToRow(snapshot.character);
     const client = await this.pool.connect();
     try {

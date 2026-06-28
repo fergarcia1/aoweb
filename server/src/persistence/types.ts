@@ -32,6 +32,10 @@ export type CharacterSnapshot = {
   exp: number;
   expToNext: number;
   usersKilled: number;
+  armadaEnemyKills: number;
+  arenaWins1v1: number;
+  pendingClanCreationPaid: boolean;
+  clanName: string | null;
   hp: number;
   hpMax: number;
   mp: number;
@@ -84,6 +88,10 @@ export type CharacterRow = {
   exp: number;
   exp_to_next: number;
   users_killed: number;
+  armada_enemy_kills: number;
+  arena_wins_1v1: number;
+  pending_clan_creation_paid: boolean;
+  clan_name: string | null;
   hp: number;
   hp_max: number;
   mp: number;
@@ -108,4 +116,13 @@ export type AuctionSnapshot = {
   amount: number;
   price: number;
   expiresAtMs: number;
+};
+
+export type ClanSnapshot = {
+  id: string;
+  name: string;
+  description: string;
+  leaderCharacterId: string;
+  leaderName: string;
+  createdAtMs: number;
 };

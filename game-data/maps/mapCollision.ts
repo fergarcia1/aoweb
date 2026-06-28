@@ -1,4 +1,7 @@
 import mapa1Collision from "./mapa1.collision.json";
+import mapa20Collision from "./mapa20.collision.json";
+import mapa34Collision from "./mapa34.collision.json";
+import mapa151Collision from "./mapa151.collision.json";
 
 export type MapCollisionRect = {
   x0: number;
@@ -25,6 +28,9 @@ export type MapCollisionOverrideSets = {
 
 const FILES: Record<string, MapCollisionOverridesFile> = {
   mapa1: mapa1Collision as MapCollisionOverridesFile,
+  mapa20: mapa20Collision as MapCollisionOverridesFile,
+  mapa34: mapa34Collision as MapCollisionOverridesFile,
+  mapa151: mapa151Collision as MapCollisionOverridesFile,
 };
 
 function expandRect(rect: MapCollisionRect): Array<{ tileX: number; tileY: number }> {

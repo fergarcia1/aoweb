@@ -1,5 +1,6 @@
 import { ARMORS, CONSUMABLES, HELMETS, SHIELDS, WEAPONS, MISC_ITEMS } from "./items";
 import type { ItemId } from "./items/definitions";
+import { ARROW_ITEM_ID } from "./rangedCombat";
 import type { MerchantRole } from "../shared/npcData";
 
 export const SHOP_SELL_RATIO = 0.6;
@@ -31,10 +32,8 @@ const BLACKSMITH_CATALOG: ItemId[] = [
   "weapon_arco_cazador",
   "weapon_arco_largo",
   "weapon_baston",
-  "weapon_daga_mas_uno",
   "weapon_espada_larga",
   "weapon_hacha_guerra",
-  "weapon_hacha_escarlata",
   "weapon_sable",
   "weapon_varita_dm_cuatro"
 ];
@@ -46,11 +45,11 @@ const ARMORER_CATALOG: ItemId[] = [
   "armor_cuero",
   "armor_asesino",
   "armor_coraza",
-  "armor_coraza_bajos",
-  "armor_cuero_bajos",
-  "armor_placas_azules_fem",
+  "armor_corazaBajos",
+  "armor_cueroBajos",
+  "armor_placasAzulesFem",
   "armor_placas_rojas_bajos",
-  "armor_placas_verdes",
+  "armor_placasVerdes",
   "helmet_casco_soldado",
   "helmet_celada",
   "helmet_yelmo"
@@ -71,11 +70,11 @@ const TAILOR_CATALOG: ItemId[] = [
   "armor_tunica_azul",
   "helmet_gorro_gris",
   "helmet_gorro_negro",
-  "armor_tunica_clerigo_bajos",
-  "armor_tunica_druida",
-  "armor_tunica_mago_bajos",
-  "armor_tunica_roja",
-  "armor_tunica_roja_bajos"
+  "armor_tunicaClerigoBajos",
+  "armor_tunicaDruida",
+  "armor_tunicaMagoBajos",
+  "armor_tunicaRoja",
+  "armor_tunicaRojaBajos"
 ];
 
 const MAGE_CATALOG: ItemId[] = [
@@ -85,6 +84,7 @@ const MAGE_CATALOG: ItemId[] = [
 ];
 
 const GENERAL_CATALOG: ItemId[] = [
+  ARROW_ITEM_ID,
   "barca",
   "anillo_espectral",
   "montura_caballo_mago",

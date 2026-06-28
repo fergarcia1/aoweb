@@ -76,7 +76,7 @@ export function setupRaceFacesTextures(scene: Phaser.Scene): void {
     const key = faceTextureKey(raceId, genderId);
     const texture = scene.textures.get(key);
     if (texture.key === "__MISSING") continue;
-    texture.setFilter(Phaser.Textures.FilterMode.NEAREST);
+    texture.setFilter(Phaser.Textures.FilterMode.LINEAR);
     const source = texture.getSourceImage() as { width?: number; height?: number };
     const expectedH = SHEET_ROWS * faceFrameHeight(raceId, genderId);
     if (source.width !== expectedW || source.height !== expectedH) {

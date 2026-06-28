@@ -17,6 +17,17 @@ CREATE TABLE IF NOT EXISTS accounts (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS auth_sessions (
+  token TEXT PRIMARY KEY,
+  account_id TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  expires_at_ms BIGINT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  last_used_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_auth_sessions_account_id ON auth_sessions(account_id);
+CREATE INDEX IF NOT EXISTS idx_auth_sessions_expires_at_ms ON auth_sessions(expires_at_ms);
+
 CREATE TABLE IF NOT EXISTS characters (
   id TEXT PRIMARY KEY,
   account_id TEXT REFERENCES accounts(id) ON DELETE SET NULL,
@@ -41,6 +52,10 @@ CREATE TABLE IF NOT EXISTS characters (
   exp BIGINT NOT NULL DEFAULT 0,
   exp_to_next INTEGER NOT NULL DEFAULT 100,
   users_killed INTEGER NOT NULL DEFAULT 0,
+  armada_enemy_kills INTEGER NOT NULL DEFAULT 0,
+  arena_wins_1v1 INTEGER NOT NULL DEFAULT 0,
+  pending_clan_creation_paid BOOLEAN NOT NULL DEFAULT FALSE,
+  clan_name TEXT,
   weapon_item_id TEXT,
   shield_item_id TEXT,
   helmet_item_id TEXT,
@@ -115,15 +130,32 @@ CREATE TABLE IF NOT EXISTS auctions (
 CREATE INDEX IF NOT EXISTS idx_auctions_seller_id ON auctions(seller_id);
 CREATE INDEX IF NOT EXISTS idx_auctions_expires_at ON auctions(expires_at_ms);
 
+CREATE TABLE IF NOT EXISTS clans (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL UNIQUE,
+  description TEXT NOT NULL DEFAULT '',
+  leader_character_id TEXT NOT NULL UNIQUE REFERENCES characters(id) ON DELETE CASCADE,
+  leader_name TEXT NOT NULL,
+  created_at_ms BIGINT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_clans_lower_name ON clans(lower(name));
+
 -- Patches for databases created before newer columns (idempotent).
 ALTER TABLE characters ADD COLUMN IF NOT EXISTS gold INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE characters ADD COLUMN IF NOT EXISTS bank_gold INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE characters ADD COLUMN IF NOT EXISTS exp BIGINT NOT NULL DEFAULT 0;
 ALTER TABLE characters ADD COLUMN IF NOT EXISTS exp_to_next INTEGER NOT NULL DEFAULT 100;
 ALTER TABLE characters ADD COLUMN IF NOT EXISTS users_killed INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE characters ADD COLUMN IF NOT EXISTS armada_enemy_kills INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE characters ADD COLUMN IF NOT EXISTS arena_wins_1v1 INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE characters ADD COLUMN IF NOT EXISTS pending_clan_creation_paid BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE characters ADD COLUMN IF NOT EXISTS clan_name TEXT;
 ALTER TABLE characters ADD COLUMN IF NOT EXISTS attr_strength_bonus INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE characters ADD COLUMN IF NOT EXISTS attr_agility_bonus INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE characters ADD COLUMN IF NOT EXISTS attr_buffs_expires_at_ms BIGINT NOT NULL DEFAULT 0;
+ALTER TABLE auth_sessions ADD COLUMN IF NOT EXISTS expires_at_ms BIGINT NOT NULL DEFAULT 0;
+ALTER TABLE auth_sessions ADD COLUMN IF NOT EXISTS last_used_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
 
 DROP TABLE IF EXISTS character_skills;
 

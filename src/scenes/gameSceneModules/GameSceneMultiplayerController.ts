@@ -42,6 +42,7 @@ export type GameSceneMultiplayerDeps = {
   setFacing: (facing: Facing) => void;
   isMoving: () => boolean;
   setIsMoving: (moving: boolean) => void;
+  isPlayerImmobilized: () => boolean;
 
   getSelectedRace: () => string;
   getSelectedGender: () => string;
@@ -69,6 +70,7 @@ export type GameSceneMultiplayerDeps = {
 
   setMultiplayerStatus: (message: string) => void;
   addChatLine: (text: string) => void;
+  addGlobalLine: (text: string) => void;
   addCombatLine: (text: string) => void;
   playLevelUpSound: () => void;
   playGoldDropSound: () => void;
@@ -104,6 +106,11 @@ export type GameSceneMultiplayerDeps = {
   handleServerPartyUpdate: (message: import("../../../shared/protocol").ServerPartyUpdateMessage) => void;
   handleServerPartyInviteRequest: (message: import("../../../shared/protocol").ServerPartyInviteRequestMessage) => void;
   onAuctionCatalog: (auctions: import("../../../shared/types").NetAuctionState[]) => void;
+  handleServerArenaState: (message: import("../../../shared/protocol").ServerArenaStateMessage) => void;
+  handleServerArenaReadyCheck: (message: import("../../../shared/protocol").ServerArenaReadyCheckMessage) => void;
+  handleServerArenaRound: (message: import("../../../shared/protocol").ServerArenaRoundMessage) => void;
+  handleServerClanCreationStarted: () => void;
+  handleServerClanCreated: (clan: Extract<import("../../../shared/protocol").ServerMessage, { type: "clan_created" }>["clan"]) => void;
 
   applyServerPlayerRole: (serverRole?: PlayerRole) => void;
 
@@ -122,7 +129,7 @@ export type GameSceneMultiplayerDeps = {
   showDamageNumber: (
     x: number,
     y: number,
-    amount: number,
+    amount: number | string,
     source: "player" | "mob"
   ) => void;
   showHealNumber: (
@@ -190,6 +197,12 @@ export type GameSceneMultiplayerDeps = {
   updateDynamicMapObject: (tileX: number, tileY: number, objIndex: number) => void;
 
   playMobHitSoundForId: (mobId: string) => void;
+  playMeleeMissSound: () => void;
+  playArrowHitSound: () => void;
+  playArrowMissSound: () => void;
+  playCriticalHitSound: () => void;
+  playShieldBlockSound: () => void;
+  playDoorSound: () => void;
   findDummyById: (id: string) => { alive: boolean; sprite: Phaser.GameObjects.Sprite } | null;
   tintDummySprite: (dummy: { sprite: Phaser.GameObjects.Sprite; alive: boolean }, tint: number) => void;
   clearDummyTint: (dummy: { sprite: Phaser.GameObjects.Sprite; alive: boolean }) => void;
@@ -204,6 +217,7 @@ export type GameSceneMultiplayerDeps = {
 export class GameSceneMultiplayerController {
   private bridge: MultiplayerBridge | null = null;
   private networkMovePending = false;
+  private nextNetworkStepAt = 0;
   private syncInventoryTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(private readonly deps: GameSceneMultiplayerDeps) {}
@@ -241,7 +255,18 @@ export class GameSceneMultiplayerController {
     this.bridge?.sendPartyAction(action, targetName, leaderId, targetId);
   }
 
-  connect(): void {
+  sendArenaAction(
+    action: Extract<import("../../../shared/protocol").ClientMessage, { type: "arena_action" }>["action"],
+    mode?: Extract<import("../../../shared/protocol").ClientMessage, { type: "arena_action" }>["mode"]
+  ): void {
+    this.bridge?.sendArenaAction(action, mode);
+  }
+
+  sendClanCreate(name: string, description: string): void {
+    this.bridge?.sendClanCreate(name, description);
+  }
+
+  async connect(): Promise<void> {
     this.disconnect();
     this.bridge = new MultiplayerBridge(
       this.deps.scene,
@@ -250,6 +275,7 @@ export class GameSceneMultiplayerController {
       {
         onStatus: (message) => this.deps.setMultiplayerStatus(message),
         onChatLine: (text) => this.deps.addChatLine(text),
+        onGlobalLine: (text) => this.deps.addGlobalLine(text),
         onChatBubble: (playerId, text) => this.deps.showPlayerChatBubble(playerId, text),
         onCombatLine: (text) => {
           if (/subiste al nivel/i.test(text)) {
@@ -294,7 +320,7 @@ export class GameSceneMultiplayerController {
         },
         onPlayerLeft: () => {},
         onPlayerMoved: (player) => this.onPlayerMoved(player),
-        onPlayerUpdated: (player) => this.deps.handleServerPlayerUpdated(player),
+        onPlayerUpdated: (player) => this.onPlayerUpdated(player),
         onMobUpdated: (mob) => this.deps.applyNetMobState(mob),
         onMobLeft: (mobId) => this.deps.applyNetMobLeft(mobId),
         onGameEvent: (event) => this.onGameEvent(event),
@@ -330,6 +356,11 @@ export class GameSceneMultiplayerController {
           this.deps.applyWorldItemRemoved(mapId, worldItemId),
         onPartyUpdate: (message) => this.deps.handleServerPartyUpdate(message),
         onPartyInviteRequest: (message) => this.deps.handleServerPartyInviteRequest(message),
+        onArenaState: (message) => this.deps.handleServerArenaState(message),
+        onArenaReadyCheck: (message) => this.deps.handleServerArenaReadyCheck(message),
+        onArenaRound: (message) => this.deps.handleServerArenaRound(message),
+        onClanCreationStarted: () => this.deps.handleServerClanCreationStarted(),
+        onClanCreated: (clan) => this.deps.handleServerClanCreated(clan),
         getJoinPayload: () => {
           const progress = this.deps.getPlayerProgress();
           return buildMultiplayerJoinPayload({
@@ -363,7 +394,7 @@ export class GameSceneMultiplayerController {
         },
       }
     );
-    this.bridge.connect();
+    await this.bridge.connect();
   }
 
   disconnect(options?: { skipRestoreLocalMobs?: boolean }): void {
@@ -420,7 +451,9 @@ export class GameSceneMultiplayerController {
       !this.isActive() ||
       this.deps.isChangingMap() ||
       this.deps.isMoving() ||
-      this.networkMovePending
+      (this.deps.isPlayerImmobilized?.() ?? false) ||
+      this.networkMovePending ||
+      Date.now() < this.nextNetworkStepAt
     ) {
       return;
     }
@@ -632,6 +665,18 @@ export class GameSceneMultiplayerController {
     this.deps.refreshMinimap();
   }
 
+  private onPlayerUpdated(player: NetPlayerState): void {
+    const localId = this.bridge?.getPlayerId();
+    if (
+      localId &&
+      player.id === localId &&
+      (player.immobilizedUntilMs ?? 0) > Date.now()
+    ) {
+      this.syncLocalPlayerFromServer(player);
+    }
+    this.deps.handleServerPlayerUpdated(player);
+  }
+
   onGameEvent(event: GameEvent): void {
     if (event.kind === "spell_fx") {
       if (this.deps.scene.time.now < this.deps.getSuppressServerSpellFxUntil()) {
@@ -651,7 +696,9 @@ export class GameSceneMultiplayerController {
           ? this.deps.getPlayerSprite()
           : targetPlayerId
             ? this.bridge?.getRemotePlayers()?.getPlayerSprite(targetPlayerId)
-            : undefined;
+            : event.targetMobId
+              ? this.deps.findDummyById(event.targetMobId)?.sprite
+              : undefined;
 
       if (targetSprite) {
         this.deps.playSpellEffectOnTarget(event.spellId, targetSprite, spellAudible);
@@ -691,6 +738,9 @@ export class GameSceneMultiplayerController {
 
     if (event.kind === "map_object_updated") {
       this.deps.updateDynamicMapObject(event.tileX, event.tileY, event.objIndex);
+      if (this.deps.shouldPlayWorldSound(event.tileX, event.tileY)) {
+        this.deps.playDoorSound();
+      }
       return;
     }
 
@@ -744,6 +794,32 @@ export class GameSceneMultiplayerController {
       return;
     }
 
+    if (event.kind === "miss") {
+      const localId = this.bridge?.getPlayerId();
+      if (this.deps.shouldPlayWorldSound(event.tileX, event.tileY, event.sourcePlayerId)) {
+        if (event.attackKind === "ranged") {
+          this.deps.playArrowMissSound();
+        } else {
+          this.deps.playMeleeMissSound();
+        }
+      }
+      if (event.sourcePlayerId === localId) {
+        const player = this.deps.getPlayerSprite();
+        this.deps.showDamageNumber(player.x, player.y - 44, "\u00a1Fallas!", "player");
+        return;
+      }
+
+      const remoteSprite = this.bridge?.getRemotePlayers()?.getPlayerSprite(event.sourcePlayerId);
+      if (remoteSprite) {
+        this.deps.showDamageNumber(remoteSprite.x, remoteSprite.y - 38, "\u00a1Fallas!", "player");
+        return;
+      }
+
+      const { x, y } = tileToFeetWorld(event.tileX, event.tileY, TILE_SIZE);
+      this.deps.showDamageNumber(x, y - 38, "\u00a1Fallas!", "player");
+      return;
+    }
+
     if (event.kind !== "damage") {
       return;
     }
@@ -757,9 +833,13 @@ export class GameSceneMultiplayerController {
       const dummy = this.deps.findDummyById(event.targetId);
       if (dummy?.alive) {
         if (event.amount > 0) {
-          if (
-            this.deps.shouldPlayWorldSound(sourceX, sourceY, event.sourcePlayerId)
-          ) {
+          if (this.deps.shouldPlayWorldSound(sourceX, sourceY, event.sourcePlayerId)) {
+            if (event.attackKind === "ranged") {
+              this.deps.playArrowHitSound();
+            }
+            if (event.critical) {
+              this.deps.playCriticalHitSound();
+            }
             this.deps.playMobHitSoundForId(event.targetId);
           }
         }
@@ -792,6 +872,18 @@ export class GameSceneMultiplayerController {
 
     if (event.targetKind !== "player") {
       return;
+    }
+
+    if (event.amount > 0 && this.deps.shouldPlayWorldSound(sourceX, sourceY, event.sourcePlayerId)) {
+      if (event.attackKind === "ranged") {
+        this.deps.playArrowHitSound();
+      }
+      if (event.shieldBlocked) {
+        this.deps.playShieldBlockSound();
+      }
+      if (event.critical) {
+        this.deps.playCriticalHitSound();
+      }
     }
 
     // El objetivo es el jugador local
@@ -904,6 +996,7 @@ export class GameSceneMultiplayerController {
       const currentTile = this.deps.getPlayerTile();
       const desynced = state.tileX !== currentTile.x || state.tileY !== currentTile.y;
       if (desynced) {
+        this.nextNetworkStepAt = Date.now() + 160;
         this.snapLocalPlayerToTile(state);
         return;
       }
@@ -932,6 +1025,7 @@ export class GameSceneMultiplayerController {
       }
 
       this.snapLocalPlayerToTile(state);
+      this.nextNetworkStepAt = Date.now() + 160;
       return;
     }
 

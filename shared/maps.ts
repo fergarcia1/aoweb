@@ -254,6 +254,35 @@ import { MAP_MAPA253 } from "./maps/mapa253";
 import { MAP_MAPA254 } from "./maps/mapa254";
 import { MAP_MAPA255 } from "./maps/mapa255";
 import { MAP_MAPA256 } from "./maps/mapa256";
+import { MAP_MAPA257 } from "./maps/mapa257";
+import { MAP_MAPA258 } from "./maps/mapa258";
+import { MAP_MAPA259 } from "./maps/mapa259";
+import { MAP_MAPA260 } from "./maps/mapa260";
+import { MAP_MAPA261 } from "./maps/mapa261";
+import { MAP_MAPA262 } from "./maps/mapa262";
+import { MAP_MAPA263 } from "./maps/mapa263";
+import { MAP_MAPA264 } from "./maps/mapa264";
+import { MAP_MAPA265 } from "./maps/mapa265";
+import { MAP_MAPA266 } from "./maps/mapa266";
+import { MAP_MAPA267 } from "./maps/mapa267";
+import { MAP_MAPA268 } from "./maps/mapa268";
+import { MAP_MAPA269 } from "./maps/mapa269";
+import { MAP_MAPA270 } from "./maps/mapa270";
+import { MAP_MAPA271 } from "./maps/mapa271";
+import { MAP_MAPA272 } from "./maps/mapa272";
+import { MAP_MAPA273 } from "./maps/mapa273";
+import { MAP_MAPA274 } from "./maps/mapa274";
+import { MAP_MAPA275 } from "./maps/mapa275";
+import { MAP_MAPA276 } from "./maps/mapa276";
+import { MAP_MAPA277 } from "./maps/mapa277";
+import { MAP_MAPA278 } from "./maps/mapa278";
+import { MAP_MAPA279 } from "./maps/mapa279";
+import { MAP_MAPA280 } from "./maps/mapa280";
+import { MAP_MAPA281 } from "./maps/mapa281";
+import { MAP_MAPA282 } from "./maps/mapa282";
+import { MAP_MAPA283 } from "./maps/mapa283";
+import { MAP_MAPA284 } from "./maps/mapa284";
+import { MAP_MAPA285 } from "./maps/mapa285";
 import type { EdgeTransition, GameMap, MapEdge, MapTransition } from "./mapTypes";
 import { EDGE_TRANSITION_TARGET_INSET, EDGE_TRANSITION_TRIGGER_DISTANCE, START_MAP_ID } from "./mapConstants";
 import { WORLD_MAP_GRID_CELLS } from "./worldMapGrid";
@@ -516,6 +545,35 @@ const MAPS: Record<string, GameMap> = {
   [MAP_MAPA254.id]: MAP_MAPA254,
   [MAP_MAPA255.id]: MAP_MAPA255,
   [MAP_MAPA256.id]: MAP_MAPA256,
+  [MAP_MAPA257.id]: MAP_MAPA257,
+  [MAP_MAPA258.id]: MAP_MAPA258,
+  [MAP_MAPA259.id]: MAP_MAPA259,
+  [MAP_MAPA260.id]: MAP_MAPA260,
+  [MAP_MAPA261.id]: MAP_MAPA261,
+  [MAP_MAPA262.id]: MAP_MAPA262,
+  [MAP_MAPA263.id]: MAP_MAPA263,
+  [MAP_MAPA264.id]: MAP_MAPA264,
+  [MAP_MAPA265.id]: MAP_MAPA265,
+  [MAP_MAPA266.id]: MAP_MAPA266,
+  [MAP_MAPA267.id]: MAP_MAPA267,
+  [MAP_MAPA268.id]: MAP_MAPA268,
+  [MAP_MAPA269.id]: MAP_MAPA269,
+  [MAP_MAPA270.id]: MAP_MAPA270,
+  [MAP_MAPA271.id]: MAP_MAPA271,
+  [MAP_MAPA272.id]: MAP_MAPA272,
+  [MAP_MAPA273.id]: MAP_MAPA273,
+  [MAP_MAPA274.id]: MAP_MAPA274,
+  [MAP_MAPA275.id]: MAP_MAPA275,
+  [MAP_MAPA276.id]: MAP_MAPA276,
+  [MAP_MAPA277.id]: MAP_MAPA277,
+  [MAP_MAPA278.id]: MAP_MAPA278,
+  [MAP_MAPA279.id]: MAP_MAPA279,
+  [MAP_MAPA280.id]: MAP_MAPA280,
+  [MAP_MAPA281.id]: MAP_MAPA281,
+  [MAP_MAPA282.id]: MAP_MAPA282,
+  [MAP_MAPA283.id]: MAP_MAPA283,
+  [MAP_MAPA284.id]: MAP_MAPA284,
+  [MAP_MAPA285.id]: MAP_MAPA285,
 
   [MAP_MAPA44.id]: MAP_MAPA44,
 };
@@ -656,7 +714,7 @@ export function findTransition(
     return directTransition;
   }
 
-  const margin = 15;
+  const margin = 10;
   const directionalEdge =
     facing === "up" && tileY <= margin
       ? "up"

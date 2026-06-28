@@ -83,9 +83,21 @@ export function collectLegacyObjGrhFileNums(
       nums.add(fileNum);
     }
     if (def.indexAbierta > 0) {
-      const openFile = resolveGrhFileNum(grhIndex, def.grhIndex + 1);
-      if (openFile) {
-        nums.add(openFile);
+      const openDef = resolveImportedObjDef(def.indexAbierta);
+      if (openDef) {
+        const openFile = resolveGrhFileNum(grhIndex, openDef.grhIndex);
+        if (openFile) {
+          nums.add(openFile);
+        }
+      }
+    }
+    if (def.indexCerrada > 0 && def.indexCerrada !== mapObjIndex) {
+      const closedDef = resolveImportedObjDef(def.indexCerrada);
+      if (closedDef) {
+        const closedFile = resolveGrhFileNum(grhIndex, closedDef.grhIndex);
+        if (closedFile) {
+          nums.add(closedFile);
+        }
       }
     }
   };

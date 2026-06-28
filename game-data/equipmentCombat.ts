@@ -1,5 +1,9 @@
 import type { NetPlayerEquipment } from "../shared/types";
 
+import {
+  getUnarmedDamageRange,
+  getWeaponDamageRangeWithStrength,
+} from "./attackDamage";
 import { ARMORS, HELMETS, SHIELDS, WEAPONS } from "./items/catalog";
 
 
@@ -38,17 +42,16 @@ export type AttackStats = {
 
 
 
-const BASE_ATTACK_MIN = 8;
+export function getAttackStatsFromEquipment(
+  equipment: NetPlayerEquipment,
+  options?: { strength?: number }
+): AttackStats {
 
-const BASE_ATTACK_MAX = 16;
+  const strength = options?.strength ?? 0;
+  const baseRange = getUnarmedDamageRange(strength);
+  let attackMin = baseRange.attackMin;
 
-
-
-export function getAttackStatsFromEquipment(equipment: NetPlayerEquipment): AttackStats {
-
-  let attackMin = BASE_ATTACK_MIN;
-
-  let attackMax = BASE_ATTACK_MAX;
+  let attackMax = baseRange.attackMax;
 
   let magicDamageBonusPercent = 0;
 
@@ -68,9 +71,14 @@ export function getAttackStatsFromEquipment(equipment: NetPlayerEquipment): Atta
 
     if (weapon) {
 
-      attackMin += weapon.danioMin - 8;
+      const weaponRange = getWeaponDamageRangeWithStrength(
+        weapon.danioMin,
+        weapon.danioMax,
+        strength
+      );
+      attackMin = weaponRange.attackMin;
 
-      attackMax += weapon.danioMax - 16;
+      attackMax = weaponRange.attackMax;
 
       magicDamageBonusPercent += weapon.aumentoDanioMagicoPercent ?? 0;
 

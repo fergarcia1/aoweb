@@ -18,6 +18,7 @@ export class MobEntity {
   readonly leashRangeTiles: number;
   readonly minHit: number;
   readonly maxHit: number;
+  readonly missChance: number;
   readonly attackCooldownMs: number;
   readonly aiMoveCooldownMs: number;
   readonly respawnMs: number;
@@ -61,6 +62,7 @@ export class MobEntity {
     leashRangeTiles?: number;
     minHit?: number;
     maxHit?: number;
+    missChance?: number;
     attackCooldownMs?: number;
     aiMoveCooldownMs?: number;
     respawnMs?: number;
@@ -91,6 +93,7 @@ export class MobEntity {
       this.minHit = this.maxHit;
       this.maxHit = swap;
     }
+    this.missChance = Math.min(1, Math.max(0, config.missChance ?? 0));
     this.attackCooldownMs = Math.max(200, config.attackCooldownMs ?? 1400);
     this.aiMoveCooldownMs = Math.max(200, config.aiMoveCooldownMs ?? 350);
     this.respawnMs = Math.max(500, config.respawnMs ?? 10_000);

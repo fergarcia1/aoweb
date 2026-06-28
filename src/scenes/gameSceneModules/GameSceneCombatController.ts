@@ -18,6 +18,10 @@ import {
 } from "../../spells/spellBehaviors";
 import { INVISIBILITY_DURATION_MS } from "../../../game-data/invisibility";
 import {
+  hasBowEquipped,
+  isWithinRangedAttackRange,
+} from "../../../game-data/rangedCombat";
+import {
   RESURRECT_CHANNEL_MS,
   RESURRECT_MAX_TILE_DISTANCE,
   RESURRECT_SPELL_ID,
@@ -66,6 +70,7 @@ export type GameSceneCombatDeps = {
   hasLearnedSpell: (spellId: number) => boolean;
   getSelectedClass: () => import("./types").ClassId;
   hasAnilloEspectralInInventory: () => boolean;
+  hasArrowsInInventory: () => boolean;
   isPlayerDeadOrGhost: () => boolean;
   isMultiplayerActive: () => boolean;
   isPlayerAdmin: () => boolean;
@@ -76,6 +81,12 @@ export type GameSceneCombatDeps = {
   onPlayerHpDepleted: () => void;
 
   sendAttackToServer: (facing: Facing) => void;
+  sendRangedAttackToServer: (payload: {
+    targetTileX: number;
+    targetTileY: number;
+    targetMobId?: string;
+    targetPlayerId?: string;
+  }) => void;
   sendCastSpellToServer: (
     spellId: number,
     tileX: number,
@@ -86,6 +97,8 @@ export type GameSceneCombatDeps = {
   getDummyInAttackRange: () => DummyState | null;
   getDummyHitTile: (dummy: DummyState) => { x: number; y: number };
   killDummy: (dummy: DummyState) => void;
+  syncDummyWorldPosition: (dummy: DummyState) => void;
+  setMobAnimationState: (dummy: DummyState, state: "idle" | "walk") => void;
   refreshInspectedDummyLabel: () => void;
   getInspectedDummyId: () => string | null;
   playMobHitSound?: (modelId: MobModelId) => void;
@@ -118,6 +131,7 @@ export type GameSceneCombatDeps = {
  */
 export class GameSceneCombatController {
   private pendingSpellCast: SpellCastRequest | null = null;
+  private pendingRangedAttack = false;
   private nextAttackAt = 0;
   private nextSpellAt = 0;
   private activePlayerDamageText?: Phaser.GameObjects.Text;
@@ -127,6 +141,10 @@ export class GameSceneCombatController {
 
   hasPendingSpellCast(): boolean {
     return this.pendingSpellCast != null;
+  }
+
+  hasPendingRangedAttack(): boolean {
+    return this.pendingRangedAttack;
   }
 
   getPendingSpellCast(): SpellCastRequest | null {
@@ -244,7 +262,48 @@ export class GameSceneCombatController {
 
   cancelSpellTargeting(message?: string): void {
     this.pendingSpellCast = null;
-    this.deps.input.setDefaultCursor("default");
+    this.deps.input.setDefaultCursor(this.pendingRangedAttack ? "crosshair" : "default");
+    this.deps.syncWorldInteractiveCursors();
+    if (message) {
+      this.deps.getGameUi().addChatLine(message);
+    }
+  }
+
+  private hasBowEquipped(): boolean {
+    return hasBowEquipped(this.deps.getEquipment());
+  }
+
+  private beginRangedTargeting(): void {
+    if (this.pendingRangedAttack) {
+      return;
+    }
+
+    const gameUi = this.deps.getGameUi();
+    if (!this.hasBowEquipped()) {
+      gameUi.addCombatLine("Necesitás equipar un arco.");
+      return;
+    }
+    if (!this.deps.hasArrowsInInventory()) {
+      gameUi.addCombatLine("No tenés flechas.");
+      return;
+    }
+
+    if (this.pendingSpellCast) {
+      this.cancelSpellTargeting();
+    }
+    this.pendingRangedAttack = true;
+    this.deps.stopMeditation();
+    this.deps.input.setDefaultCursor("crosshair");
+    this.deps.syncWorldInteractiveCursors();
+    gameUi.addCombatLine("Elegí un objetivo para disparar.");
+  }
+
+  cancelRangedTargeting(message?: string): void {
+    if (!this.pendingRangedAttack && !message) {
+      return;
+    }
+    this.pendingRangedAttack = false;
+    this.deps.input.setDefaultCursor(this.pendingSpellCast ? "crosshair" : "default");
     this.deps.syncWorldInteractiveCursors();
     if (message) {
       this.deps.getGameUi().addChatLine(message);
@@ -567,6 +626,11 @@ export class GameSceneCombatController {
 
     this.deps.clearSpellMagicWords();
 
+    if (this.hasBowEquipped()) {
+      this.beginRangedTargeting();
+      return;
+    }
+
     const now = this.deps.time.now;
     if (now < this.nextAttackAt) {
       return;
@@ -583,6 +647,77 @@ export class GameSceneCombatController {
     }
 
     this.deps.getGameUi().addCombatLine(OFFLINE_GAMEPLAY_MESSAGE);
+  }
+
+  tryRangedAttackAtTarget(target: {
+    targetTileX: number;
+    targetTileY: number;
+    targetMobId?: string;
+    targetPlayerId?: string;
+  }): void {
+    if (!this.pendingRangedAttack) {
+      return;
+    }
+
+    const gameUi = this.deps.getGameUi();
+    if (this.deps.isPlayerDeadOrGhost()) {
+      this.cancelRangedTargeting();
+      return;
+    }
+    if (!this.hasBowEquipped()) {
+      gameUi.addCombatLine("Necesitás equipar un arco.");
+      this.cancelRangedTargeting();
+      return;
+    }
+    if (!this.deps.hasArrowsInInventory()) {
+      gameUi.addCombatLine("No tenés flechas.");
+      this.cancelRangedTargeting();
+      return;
+    }
+
+    const playerTile = this.deps.getPlayerTile();
+    if (
+      !isWithinRangedAttackRange(
+        playerTile.x,
+        playerTile.y,
+        target.targetTileX,
+        target.targetTileY
+      )
+    ) {
+      gameUi.addCombatLine("El objetivo está demasiado lejos.");
+      this.cancelRangedTargeting();
+      return;
+    }
+
+    const now = this.deps.time.now;
+    if (now < this.nextAttackAt) {
+      gameUi.addCombatLine("No podés disparar tan rápido.");
+      return;
+    }
+
+    if (!this.deps.isMultiplayerActive()) {
+      gameUi.addCombatLine(OFFLINE_GAMEPLAY_MESSAGE);
+      this.cancelRangedTargeting("Disparo cancelado.");
+      return;
+    }
+    if (!this.deps.isServerConnected()) {
+      gameUi.addCombatLine("Sin conexión al servidor.");
+      this.cancelRangedTargeting("Disparo cancelado.");
+      return;
+    }
+
+    this.nextAttackAt = now + ATTACK_COOLDOWN_MS;
+    this.nextSpellAt = Math.max(
+      this.nextSpellAt,
+      now + MECHANICS.INTERVAL_MELEE_TO_SPELL
+    );
+    this.deps.sendRangedAttackToServer({
+      targetTileX: target.targetTileX,
+      targetTileY: target.targetTileY,
+      targetMobId: target.targetMobId,
+      targetPlayerId: target.targetPlayerId,
+    });
+    this.cancelRangedTargeting();
   }
 
   getCombatSnapshot(): PlayerCombatSnapshot {
@@ -678,7 +813,7 @@ export class GameSceneCombatController {
   showCombatNumber(
     worldX: number,
     worldY: number,
-    amount: number,
+    amount: number | string,
     type: "damage" | "heal" = "damage",
     source: "player" | "mob" = "player"
   ): void {
@@ -687,8 +822,13 @@ export class GameSceneCombatController {
     }
 
     const { scene } = this.deps;
-    const value = Math.max(0, Math.floor(amount));
-    const textValue = type === "damage" && value > 200 ? `${value}!¡` : `${value}`;
+    const value = typeof amount === "number" ? Math.max(0, Math.floor(amount)) : null;
+    const textValue =
+      value == null
+        ? String(amount)
+        : type === "damage" && value > 200
+          ? `${value}!¡`
+          : `${value}`;
     const color = type === "heal" ? "#33ccff" : "#ff3333";
     const stroke = type === "heal" ? "#002244" : "#240000";
 

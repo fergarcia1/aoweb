@@ -47,6 +47,14 @@ function misc(
 /** Objetos en `public/assets/ao/otherItems` (excepto consumibles ya en CONSUMABLES). */
 export const OTHER_MISC_ITEMS: OtherMiscItemEntry[] = [
   misc({
+    itemId: "municion_flecha",
+    idItem: 4201,
+    nombre: "Flecha",
+    iconAssetPath: "/assets/ao/munitions/flecha_icon.png",
+    valor: 2,
+    maxStack: 10_000,
+  }),
+  misc({
     itemId: "anillo_artes_marciales",
     idItem: 4101,
     nombre: "Anillo de Artes Marciales",

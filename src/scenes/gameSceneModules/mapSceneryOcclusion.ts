@@ -42,11 +42,6 @@ export function syncMapSceneryOcclusion(params: MapSceneryOcclusionParams): void
   const isUnderRoof = isPlayerUnderRoof(playerTileX, playerTileY);
 
   const applyOcclusion = (sprite: Phaser.GameObjects.Image, occludedAlpha: number) => {
-    const wallTileY = sprite.getData("mapTileY") as number | undefined;
-    if (wallTileY !== undefined && wallTileY >= playerTileY) {
-      sprite.setAlpha(1);
-      return;
-    }
     const bounds = sprite.getBounds();
     if (bounds.height < SCENERY_OCCLUDER_MIN_HEIGHT_PX) {
       sprite.setAlpha(1);
@@ -57,7 +52,7 @@ export function syncMapSceneryOcclusion(params: MapSceneryOcclusionParams): void
       playerX >= bounds.left + shrinkX &&
       playerX <= bounds.right - shrinkX &&
       playerY <= bounds.bottom &&
-      playerY >= bounds.bottom - bounds.height * 0.8;
+      playerY >= bounds.top + bounds.height * 0.15;
     sprite.setAlpha(playerBehind ? occludedAlpha : 1);
   };
 

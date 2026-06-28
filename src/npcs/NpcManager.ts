@@ -202,9 +202,9 @@ export class NpcManager {
       .text(feet.x, feet.y + 2, definition.displayName, {
         fontFamily: GAME_FONT,
         fontSize: `${WORLD_NAME_FONT_SIZE}px`,
-        color: NPC_NAME_COLORS.fill,
+        color: definition.nameFill ?? NPC_NAME_COLORS.fill,
         fontStyle: "bold",
-        stroke: NPC_NAME_COLORS.stroke,
+        stroke: definition.nameStroke ?? NPC_NAME_COLORS.stroke,
         strokeThickness: WORLD_NAME_STROKE,
         resolution: GAME_TEXT_RESOLUTION,
       })

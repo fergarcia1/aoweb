@@ -8,7 +8,7 @@ const L4 = [[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
 
 export const MAP_MAPA149: GameMap = {
   id: "mapa149",
-  name: "Costas de Arghbl                                                ",
+  name: "Oceano Abierto",
   width: 100,
   height: 100,
   backgroundColor: '#000000',

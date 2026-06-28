@@ -2,7 +2,9 @@ import type { MobModelId } from "./mobs";
 import type { NamedWavId } from "./namedWavs";
 
 /** Sonido al recibir daño (varias variantes = alternancia). */
-export const MOB_HIT_SOUND_BY_MODEL: Partial<Record<MobModelId, readonly NamedWavId[]>> = {
+type MobHitSoundModelId = MobModelId | "medusa" | "medusaM" | "medusa_m";
+
+export const MOB_HIT_SOUND_BY_MODEL: Partial<Record<MobHitSoundModelId, readonly NamedWavId[]>> = {
   arana: ["arana"],
   basilisco: ["basilisco"],
   bruja_drow: ["bruja"],
@@ -11,6 +13,9 @@ export const MOB_HIT_SOUND_BY_MODEL: Partial<Record<MobModelId, readonly NamedWa
   fango: ["fango"],
   lobo: ["lobo"],
   lobo_invernal: ["lobo"],
+  medusa: ["medu"],
+  medusaM: ["medu2"],
+  medusa_m: ["medu2"],
   serpiente: ["serpienteHit"],
 };
 
@@ -27,7 +32,7 @@ export const HEAVY_MOB_FOOTSTEP_MODELS: ReadonlySet<MobModelId> = new Set([
 
 const mobHitSoundIndexByModel = new Map<string, number>();
 
-export function resolveMobHitSoundId(modelId: MobModelId): NamedWavId | undefined {
+export function resolveMobHitSoundId(modelId: MobHitSoundModelId): NamedWavId | undefined {
   const variants = MOB_HIT_SOUND_BY_MODEL[modelId];
   if (!variants?.length) {
     return undefined;

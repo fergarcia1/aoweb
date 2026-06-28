@@ -1,7 +1,7 @@
 import { createHmac, randomBytes, randomUUID, scryptSync, timingSafeEqual } from "node:crypto";
 
 const TOKEN_SECRET = process.env.AUTH_TOKEN_SECRET ?? process.env.JWT_SECRET ?? "dev-auth-secret";
-const TOKEN_TTL_MS = 2 * 60 * 60 * 1000;
+const TOKEN_TTL_MS = 15 * 60 * 1000;
 const PASSWORD_KEY_LENGTH = 64;
 
 export type AuthTokenPayload = {
@@ -83,6 +83,10 @@ export function verifyPassword(password: string, storedHash: string): boolean {
 
 export function createAccountId(): string {
   return randomUUID();
+}
+
+export function generateRefreshToken(): string {
+  return randomBytes(32).toString("hex");
 }
 
 export function validateUsername(username: string): string | null {

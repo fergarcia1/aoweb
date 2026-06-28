@@ -1,8 +1,8 @@
 import Phaser from "phaser";
 import type { CoreStats } from "../../game/characterStats";
+import { getStrengthDamageBonus as getSharedStrengthDamageBonus } from "../../../game-data/attackDamage";
 import { expRequiredForLevel as sharedExpRequiredForLevel } from "../../../game-data/progressFormulas";
 import {
-  BASELINE_STRENGTH,
   BASE_MISS_CHANCE,
   MAX_MISS_CHANCE,
   MIN_MISS_CHANCE,
@@ -29,10 +29,10 @@ export function getLevelUpBonusesFromStats(stats: CoreStats): { hpBonus: number;
 }
 
 export function getStrengthDamageBonus(strength: number): { minBonus: number; maxBonus: number } {
-  const delta = strength - BASELINE_STRENGTH;
+  const bonus = getSharedStrengthDamageBonus(strength);
   return {
-    minBonus: delta,
-    maxBonus: delta * 2,
+    minBonus: bonus,
+    maxBonus: bonus,
   };
 }
 

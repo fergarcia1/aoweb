@@ -8,7 +8,7 @@ const L4 = [[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
 
 export const MAP_MAPA157: GameMap = {
   id: "mapa157",
-  name: "Bosques de Banderbille                                          ",
+  name: "Camino Real",
   width: 100,
   height: 100,
   backgroundColor: '#000000',

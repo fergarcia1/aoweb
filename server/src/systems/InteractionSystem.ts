@@ -364,6 +364,13 @@ export class InteractionSystem {
       return;
     }
 
+    const npcs = getNpcsForMap(session.mapId);
+    const clickedNpc = npcs.find((n) => Math.abs(n.tileX - tileX) <= 1 && Math.abs(n.tileY - tileY) <= 1);
+    if (clickedNpc) {
+      this.handleNpcInteraction(session, clickedNpc.id);
+      return;
+    }
+
     const map = getMap(session.mapId);
     const doorTile = findLegacyDoorInteractionTile(map, tileX, tileY);
     const interactionTileX = doorTile?.tileX ?? tileX;
@@ -431,6 +438,32 @@ export class InteractionSystem {
 
     if (npc.role === "priest") {
       this.handleRevive(session, "priest");
+    } else if (npc.role === "armada_manager") {
+      session.lastArmadaManagerInteractionAt = Date.now();
+      for (const text of [
+        "Estas intentando unirte a la armada imperial?",
+        "El primer rango requiere 100 bajas enemigas: caos o renegados.",
+        "Si ya tienes las bajas suficientes, usa /alistar.",
+      ]) {
+        this.world.send(session, {
+          type: "chat",
+          from: npc.displayName,
+          text,
+        });
+      }
+    } else if (npc.role === "clan_manager") {
+      session.lastClanManagerInteractionAt = Date.now();
+      for (const text of [
+        "Si quieres crear un clan deberas traerme una Gema Dorada,",
+        "Gema Lunar, Gema Gris y Gema Naranja, ademas de 1.500.000 de oro.",
+        "Si tienes todo esto en tu inventario usa /crearclan.",
+      ]) {
+        this.world.send(session, {
+          type: "chat",
+          from: npc.displayName,
+          text,
+        });
+      }
     } else if (isMerchantRole(npc.role)) {
       this.world.send(session, {
         type: "inventory_updated",

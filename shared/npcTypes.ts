@@ -17,7 +17,9 @@ export type NpcRole =
   | "test_tailor"
   | "test_alchemist"
   | "test_mage"
-  | "test_general";
+  | "test_general"
+  | "armada_manager"
+  | "clan_manager";
 
 export type StaticNpcDefinition = {
   id: string;
@@ -44,4 +46,6 @@ export type StaticNpcDefinition = {
   faceOffsetX?: number;
   /** Multiplicador de escala de la cara (1 = igual que el jugador de esa raza). */
   faceScale?: number;
+  nameFill?: string;
+  nameStroke?: string;
 };

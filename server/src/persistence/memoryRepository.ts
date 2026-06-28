@@ -1,5 +1,5 @@
-import type { AuctionRepository, CharacterRepository } from "./repository";
-import type { AuctionSnapshot, PersistedCharacterSnapshot } from "./types";
+import type { AuctionRepository, CharacterRepository, ClanRepository } from "./repository";
+import type { AuctionSnapshot, ClanSnapshot, PersistedCharacterSnapshot } from "./types";
 
 function cloneSnapshot(snapshot: PersistedCharacterSnapshot): PersistedCharacterSnapshot {
   return {
@@ -15,10 +15,12 @@ function cloneSnapshot(snapshot: PersistedCharacterSnapshot): PersistedCharacter
 }
 
 export class MemoryCharacterRepository
-  implements CharacterRepository, AuctionRepository
+  implements CharacterRepository, AuctionRepository, ClanRepository
 {
   private readonly byName = new Map<string, PersistedCharacterSnapshot>();
   private readonly auctions = new Map<string, AuctionSnapshot>();
+  private readonly clansByName = new Map<string, ClanSnapshot>();
+  private readonly clanIdByLeaderId = new Map<string, string>();
 
   async getByName(name: string): Promise<PersistedCharacterSnapshot | null> {
     const key = name.trim().toLowerCase();
@@ -46,6 +48,21 @@ export class MemoryCharacterRepository
 
   async remove(id: string): Promise<void> {
     this.auctions.delete(id);
+  }
+
+  async getClanByName(name: string): Promise<ClanSnapshot | null> {
+    return this.clansByName.get(name.trim().toLowerCase()) ?? null;
+  }
+
+  async getClanByLeaderId(leaderCharacterId: string): Promise<ClanSnapshot | null> {
+    const clanName = this.clanIdByLeaderId.get(leaderCharacterId);
+    return clanName ? this.clansByName.get(clanName) ?? null : null;
+  }
+
+  async addClan(clan: ClanSnapshot): Promise<void> {
+    const key = clan.name.trim().toLowerCase();
+    this.clansByName.set(key, { ...clan });
+    this.clanIdByLeaderId.set(clan.leaderCharacterId, key);
   }
 }
 

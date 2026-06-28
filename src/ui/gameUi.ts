@@ -4,7 +4,13 @@ import {
   MINIMAP_LEGACY_ROOF_COLOR,
 } from "../../shared/mapWalkability";
 import { computeMinimapCellSize, minimapTileCenterPx } from "../../shared/minimapLayout";
-import { isWaterTile } from "../../shared/navigation";
+import { isWaterTile, isLegacyBridgeTile } from "../../shared/navigation";
+import {
+  isLegacyCrystalDungeonGroundTile,
+  isLegacySnowGroundTile,
+  MINIMAP_LEGACY_CRYSTAL_DUNGEON_COLOR,
+  MINIMAP_LEGACY_SNOW_COLOR,
+} from "../maps/legacyMinimapBiome";
 import { getTileDefinition, TILE } from "../maps/tileDefinitions";
 import type { GameMap } from "../maps/types";
 import type { SpellDefinition } from "../data/spells";
@@ -17,6 +23,8 @@ import { AuctionOverlay, AuctionViewState } from "./auctionOverlay";
 import { DropItemOverlay } from "./DropItemOverlay";
 import { SimpleConfirmOverlay } from "./SimpleConfirmOverlay";
 import { OptionsOverlay } from "./optionsOverlay";
+import { ArenaOverlay } from "./arenaOverlay";
+import type { ArenaStatePayload } from "../../shared/arena";
 import { applyMasterVolume } from "../config/audioSettings";
 import { getItemDefinition } from "../items/itemDefinitions";
 import {
@@ -127,12 +135,32 @@ const UI_MAPNAME_OFFSET_KEY = "ui_mapname_offset";
 const UI_MINIMAP_OFFSET_KEY = "ui_minimap_offset";
 const UI_MINIMAP_SCALE_KEY = "ui_minimap_scale";
 const DEFAULT_MINIMAP_SLOT_SCALE = 1.1;
-const CHAT_TAB_ORDER = ["chat", "combat", "global"] as const;
-type ChatTabId = (typeof CHAT_TAB_ORDER)[number];
-type ChatEntry = { text: string; channel: ChatTabId };
+const CHAT_CHANNEL_ORDER = ["general", "combat", "global"] as const;
+type ChatChannelId = (typeof CHAT_CHANNEL_ORDER)[number];
+type ChatEntry = { text: string; channel: ChatChannelId; color?: string };
+const CHAT_CHANNEL_LABELS: Record<ChatChannelId, string> = {
+  general: "General",
+  combat: "Combate",
+  global: "Global",
+};
+const CHAT_CHANNEL_DEFAULT_COLORS: Record<ChatChannelId, string> = {
+  general: "#ffffff",
+  combat: "#ff5f5f",
+  global: "#78ddff",
+};
 const MACRO_PLACEHOLDER_TEXTURE_KEY = "macroPlaceholder";
 const MACRO_ACTIONS = ["cast_spell", "use_item", "equip_item"] as const;
 export type MacroActionType = (typeof MACRO_ACTIONS)[number];
+
+function isDungeonMinimapMap(map: GameMap): boolean {
+  const normalizedName = map.name
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+  return normalizedName.includes("dungeon") || normalizedName.includes("mazmorra");
+}
+
 export type MacroEditorItemOption = {
   itemId: string;
   label: string;
@@ -229,13 +257,14 @@ export class GameUi {
   private minimapMaskGfx!: Phaser.GameObjects.Graphics;
   private minimapMask?: Phaser.Display.Masks.GeometryMask;
   private chatText!: Phaser.GameObjects.Text;
+  private chatContainer!: Phaser.GameObjects.Container;
+  private chatLineTexts: Phaser.GameObjects.Text[] = [];
   private chatTabBgFrames: Phaser.GameObjects.Image[] = [];
   private chatTabs: {
-    id: ChatTabId;
+    id: ChatChannelId;
     hit: Phaser.GameObjects.Graphics;
     label: Phaser.GameObjects.Text;
   }[] = [];
-  private chatTabsExpanded = false;
   private chatTabsToggleHit!: Phaser.GameObjects.Zone;
   private chatChannelToggleLabel!: Phaser.GameObjects.Text;
 
@@ -243,7 +272,11 @@ export class GameUi {
   private chatInputText!: Phaser.GameObjects.Text;
   private chatMaskGfx!: Phaser.GameObjects.Graphics;
   private chatHistory: ChatEntry[] = [];
-  private activeChatTab: ChatTabId = "chat";
+  private chatChannelVisible: Record<ChatChannelId, boolean> = {
+    general: true,
+    combat: true,
+    global: false,
+  };
   private chatInputValue = "";
   private chatFocused = false;
   private sentChatHistory: string[] = [];
@@ -285,7 +318,7 @@ export class GameUi {
   private inventoryOptionsMenu!: Phaser.GameObjects.Container;
   private inventoryOptionsMenuDim!: Phaser.GameObjects.Graphics;
   private readonly inventoryOptionsMenuEntries: {
-    id: "options" | "stats";
+    id: "options" | "stats" | "arenas";
     bg: Phaser.GameObjects.Image;
     label: Phaser.GameObjects.Text;
     hit: Phaser.GameObjects.Zone;
@@ -433,6 +466,7 @@ export class GameUi {
   private dropItemOverlay!: DropItemOverlay;
   private simpleConfirmOverlay!: SimpleConfirmOverlay;
   private optionsOverlay!: OptionsOverlay;
+  private arenaOverlay!: ArenaOverlay;
   private partyMemberIds = new Set<string>();
 
 
@@ -527,12 +561,19 @@ export class GameUi {
         }
       },
     });
+    this.arenaOverlay = new ArenaOverlay({
+      onJoinQueue: (mode) => this.scene.events.emit("ui-arena-action", { action: "join_queue", mode }),
+      onCancelQueue: () => this.scene.events.emit("ui-arena-action", { action: "cancel_queue" }),
+      onReadyAccept: () => this.scene.events.emit("ui-arena-action", { action: "ready_accept" }),
+      onReadyCancel: () => this.scene.events.emit("ui-arena-action", { action: "ready_cancel" }),
+    });
     this.relayout();
 
     scene.scale.on("resize", this.relayout, this);
     scene.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
       scene.scale.off("resize", this.relayout, this);
       this.optionsOverlay.destroy();
+      this.arenaOverlay.destroy();
     });
   }
 
@@ -541,22 +582,22 @@ export class GameUi {
     this.refreshStats();
   }
 
-  addChatLine(line: string) {
-    this.chatHistory.push({ text: line, channel: "chat" });
+  addChatLine(line: string, color?: string) {
+    this.chatHistory.push({ text: line, channel: "general", color });
     this.chatHistory = this.chatHistory.slice(-200);
     this.chatScrollOffset = 0;
     this.renderChatHistory();
   }
 
-  addCombatLine(line: string) {
-    this.chatHistory.push({ text: line, channel: "combat" });
+  addCombatLine(line: string, color?: string) {
+    this.chatHistory.push({ text: line, channel: "combat", color: color ?? CHAT_CHANNEL_DEFAULT_COLORS.combat });
     this.chatHistory = this.chatHistory.slice(-200);
     this.chatScrollOffset = 0;
     this.renderChatHistory();
   }
 
-  addGlobalLine(line: string) {
-    this.chatHistory.push({ text: line, channel: "global" });
+  addGlobalLine(line: string, color?: string) {
+    this.chatHistory.push({ text: line, channel: "global", color: color ?? CHAT_CHANNEL_DEFAULT_COLORS.global });
     this.chatHistory = this.chatHistory.slice(-200);
     this.chatScrollOffset = 0;
     this.renderChatHistory();
@@ -866,6 +907,22 @@ export class GameUi {
     return this.optionsOverlay?.isOpen() ?? false;
   }
 
+  updateArenaState(state: ArenaStatePayload): void {
+    this.arenaOverlay?.setState(state);
+  }
+
+  showArenaReadyCheck(message: import("../../shared/protocol").ServerArenaReadyCheckMessage): void {
+    this.arenaOverlay?.showReadyCheck({
+      mode: message.mode,
+      opponent: message.opponent,
+      expiresAtMs: message.expiresAtMs,
+    });
+  }
+
+  clearArenaReadyCheck(): void {
+    this.arenaOverlay?.clearReadyCheck();
+  }
+
   isAuctionOverlayOpen() {
     return this.auctionOverlay?.isOpen() ?? false;
   }
@@ -968,7 +1025,7 @@ export class GameUi {
     this.relayout();
   }
 
-  private handleInventoryOptionsMenuPick(id: "options" | "stats") {
+  private handleInventoryOptionsMenuPick(id: "options" | "stats" | "arenas") {
     if (id === "stats") {
       if (!this.statsOverlayVisible) {
         this.toggleStatsOverlay();
@@ -976,6 +1033,10 @@ export class GameUi {
       return;
     }
     this.closeInventoryOptionsMenu();
+    if (id === "arenas") {
+      this.arenaOverlay.toggle();
+      return;
+    }
     this.optionsOverlay.toggle();
   }
 
@@ -1061,14 +1122,46 @@ export class GameUi {
     }
     const lineHeight = CHAT_HISTORY_LINE_HEIGHT;
     const maxLines = Math.max(1, Math.floor(this.chatTextArea.h / lineHeight));
-    const filtered = this.chatHistory.filter(
-      (entry) => entry.channel === this.activeChatTab
-    );
+    const filtered = this.getVisibleChatEntries();
     const total = filtered.length;
     const end = Math.max(0, total - this.chatScrollOffset);
     const start = Math.max(0, end - maxLines);
-    const visibleLines = filtered.slice(start, end).map((entry) => entry.text);
-    this.chatText.setText(visibleLines.join("\n"));
+    const visibleEntries = filtered.slice(start, end);
+
+    this.chatText.setText("");
+    this.chatText.setVisible(false);
+    if (this.chatContainer) this.chatContainer.setVisible(true);
+    let currentY = 0;
+
+    for (let i = 0; i < visibleEntries.length; i++) {
+      const entry = visibleEntries[i];
+      let lineText = this.chatLineTexts[i];
+      if (!lineText) {
+        lineText = this.scene.add.text(0, 0, "", {
+          fontFamily: this.chatText.style.fontFamily,
+          fontSize: `${CHAT_HISTORY_FONT_SIZE}px`,
+        });
+        if (this.chatContainer) this.chatContainer.add(lineText);
+        this.chatLineTexts[i] = lineText;
+      }
+      
+      lineText
+        .setText(entry.text)
+        .setColor(entry.color ?? CHAT_CHANNEL_DEFAULT_COLORS[entry.channel])
+        .setWordWrapWidth(this.chatTextArea.w)
+        .setVisible(true);
+
+      lineText.setPosition(0, currentY);
+      currentY += lineText.displayHeight;
+    }
+
+    for (let i = visibleEntries.length; i < this.chatLineTexts.length; i++) {
+      this.chatLineTexts[i].setVisible(false);
+    }
+  }
+
+  private getVisibleChatEntries(): ChatEntry[] {
+    return this.chatHistory.filter((entry) => this.chatChannelVisible[entry.channel]);
   }
 
   updateMinimap(
@@ -1087,8 +1180,9 @@ export class GameUi {
     g.clear();
     this.syncMinimapMask();
 
+    const isDungeonMap = isDungeonMinimapMap(map);
     const minimapBgAlpha = this.useAowebSkin ? 0.55 : 0.92;
-    g.fillStyle(0x121a24, minimapBgAlpha);
+    g.fillStyle(isDungeonMap ? 0x000000 : 0x121a24, minimapBgAlpha);
     if (this.useAowebSkin) {
       g.fillRect(x, y, w, h);
     } else {
@@ -1117,11 +1211,15 @@ export class GameUi {
         let color = def.color;
 
         if (isWaterTile(map, tx, ty)) {
-          color = 0x2a6a9e;
+          if (isLegacyBridgeTile(map, tx, ty)) {
+            color = 0x6b5238; // bridge wood color
+          } else {
+            color = 0x2a6a9e; // water blue
+          }
         } else if (tileId === TILE.DIRT) {
           color = 0x6b5238;
         } else if (!def.walkable && tileId !== TILE.TREE) {
-          color = 0x3d3020;
+          color = isDungeonMap ? 0x000000 : 0x3d3020;
         } else if (tileId === TILE.TREE) {
           color = 0x2d6b34;
         } else if (def.isPortal) {
@@ -1130,20 +1228,33 @@ export class GameUi {
 
         if (map.legacyCsmData) {
           const l1 = map.legacyCsmData.L1[ty]?.[tx] ?? 0;
-          if ((l1 >= 6000 && l1 <= 6015) || (l1 >= 7704 && l1 <= 7719)) {
-            color = 0xb99a5a; // Sand color
-          } else if (isMinimapLegacyRoofTile(map, tx, ty)) {
-            color = MINIMAP_LEGACY_ROOF_COLOR;
+          const isCrystalDungeonTile = isLegacyCrystalDungeonGroundTile(map, tx, ty);
+          if (isCrystalDungeonTile && def.walkable) {
+            color = MINIMAP_LEGACY_CRYSTAL_DUNGEON_COLOR;
+          } else if (isLegacySnowGroundTile(map, tx, ty)) {
+            color = MINIMAP_LEGACY_SNOW_COLOR;
+          } else if ((l1 >= 6000 && l1 <= 6015) || (l1 >= 7704 && l1 <= 7719)) {
+            const mapNameLower = map.name.toLowerCase();
+            if (mapNameLower.includes("rinkel") || mapNameLower.includes("banderbill") || mapNameLower.includes("arena") || mapNameLower.includes("desierto")) {
+              if (color === def.color && tileId === TILE.GRASS) {
+                color = 0xb99a5a; // Sand color
+              }
+            }
+          }
+          if (isMinimapLegacyRoofTile(map, tx, ty)) {
+            color = isCrystalDungeonTile && def.walkable
+              ? MINIMAP_LEGACY_CRYSTAL_DUNGEON_COLOR
+              : isDungeonMap ? 0x000000 : MINIMAP_LEGACY_ROOF_COLOR;
           }
         }
 
         const cellX = offsetX + (tx - minTileX) * cell;
         const cellY = offsetY + (ty - minTileY) * cell;
         g.fillStyle(color, 1);
-        g.fillRect(cellX, cellY, cell, cell);
+        g.fillRect(Math.floor(cellX), Math.floor(cellY), Math.ceil(cell), Math.ceil(cell));
         if (cell >= 3 && !def.walkable) {
           g.fillStyle(0x000000, 0.12);
-          g.fillRect(cellX, cellY, cell, cell);
+          g.fillRect(Math.floor(cellX), Math.floor(cellY), Math.ceil(cell), Math.ceil(cell));
         }
       }
     }
@@ -1284,13 +1395,14 @@ this.mapNameText = this.makeText("", 11, "#ffe566", true);
       .setDepth(UI_DEPTH + 30)
       .setVisible(false);
 this.chatText = this.makeText("", CHAT_HISTORY_FONT_SIZE, "#b8c4d9");
+this.chatContainer = this.scene.add.container(0, 0).setScrollFactor(0).setDepth(UI_DEPTH + 10);
 this.chatInputText = this.makeText("", 12, "#ffffff");
 
 this.chatText.setMask(this.chatMaskGfx.createGeometryMask());
 
     (
       [
-        { id: "chat", label: "Chat" },
+        { id: "general", label: "General" },
         { id: "combat", label: "Combate" },
         { id: "global", label: "Global" },
       ] as const
@@ -1315,9 +1427,8 @@ this.chatText.setMask(this.chatMaskGfx.createGeometryMask());
           event: Phaser.Types.Input.EventData
         ) => {
           event.stopPropagation();
-          this.activeChatTab = tab.id;
+          this.chatChannelVisible[tab.id] = !this.chatChannelVisible[tab.id];
           this.chatScrollOffset = 0;
-          this.chatTabsExpanded = false;
           this.renderChatHistory();
           this.relayout();
         }
@@ -1338,7 +1449,6 @@ this.chatText.setMask(this.chatMaskGfx.createGeometryMask());
         event: Phaser.Types.Input.EventData
       ) => {
         event.stopPropagation();
-        this.chatTabsExpanded = !this.chatTabsExpanded;
         this.relayout();
       }
     );
@@ -1618,6 +1728,7 @@ this.inventoryPanel = createInventoryPanel(this.scene, 0, 0, {
       this.minimapTuneHintText,
       this.minimapMaskGfx,
       this.chatText,
+      this.chatContainer,
     
       // El input va DESPUÉS del historial para tapar cualquier texto que se escape
       this.chatInputBg,
@@ -2297,7 +2408,7 @@ this.inventoryPanel = createInventoryPanel(this.scene, 0, 0, {
 
     const lineHeight = 16;
     const maxLines = Math.max(1, Math.floor(this.chatTextArea.h / lineHeight));
-    const filtered = this.chatHistory.filter((entry) => entry.channel === this.activeChatTab);
+    const filtered = this.getVisibleChatEntries();
     const maxScroll = Math.max(0, filtered.length - maxLines);
 
     if (deltaY < 0) {
@@ -2568,8 +2679,9 @@ this.inventoryPanel = createInventoryPanel(this.scene, 0, 0, {
   }
 
   private buildInventoryOptionsMenu() {
-    const menuItems: { id: "options" | "stats"; label: string }[] = [
+    const menuItems: { id: "options" | "stats" | "arenas"; label: string }[] = [
       { id: "options", label: "Opciones" },
+      { id: "arenas", label: "Arenas" },
       { id: "stats", label: "Estadísticas" },
     ];
 
@@ -3324,65 +3436,16 @@ this.inventoryPanel = createInventoryPanel(this.scene, 0, 0, {
     this.sidebarPanel.clear();
 
     const chatHist = scaleSkinRect(R.chatHistory, w, h);
-    const chatToggleR = scaleSkinRect(R.chatChannelToggle, w, h);
-    const chatListBase = scaleSkinRect(R.chatChannelList, w, h);
     const chatPadL = chatHist.x + SKIN_CHAT_PAD.left;
     const chatPadT = chatHist.y + SKIN_CHAT_PAD.top;
     const historyW = Math.max(120, chatHist.w - SKIN_CHAT_PAD.left - SKIN_CHAT_PAD.right);
-    const historyH = Math.max(40, chatHist.h - SKIN_CHAT_PAD.top - SKIN_CHAT_PAD.bottom);
-    const chatHistoryY = chatPadT;
-
-    const channelLabel =
-      this.chatTabs.find((t) => t.id === this.activeChatTab)?.label.text ?? "Chat";
-    this.chatChannelToggleLabel
-      .setText(channelLabel)
-      .setPosition(chatToggleR.x + chatToggleR.w / 2, chatToggleR.y + chatToggleR.h / 2)
-      .setFontSize("9px")
-      .setColor("#ffe08a")
-      .setVisible(!this.chatTabsExpanded);
-
-    this.chatTabsToggleHit
-      .setPosition(chatToggleR.x, chatToggleR.y)
-      .setSize(chatToggleR.w, chatToggleR.h)
-      .setVisible(true)
-      .setDepth(UI_DEPTH + 12);
-
-    const listTabH = Math.max(16, Math.floor(chatListBase.h / 3));
-    const chatListR = {
-      x: chatListBase.x,
-      y: chatToggleR.y + chatToggleR.h,
-      w: chatListBase.w,
-      h: listTabH * 3,
-    };
-
-    this.chatTabs.forEach((tab, i) => {
-      const tabX = chatListR.x;
-      const tabY = chatListR.y + i * listTabH;
-      const tabW = chatListR.w;
-      const visible = this.chatTabsExpanded;
-      const bg = this.chatTabBgFrames[i];
-      if (visible) {
-        bg.setPosition(tabX, tabY)
-          .setDisplaySize(tabW, listTabH)
-          .setAlpha(0.95)
-          .setVisible(true)
-          .setDepth(UI_DEPTH + 14);
-      } else {
-        bg.setVisible(false);
-      }
-      tab.label.setPosition(tabX + tabW / 2, tabY + listTabH / 2);
-      tab.label.setColor(tab.id === this.activeChatTab ? "#ffe08a" : "#c8b898");
-      tab.label.setVisible(visible);
-      tab.label.setFontSize("9px");
-      tab.label.setDepth(UI_DEPTH + 15);
-      this.setupTabHitArea(tab.hit, tabX, tabY, tabW, listTabH);
-      tab.hit.setVisible(visible);
-      tab.hit.setAlpha(visible ? 0.01 : 0);
-      tab.hit.setDepth(UI_DEPTH + 16);
-      if (tab.hit.input) {
-        tab.hit.input.enabled = visible;
-      }
-    });
+    const channelRowH = 14;
+    const chatHistoryY = chatPadT + channelRowH;
+    const historyH = Math.max(
+      40,
+      chatHist.h - SKIN_CHAT_PAD.top - SKIN_CHAT_PAD.bottom - channelRowH
+    );
+    this.layoutChatChannelCheckboxes(chatPadL, chatPadT, historyW);
 
     if (this.chatFocused) {
       this.chatInputBg.setVisible(true);
@@ -3392,7 +3455,7 @@ this.inventoryPanel = createInventoryPanel(this.scene, 0, 0, {
       this.drawChatInput(chatHist.x + 4, inputY, inputW, 18, true);
       this.chatInputText.setPosition(chatHist.x + 8, inputY + 3);
       this.chatInputText.setText(`> ${this.chatInputValue}`);
-      this.chatInputText.setColor("#e8dcc8");
+      this.chatInputText.setColor("#ffe6c8");
     } else {
       this.chatInputBg.clear();
       this.chatInputBg.setVisible(false);
@@ -3405,6 +3468,9 @@ this.inventoryPanel = createInventoryPanel(this.scene, 0, 0, {
     this.chatText.setWordWrapWidth(historyW);
     this.chatText.setFixedSize(historyW, historyH);
     this.chatText.setColor("#d4c4a8");
+
+    this.chatContainer.setPosition(chatPadL, chatHistoryY);
+    this.chatContainer.setMask(this.chatMaskGfx.createGeometryMask());
 
     this.chatMaskGfx.clear();
     this.chatMaskGfx.fillStyle(0xffffff, 1);
@@ -3765,43 +3831,18 @@ this.inventoryPanel = createInventoryPanel(this.scene, 0, 0, {
 
     const chatInputH = CHAT_PANEL_LAYOUT.inputHeight;
     const innerChatW = Math.max(160, chatFrameW - chatPadL - chatPadR);
-    const chatHistoryY = chatPadT;
+    const channelRowH = 14;
+    const chatHistoryY = chatPadT + channelRowH;
     const historyW = innerChatW;
 
-    const fondoNativeChat = getTextureNativeSize(
-      this.scene,
-      FONDO_BOTONES_TEXTURE_KEY,
-      FONDO_BOTONES_FALLBACK_SIZE
-    );
-    const chatTabGap = CHAT_PANEL_LAYOUT.tabGap;
-
     const bottomRowY = chatFrameH - chatPadB - chatInputH;
-    const chatTabH = chatInputH;
-    const chatTabW = Math.max(
-      CHAT_PANEL_LAYOUT.minTabWidth,
-      Math.round(chatTabH * (fondoNativeChat.w / fondoNativeChat.h))
-    );
-    const tabsRowW = chatTabW * 3 + chatTabGap * 2;
-    const chatMainW = Math.max(80, innerChatW - tabsRowW - CHAT_PANEL_LAYOUT.columnGap);
-    const buttonsX = chatPadL + chatMainW + CHAT_PANEL_LAYOUT.columnGap;
+    const chatMainW = innerChatW;
     const historyH = Math.max(
       40,
-      chatFrameH - chatHistoryY - chatPadB
+      bottomRowY - chatHistoryY - 2
     );
 
-    this.chatTabBgFrames.forEach((bg, i) => {
-      const tabX = buttonsX + 46 + i * (chatTabW + chatTabGap);
-      const tabY = bottomRowY + 26;
-      bg.setPosition(tabX, tabY)
-        .setDisplaySize(chatTabW, chatTabH)
-        .setAlpha(1)
-        .setVisible(true);
-      this.chatTabs[i].label.setPosition(tabX + chatTabW / 2, tabY + chatTabH / 2);
-      this.chatTabs[i].label.setColor("#c8d0dc").setVisible(true);
-      this.setupTabHitArea(this.chatTabs[i].hit, tabX, tabY, chatTabW, chatTabH);
-    });
-    this.chatTabsToggleHit.setVisible(false);
-    this.chatChannelToggleLabel.setVisible(false);
+    this.layoutChatChannelCheckboxes(chatPadL, chatPadT, historyW);
 
     if (this.chatFocused) {
       this.chatInputBg.setVisible(true);
@@ -3809,7 +3850,7 @@ this.inventoryPanel = createInventoryPanel(this.scene, 0, 0, {
       this.drawChatInput(chatPadL, bottomRowY, chatMainW, chatInputH, true);
       this.chatInputText.setPosition(chatPadL + 8, bottomRowY + 3);
       this.chatInputText.setText(`> ${this.chatInputValue}`);
-      this.chatInputText.setColor("#ffffff");
+      this.chatInputText.setColor("#ffe6c8");
     } else {
       this.chatInputBg.clear();
       this.chatInputBg.setVisible(false);
@@ -3827,6 +3868,9 @@ this.inventoryPanel = createInventoryPanel(this.scene, 0, 0, {
     this.chatText.setPosition(chatPadL, chatHistoryY);
     this.chatText.setWordWrapWidth(historyW);
     this.chatText.setFixedSize(historyW, historyH);
+
+    this.chatContainer.setPosition(chatPadL, chatHistoryY);
+    this.chatContainer.setMask(this.chatMaskGfx.createGeometryMask());
 
     this.chatMaskGfx.clear();
     this.chatMaskGfx.fillStyle(0xffffff, 1);
@@ -4161,6 +4205,36 @@ this.inventoryPanel = createInventoryPanel(this.scene, 0, 0, {
     g.destroy();
   }
 
+  private layoutChatChannelCheckboxes(x: number, y: number, maxW: number): void {
+    this.chatTabBgFrames.forEach((bg) => bg.setVisible(false));
+    this.chatTabsToggleHit.setVisible(false);
+    this.chatChannelToggleLabel.setVisible(false);
+
+    let cursorX = x;
+    const gap = 10;
+    this.chatTabs.forEach((tab) => {
+      const enabled = this.chatChannelVisible[tab.id];
+      const label = `${CHAT_CHANNEL_LABELS[tab.id]} (${enabled ? "X" : " "})`;
+      tab.label
+        .setText(label)
+        .setOrigin(0, 0.5)
+        .setPosition(cursorX, y + 6)
+        .setFontSize("9px")
+        .setColor(enabled ? CHAT_CHANNEL_DEFAULT_COLORS[tab.id] : "#8d7567")
+        .setVisible(true)
+        .setDepth(UI_DEPTH + 15);
+      const hitW = Math.min(Math.max(44, Math.ceil(tab.label.width) + 4), maxW);
+      this.setupTabHitArea(tab.hit, cursorX - 2, y, hitW + 4, 13);
+      tab.hit.setVisible(true);
+      tab.hit.setAlpha(0.01);
+      tab.hit.setDepth(UI_DEPTH + 16);
+      if (tab.hit.input) {
+        tab.hit.input.enabled = true;
+      }
+      cursorX += hitW + gap;
+    });
+  }
+
   private drawChatInput(
     x: number,
     y: number,
@@ -4170,14 +4244,34 @@ this.inventoryPanel = createInventoryPanel(this.scene, 0, 0, {
   ) {
     this.chatInputBg.clear();
 
-    this.chatInputBg.fillStyle(focused ? 0x111722 : 0x0b0d13, 1);
-    this.chatInputBg.fillRect(x, y, w, h);
+    const outer = focused ? 0x8f3a27 : 0x4f1c17;
+    const inner = focused ? 0xd4935d : 0x7d3028;
+    const glow = focused ? 0xffb15f : 0x9d4630;
+    const bgTop = focused ? 0x1d0d0b : 0x130b0a;
+    const bgBottom = focused ? 0x090607 : 0x070506;
 
-    this.chatInputBg.lineStyle(1, focused ? 0xffe566 : 0x4c5363, 1);
+    this.chatInputBg.fillStyle(0x050303, 0.92);
+    this.chatInputBg.fillRect(x - 1, y - 1, w + 2, h + 2);
+
+    this.chatInputBg.lineStyle(1, outer, 1);
     this.chatInputBg.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
-  
-    this.chatInputBg.lineStyle(1, 0x000000, 0.45);
+
+    this.chatInputBg.fillStyle(bgTop, 1);
+    this.chatInputBg.fillRect(x + 2, y + 2, w - 4, Math.max(1, Math.floor((h - 4) / 2)));
+    this.chatInputBg.fillStyle(bgBottom, 1);
+    this.chatInputBg.fillRect(
+      x + 2,
+      y + 2 + Math.max(1, Math.floor((h - 4) / 2)),
+      w - 4,
+      Math.max(1, h - 4 - Math.max(1, Math.floor((h - 4) / 2)))
+    );
+
+    this.chatInputBg.lineStyle(1, inner, 0.95);
     this.chatInputBg.strokeRect(x + 1.5, y + 1.5, w - 3, h - 3);
+    this.chatInputBg.lineStyle(1, glow, focused ? 0.5 : 0.22);
+    this.chatInputBg.lineBetween(x + 3, y + 2.5, x + w - 4, y + 2.5);
+    this.chatInputBg.lineStyle(1, 0x000000, 0.7);
+    this.chatInputBg.lineBetween(x + 3, y + h - 2.5, x + w - 4, y + h - 2.5);
   }
 
   private drawPanel(g: Phaser.GameObjects.Graphics, x: number, y: number, w: number, h: number) {

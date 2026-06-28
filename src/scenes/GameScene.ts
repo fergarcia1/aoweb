@@ -36,6 +36,7 @@ import {
   buildEquippedArmorVisualFromItem,
   type PlayerArmorVisualOptions,
 } from "../player/playerSprites";
+import { formatPlayerWorldName } from "../player/playerNameLabel";
 import {
   canRaceEquipArmor,
 } from "../game/armorUtils";
@@ -77,6 +78,7 @@ import {
   type MacroEditorItemOption,
   type MacroEditorSpellOption,
 } from "../ui/gameUi";
+import { ClanCreationOverlay } from "../ui/clanCreationOverlay";
 import { getAowebSkinRegions, scaleSkinRect } from "../ui/aowebSkinLayout";
 import { isPhaserObjectLive } from "../ui/phaserObjectUtils";
 import {
@@ -88,7 +90,6 @@ import {
   getActiveCharacterSlotIndex,
   getPlayerNameColors,
   normalizeFactionId,
-  canFactionsFight,
   isAdminCharacterName,
   type PlayerRole,
   loadCharacterSlots,
@@ -210,6 +211,7 @@ import {
 import { stopMenuMusic } from "../audio/menuMusic";
 import { preloadSpellWavs, playSpellNamedWav, playSpellWav } from "../audio/spellWav";
 import { getSpellNamedWav } from "../../game-data/spellEffects";
+import { hasArrowStack } from "../../game-data/rangedCombat";
 import { resolveMobHitSoundId } from "../../game-data/mobCombatSounds";
 import { isWithinSoundHearingRange } from "../../shared/soundRange";
 import {
@@ -277,6 +279,7 @@ import {
   resolveGameScenePreloadContext,
   scheduleGameSceneBackgroundPreload,
   queueAdjacentMapPreload,
+  ensureMapEntityVisualAssetsLoaded,
   type GameScenePreloadContext,
   refreshGameSceneHud,
   refreshGameSceneMinimap,
@@ -297,6 +300,7 @@ import {
   formatImmobilizeRemaining,
   formatInspectLineWithDebuffs,
   getDummyActiveDebuffsForInspect,
+  getInspectChatColor,
   expRequiredForLevel,
   getBaseVitalsFromStats,
   macroSpellTextureKey,
@@ -342,7 +346,10 @@ export class GameScene extends Phaser.Scene {
   private equippedHelmetSprite?: Phaser.GameObjects.Sprite;
 
   private gameUi!: GameUi;
-  private pingFpsText!: Phaser.GameObjects.Text;
+  private clanCreationOverlay?: ClanCreationOverlay;
+  private pingFpsEl!: HTMLDivElement;
+  private pingFpsVisible: boolean = true;
+  private pingFpsToggleHandler?: (e: KeyboardEvent) => void;
   private lastPingMs: number | null = null;
   private nextPingTime: number = 0;
   private soundController!: GameSceneSoundController;
@@ -411,6 +418,7 @@ export class GameScene extends Phaser.Scene {
   private equippedOutfit: Outfit = "base";
   private equippedArmorVisual?: PlayerArmorVisualOptions;
   private playerName = DEFAULT_PLAYER_NAME;
+  private playerClanName: string | null = null;
   private playerRole: PlayerRole = "player";
   private selectedRace: RaceId = "human";
   private selectedGender: CharacterGenderId = "male";
@@ -537,7 +545,7 @@ export class GameScene extends Phaser.Scene {
         this.shopBankSystem?.layoutOnResize(this.mapController.getGameViewportRect());
       },
       setDoorTileOverride: (tileX, tileY, isOpen) => {
-        setDoorTileOverride(this.mapTileOverrides, tileX, tileY, isOpen);
+        setDoorTileOverride(this.currentMapId, this.mapTileOverrides, tileX, tileY, isOpen);
       },
       isMapTileWalkable: (tileX, tileY) => this.isMapTileWalkable(tileX, tileY),
     });
@@ -646,6 +654,7 @@ export class GameScene extends Phaser.Scene {
       getGameUi: () => this.gameUi,
       getPlayerProgress: () => this.playerProgress,
       getEquipment: () => this.equipment,
+      hasArrowsInInventory: () => hasArrowStack(this.inventory),
       getCoreStats: () => this.getCoreStats(),
       getFacing: () => this.facing,
       getPlayerTile: () => ({ x: this.playerTileX, y: this.playerTileY }),
@@ -665,11 +674,14 @@ export class GameScene extends Phaser.Scene {
         }
       },
       sendAttackToServer: (facing) => this.multiplayer!.sendAttack(facing),
+      sendRangedAttackToServer: (payload) => this.multiplayer!.sendRangedAttack(payload),
       sendCastSpellToServer: (spellId, tileX, tileY, targetPlayerId) =>
         this.multiplayer!.sendCastSpell(spellId, tileX, tileY, targetPlayerId),
       getDummyInAttackRange: () => this.getDummyInAttackRange(),
       getDummyHitTile: (dummy) => this.getDummyHitTile(dummy),
       killDummy: (dummy) => this.killDummy(dummy),
+      syncDummyWorldPosition: (dummy) => this.syncDummyWorldPosition(dummy),
+      setMobAnimationState: (dummy, state) => this.setMobAnimationState(dummy, state),
       refreshInspectedDummyLabel: () => this.refreshInspectedDummyLabel(),
       getInspectedDummyId: () => this.inspectedDummyId,
       playMobHitSound: (modelId) => this.soundController.playMobHitSound(modelId),
@@ -730,7 +742,10 @@ export class GameScene extends Phaser.Scene {
   }
 
   private getWorldInteractiveCursor(): string {
-    return this.combatController.hasPendingSpellCast() ? "crosshair" : "pointer";
+    return this.combatController.hasPendingSpellCast() ||
+      this.combatController.hasPendingRangedAttack()
+      ? "crosshair"
+      : "pointer";
   }
 
   private applyWorldInteractiveCursor(sprite: Phaser.GameObjects.Sprite): void {
@@ -775,6 +790,7 @@ export class GameScene extends Phaser.Scene {
     this.localPlayerSync = new GameSceneLocalPlayerSync({
       getDeathPhase: () => this.deathPhase,
       getPlayerProgress: () => this.playerProgress,
+      applyLocalRevivedFromServer: (hp) => this.deathSystem.applyRevivedFromServer(hp),
       setPlayerProgressFromServer: (patch) => {
         const prevLevel = this.playerProgress.level;
         const leveledUp = patch.level > prevLevel;
@@ -835,6 +851,9 @@ export class GameScene extends Phaser.Scene {
         this.mpController.sendRevive(source, tileX, tileY, mapId),
       getPlayerTile: () => ({ x: this.playerTileX, y: this.playerTileY }),
       onLocalPlayerDeath: () => this.handlePlayerDeath(),
+      playWeaponEquipSound: () => this.soundController.playWeaponEquipSound(),
+      playArmorEquipSound: () => this.soundController.playArmorEquipSound(),
+      playPlayerDeathSound: () => this.soundController.playPlayerDeathSound(),
       addCombatLine: (text) => this.gameUi.addCombatLine(text),
       setRemotePlayerGhost: (playerId) =>
         this.multiplayer?.getRemotePlayers()?.setPlayerGhost(playerId),
@@ -907,6 +926,7 @@ export class GameScene extends Phaser.Scene {
       },
       refreshKnownSpellsUi: () => this.refreshKnownSpellsUi(),
       applyLocalFaction: (factionId) => this.applyLocalFaction(factionId),
+      applyLocalClanName: (clanName) => this.applyLocalClanName(clanName),
       recordLocalUserKill: () => this.recordLocalUserKill(),
       setInvisibleUntilMs: (ms) => {
         this.playerInvisibleUntilMs = ms;
@@ -1111,6 +1131,7 @@ export class GameScene extends Phaser.Scene {
       getInventory: () => this.inventory,
       setMultiplayerStatus: (message) => this.setMultiplayerStatus(message),
       addChatLine: (text) => this.gameUi?.addChatLine(text),
+      addGlobalLine: (text) => this.gameUi?.addGlobalLine(text),
       addCombatLine: (text) => this.gameUi?.addCombatLine(text),
       playLevelUpSound: () => this.soundController.playLevelUpSoundOnce(),
       playGoldDropSound: () => this.soundController.playGoldDropSound(),
@@ -1130,8 +1151,16 @@ export class GameScene extends Phaser.Scene {
       getBankState: () => this.shopBankSystem.getBankState(),
       getLearnedSpellIds: () => [...this.learnedSpellIds],
       syncWorldItemsFromServer: (items) => this.localPlayerSync.syncWorldItemsFromServer(items),
-      applyWorldItemSpawned: (mapId, item) =>
-        this.localPlayerSync.applyWorldItemSpawned(mapId, item),
+      applyWorldItemSpawned: (mapId, item) => {
+        if (
+          mapId === this.currentMapId &&
+          item.itemId !== "gold" &&
+          this.soundController.shouldPlayWorldSound(item.tileX, item.tileY)
+        ) {
+          this.soundController.playDropSound();
+        }
+        this.localPlayerSync.applyWorldItemSpawned(mapId, item);
+      },
       applyWorldItemUpdated: (mapId, item) =>
         this.localPlayerSync.applyWorldItemUpdated(mapId, item),
       applyWorldItemRemoved: (mapId, worldItemId) =>
@@ -1157,6 +1186,27 @@ export class GameScene extends Phaser.Scene {
         this.refreshMinimap();
       },
       handleServerPartyInviteRequest: (message) => this.gameUi.handleServerPartyInviteRequest(message),
+      handleServerArenaState: (message) => {
+        this.gameUi.updateArenaState(message.state);
+        if (message.state.message) {
+          this.gameUi.addChatLine(message.state.message);
+        }
+      },
+      handleServerArenaReadyCheck: (message) => {
+        this.gameUi.showArenaReadyCheck(message);
+        this.gameUi.addChatLine(`Arena encontrada contra ${message.opponent.name}.`);
+      },
+      handleServerArenaRound: (message) => {
+        if (message.status === "countdown" || message.status === "started") {
+          this.gameUi.clearArenaReadyCheck();
+        }
+      },
+      handleServerClanCreationStarted: () => this.openClanCreationOverlay(),
+      handleServerClanCreated: (clan) => {
+        this.applyLocalClanName(clan.name);
+        this.soundController.playClanCreatedSound();
+        this.gameUi.addChatLine(`Clan creado: ${clan.name}.`);
+      },
       applyServerPlayerRole: (role) => {
         this.playerRole = this.resolvePlayerRole(role);
         this.syncPlayerNameLabelStyle();
@@ -1227,6 +1277,12 @@ export class GameScene extends Phaser.Scene {
           this.soundController.playMobHitSound(dummy.modelId);
         }
       },
+      playMeleeMissSound: () => this.soundController.playMeleeMissSound(),
+      playArrowHitSound: () => this.soundController.playArrowHitSound(),
+      playArrowMissSound: () => this.soundController.playArrowMissSound(),
+      playCriticalHitSound: () => this.soundController.playCriticalHitSound(),
+      playShieldBlockSound: () => this.soundController.playShieldBlockSound(),
+      playDoorSound: () => this.soundController.playDoorSound(),
       findDummyById: (id) => {
         const dummy = this.mobController.findById(id);
         return dummy ? { alive: dummy.alive, sprite: dummy.sprite } : null;
@@ -1242,6 +1298,7 @@ export class GameScene extends Phaser.Scene {
       onCharacterAlreadyOnline: (message) =>
         this.returnToCharacterSelectForDuplicateLogin(message),
       onLogoutComplete: () => this.returnToCharacterSelect(),
+      isPlayerImmobilized: () => this.isPlayerImmobilized(),
       onAuctionCatalog: (auctions) => {
         this.gameUi.showAuctionOverlay({
           auctions,
@@ -1349,7 +1406,7 @@ export class GameScene extends Phaser.Scene {
     this.registerImperiumNpcWalkAnimations();
     const treeTexture = this.textures.get(TREE_TEXTURE_KEY);
     if (treeTexture.key !== "__MISSING") {
-      treeTexture.setFilter(Phaser.Textures.FilterMode.NEAREST);
+      treeTexture.setFilter(Phaser.Textures.FilterMode.LINEAR);
     }
 
     const progress = this.ensureProgressService();
@@ -1398,14 +1455,34 @@ export class GameScene extends Phaser.Scene {
     this.mapController.updateRoofTransparency(this.playerTileX, this.playerTileY);
 
     this.gameUi = new GameUi(this);
-    this.pingFpsText = this.add.text(0, 0, "FPS: 0\nPING: 0ms", {
-      fontFamily: "Arial",
-      fontSize: "12px",
-      color: "#ffffff",
-      align: "right",
-      stroke: "#000000",
-      strokeThickness: 3
-    }).setOrigin(1, 0).setScrollFactor(0).setDepth(99999);
+    this.clanCreationOverlay = new ClanCreationOverlay({
+      onSubmit: (name, description) => this.mpController?.sendClanCreate(name, description),
+    });
+    this.pingFpsEl = document.createElement("div");
+    this.pingFpsEl.id = "game-ping-fps";
+    this.pingFpsEl.style.cssText = [
+      "position:fixed",
+      "z-index:9999",
+      "font-family:Arial,sans-serif",
+      "font-size:12px",
+      "color:#fff",
+      "text-shadow:-1px -1px 0 #000,1px -1px 0 #000,-1px 1px 0 #000,1px 1px 0 #000",
+      "pointer-events:none",
+      "white-space:nowrap",
+      "line-height:1.4",
+    ].join(";");
+    this.pingFpsEl.textContent = "FPS: 0\\nPING: --";
+    document.body.appendChild(this.pingFpsEl);
+
+    // Tecla * para mostrar/ocultar FPS y PING
+    this.pingFpsToggleHandler = (e: KeyboardEvent) => {
+      if (e.key === "*") {
+        this.pingFpsVisible = !this.pingFpsVisible;
+        this.pingFpsEl.style.display = this.pingFpsVisible ? "" : "none";
+      }
+    };
+    window.addEventListener("keydown", this.pingFpsToggleHandler);
+
     this.layoutPingFpsText();
     this.gameUi.setMinimapRedrawHandler(() => this.refreshMinimap());
     this.initConsumableController();
@@ -1490,6 +1567,10 @@ export class GameScene extends Phaser.Scene {
       this.mpController?.sendPartyAction(data.action, data.targetName, data.leaderId, data.targetId);
     });
 
+    this.events.on("ui-arena-action", (data: { action: any; mode?: any }) => {
+      this.mpController?.sendArenaAction(data.action, data.mode);
+    });
+
     this.events.on("ui-request-party-show", () => {
       this.gameUi.showPartyOverlay(this.mpController?.getLocalPlayerId() ?? null);
     });
@@ -1504,6 +1585,7 @@ export class GameScene extends Phaser.Scene {
       this.scale.off("resize", this.applyCameraLayout, this);
       this.events.off("ui-viewport-changed", this.applyCameraLayout, this);
       this.events.off("ui-minimap-layout-info");
+      this.events.off("ui-arena-action");
       this.events.off(Phaser.Scenes.Events.RESUME, this.handleSceneResume, this);
       this.events.off(Phaser.Scenes.Events.PAUSE, this.handleScenePause, this);
       this.deathOverlay?.destroy();
@@ -1512,9 +1594,15 @@ export class GameScene extends Phaser.Scene {
       this.bankOverlay = undefined;
       this.shopOverlay?.destroy();
       this.shopOverlay = undefined;
+      this.clanCreationOverlay?.destroy();
+      this.clanCreationOverlay = undefined;
       this.npcManager?.clear();
       this.npcManager = undefined;
       this.mpController?.disconnect();
+      if (this.pingFpsToggleHandler) {
+        window.removeEventListener("keydown", this.pingFpsToggleHandler);
+      }
+      this.pingFpsEl?.remove();
     });
 
     this.mpController.connect();
@@ -1530,6 +1618,10 @@ export class GameScene extends Phaser.Scene {
 
   private isWorldSceneLive(): boolean {
     return Boolean(this.sys?.isActive() && isPhaserObjectLive(this.player));
+  }
+
+  private openClanCreationOverlay(): void {
+    this.clanCreationOverlay?.open();
   }
 
   /** Evita usar sprites/textos destruidos tras shutdown o scene.start/restart. */
@@ -1602,7 +1694,7 @@ export class GameScene extends Phaser.Scene {
     this.refreshMacroVisuals();
     this.refreshHud();
     if (isPhaserObjectLive(this.playerNameLabel)) {
-      this.playerNameLabel.setText(this.playerName);
+      this.playerNameLabel.setText(this.getPlayerWorldNameText());
       this.syncPlayerNameLabelStyle();
     }
     if (this.gameUi) {
@@ -1754,6 +1846,7 @@ export class GameScene extends Phaser.Scene {
   private applyActiveCharacter(character: SavedCharacter) {
     this.clearTransientCombatBuffs();
     this.playerName = character.name;
+    this.playerClanName = null;
     this.playerRole = isAdminCharacterName(character.name) ? "admin" : "player";
     this.selectedClass = character.classId;
     this.selectedRace = character.raceId;
@@ -1938,6 +2031,22 @@ export class GameScene extends Phaser.Scene {
     const colors = getPlayerNameColors(this.selectedFaction, this.playerRole);
     this.playerNameLabel.setColor(colors.fill);
     this.playerNameLabel.setStroke(colors.stroke, WORLD_NAME_STROKE);
+  }
+
+  private getPlayerWorldNameText(): string {
+    return formatPlayerWorldName(this.playerName, this.playerClanName);
+  }
+
+  private applyLocalClanName(clanName: string | null | undefined): void {
+    const next = clanName?.trim() || null;
+    if (this.playerClanName === next) {
+      return;
+    }
+    this.playerClanName = next;
+    if (isPhaserObjectLive(this.playerNameLabel)) {
+      this.playerNameLabel.setText(this.getPlayerWorldNameText());
+      this.syncPlayerNameLabelStyle();
+    }
   }
 
   private applyLocalFaction(factionId: CharacterFactionId): void {
@@ -2150,12 +2259,16 @@ export class GameScene extends Phaser.Scene {
       selectedGender: this.selectedGender,
       selectedFaceIndex: this.selectedFaceIndex,
       faceLayoutScale: this.getActiveFaceLayout().scale,
-      playerName: this.playerName,
+      playerName: this.getPlayerWorldNameText(),
       selectedFaction: this.selectedFaction,
       playerRole: this.playerRole,
       uiCamera: this.uiCamera,
       setupHitbox: (player) => this.setupPlayerHitboxInteractionFor(player),
       onPlayerPointerDown: () => {
+        if (this.combatController?.hasPendingRangedAttack()) {
+          this.combatController.cancelRangedTargeting("No hay objetivo para disparar.");
+          return;
+        }
         if (this.combatController?.hasPendingSpellCast()) {
           this.combatController.tryCastSpellOnPlayer();
           return;
@@ -2184,16 +2297,18 @@ export class GameScene extends Phaser.Scene {
       this.resolvePlayerRole(this.playerRole)
     );
     const debuffs: string[] = [];
-    if (this.isPlayerImmobilized(this.time.now)) {
+    if (this.isPlayerImmobilized()) {
       debuffs.push("Inmovilizado");
     }
-    this.gameUi.addChatLine(formatInspectLineWithDebuffs(baseText, debuffs));
+    const role = this.resolvePlayerRole(this.playerRole);
+    const color = getInspectChatColor(this.selectedFaction, role);
+    this.gameUi.addChatLine(formatInspectLineWithDebuffs(baseText, debuffs), color);
   }
 
   private inspectDummy(dummy: DummyState) {
     this.inspectedDummyId = dummy.id;
     this.refreshInspectedDummyLabel();
-    const baseText = `${dummy.name} - Vida ${dummy.hp}/${dummy.maxHp}`;
+    const baseText = dummy.name;
     this.gameUi.addChatLine(
       formatInspectLineWithDebuffs(
         baseText,
@@ -2215,9 +2330,12 @@ export class GameScene extends Phaser.Scene {
     );
     const suffix =
       remote.isGhost || remote.hp <= 0
-        ? ` — Muerto (${remote.hp}/${remote.hpMax} HP)`
-        : ` — Vida ${remote.hp}/${remote.hpMax}`;
-    this.gameUi.addChatLine(formatInspectLineWithDebuffs(`${baseText}${suffix}`, []));
+        ? ` — Muerto`
+        : ``;
+    const remoteFaction = normalizeFactionId(remote.factionId) as import("../data/characters").CharacterFactionId;
+    const remoteRole = remote.role ?? "player";
+    const color = getInspectChatColor(remoteFaction, remoteRole);
+    this.gameUi.addChatLine(formatInspectLineWithDebuffs(`${baseText}${suffix}`, []), color);
   }
 
   private clearInspectedDummy() {
@@ -2234,7 +2352,13 @@ export class GameScene extends Phaser.Scene {
       dummy.hpLabel.setText(`${dummy.name} ${dummy.hp}/${dummy.maxHp}`);
       dummy.hpLabel.setVisible(show);
       if (show) {
-        this.syncDummyWorldPosition(dummy);
+        if (dummy.isMoving) {
+          const depth = this.depthFromFeetY(dummy.sprite.y);
+          dummy.hpLabel.setPosition(dummy.sprite.x, dummy.sprite.y - 30);
+          dummy.hpLabel.setDepth(depth + 3);
+        } else {
+          this.syncDummyWorldPosition(dummy);
+        }
       }
     });
   }
@@ -2812,7 +2936,11 @@ export class GameScene extends Phaser.Scene {
   }
 
   private handlePlayerDeath() {
+    const wasAlive = this.deathPhase === "alive";
     this.clearAttributePotionBuffs(false);
+    if (wasAlive) {
+      this.soundController.playPlayerDeathSound();
+    }
     this.deathSystem.handlePlayerDeath();
   }
 
@@ -2918,23 +3046,21 @@ export class GameScene extends Phaser.Scene {
   }
 
   private layoutPingFpsText() {
-    if (!this.pingFpsText || !this.mapController) {
+    if (!this.pingFpsEl || !this.mapController) {
       return;
     }
-    const screenW = this.scale.width;
-    const screenH = this.scale.height;
-    const regions = getAowebSkinRegions();
-    const agility = scaleSkinRect(regions.agilitySlot, screenW, screenH);
-    const minimap = scaleSkinRect(regions.minimap, screenW, screenH);
-    const x = minimap.x - 12;
-    const y = Math.min(screenH - 44, agility.y + agility.h + 6);
-    this.pingFpsText.setPosition(x, y);
+    const viewport = this.mapController.getGameViewportRect();
+    const canvasRect = this.game.canvas.getBoundingClientRect();
+    const absX = canvasRect.left + viewport.x + 6;
+    const absY = canvasRect.top + viewport.y + 115;
+    this.pingFpsEl.style.left = `${absX}px`;
+    this.pingFpsEl.style.top = `${absY}px`;
   }
 
   update(time: number, delta: number) {
-    if (this.pingFpsText) {
+    if (this.pingFpsEl) {
       const pingText = this.lastPingMs == null ? "--" : `${this.lastPingMs}ms`;
-      this.pingFpsText.setText(`FPS: ${Math.round(this.game.loop.actualFps)}\nPING: ${pingText}`);
+      this.pingFpsEl.textContent = `FPS: ${Math.round(this.game.loop.actualFps)}\nPING: ${pingText}`;
       this.layoutPingFpsText();
     }
     if (time > this.nextPingTime && this.mpController?.isConnected()) {
@@ -2975,6 +3101,7 @@ export class GameScene extends Phaser.Scene {
         this.partyToggleKey && Phaser.Input.Keyboard.JustDown(this.partyToggleKey)
       ),
       hasPendingSpellCast: this.combatController.hasPendingSpellCast(),
+      hasPendingRangedAttack: this.combatController.hasPendingRangedAttack(),
       justPressedCancelTargeting: Boolean(
         this.cancelSpellTargetingKey &&
           Phaser.Input.Keyboard.JustDown(this.cancelSpellTargetingKey)
@@ -3007,6 +3134,7 @@ export class GameScene extends Phaser.Scene {
       toggleWorldMap: () => this.mapController.toggleWorldMap(),
       togglePartyOverlay: () => this.gameUi.togglePartyOverlay(),
       cancelSpellTargeting: (message) => this.combatController.cancelSpellTargeting(message),
+      cancelRangedTargeting: (message) => this.combatController.cancelRangedTargeting(message),
       handleShopEscape: () => this.shopOverlay?.handleEscape(),
       handleBankEscape: () => this.bankOverlay?.handleEscape(),
       handleAuctionEscape: () => this.gameUi.hideAuctionOverlay(),
@@ -3032,7 +3160,7 @@ export class GameScene extends Phaser.Scene {
     });
   }
 
-  private isPlayerImmobilized(now = this.time.now): boolean {
+  private isPlayerImmobilized(now = Date.now()): boolean {
     return now < this.playerImmobilizedUntilMs;
   }
 
@@ -3041,7 +3169,7 @@ export class GameScene extends Phaser.Scene {
     sourceName: string,
     spellId: number
   ) {
-    const now = this.time.now;
+    const now = Date.now();
     const durationMs = getImmobilizePlayerDurationMs(spellId);
     const wasImmobilized = this.isPlayerImmobilized(now);
     this.playerImmobilizedUntilMs = Math.max(
@@ -3607,6 +3735,9 @@ export class GameScene extends Phaser.Scene {
     if (this.combatController.hasPendingSpellCast()) {
       this.combatController.cancelSpellTargeting();
     }
+    if (this.combatController.hasPendingRangedAttack()) {
+      this.combatController.cancelRangedTargeting();
+    }
     this.isChangingMap = true;
     this.mpController?.prepareForMapTransition();
     this.tweens.killTweensOf(this.player);
@@ -3636,6 +3767,12 @@ export class GameScene extends Phaser.Scene {
 
     void this.mapController
       .ensureMapVisualAssetsLoaded(this.currentMap)
+      .then(() =>
+        ensureMapEntityVisualAssetsLoaded(
+          this,
+          getScopedPreloadMapIds(this.currentMapId)
+        )
+      )
       .catch((error) => {
         console.warn("No se pudieron cargar todos los assets del mapa.", error);
       })
@@ -3733,11 +3870,12 @@ export class GameScene extends Phaser.Scene {
       return;
     }
 
+    const visualFaceIndex = this.useGhostAppearance ? 0 : this.selectedFaceIndex;
     this.playerFace.setFrame(
       getFaceFrame(
         this.getVisualRace(),
         this.getVisualGender(),
-        this.selectedFaceIndex,
+        visualFaceIndex,
         this.facing
       )
     );
@@ -3902,6 +4040,10 @@ export class GameScene extends Phaser.Scene {
 
   private isTileWalkable(tileX: number, tileY: number): boolean {
     if (!this.isMapTileWalkable(tileX, tileY)) {
+      return false;
+    }
+
+    if (this.mapController.arenaBorderTiles.has(`${tileX},${tileY}`)) {
       return false;
     }
 
@@ -4146,6 +4288,9 @@ export class GameScene extends Phaser.Scene {
     if (this.combatController.hasPendingSpellCast()) {
       this.combatController.cancelSpellTargeting();
     }
+    if (this.combatController.hasPendingRangedAttack()) {
+      this.combatController.cancelRangedTargeting();
+    }
     this.deathOverlay?.hide();
     this.bankOverlay?.hide();
     this.shopOverlay?.hide();
@@ -4385,12 +4530,15 @@ export class GameScene extends Phaser.Scene {
     return tileX === this.playerTileX && tileY === this.playerTileY;
   }
 
-  private findRemotePlayerAtWorldPoint(worldX: number, worldY: number): { tileX: number, tileY: number } | null {
+  private findRemotePlayerAtWorldPoint(
+    worldX: number,
+    worldY: number
+  ): { id: string; tileX: number; tileY: number } | null {
     const remote = this.multiplayer?.getRemotePlayers()?.findRemoteAtWorldPoint(worldX, worldY);
     if (!remote) {
       return null;
     }
-    return { tileX: remote.tileX, tileY: remote.tileY };
+    return { id: remote.id, tileX: remote.tileX, tileY: remote.tileY };
   }
 
   private isPendingResurrectSpell(): boolean {
@@ -4459,7 +4607,11 @@ export class GameScene extends Phaser.Scene {
 
     const hitRemote = this.findRemotePlayerAtWorldPoint(pointer.worldX, pointer.worldY);
     if (hitRemote) {
-      this.combatController.tryCastSpellOnPlayer(hitRemote.tileX, hitRemote.tileY);
+      this.combatController.tryCastSpellOnPlayer(
+        hitRemote.tileX,
+        hitRemote.tileY,
+        hitRemote.id
+      );
       return true;
     }
 
@@ -4567,10 +4719,7 @@ export class GameScene extends Phaser.Scene {
     if (!remote || remote.isGhost || remote.hp <= 0) {
       return false;
     }
-    return canFactionsFight(
-      normalizeFactionId(this.selectedFaction),
-      normalizeFactionId(remote.factionId)
-    );
+    return true;
   }
 
   private findDummyAtWorldPoint(worldX: number, worldY: number): DummyState | null {
@@ -4640,6 +4789,64 @@ export class GameScene extends Phaser.Scene {
     return false;
   }
 
+  private tryRangedAttackFromPointer(
+    pointer: Phaser.Input.Pointer,
+    currentlyOver: Phaser.GameObjects.GameObject[]
+  ): boolean {
+    for (const gameObject of currentlyOver) {
+      const dummy = this.dummies.find((entry) => entry.sprite === gameObject);
+      if (dummy?.alive) {
+        const hitTile = this.getDummyHitTile(dummy);
+        this.combatController.tryRangedAttackAtTarget({
+          targetTileX: hitTile.x,
+          targetTileY: hitTile.y,
+          targetMobId: dummy.id,
+        });
+        return true;
+      }
+
+      const remote = this.multiplayer?.getRemotePlayers()?.getRemoteBySprite(gameObject);
+      if (remote && !remote.isGhost && remote.hp > 0) {
+        this.combatController.tryRangedAttackAtTarget({
+          targetTileX: remote.tileX,
+          targetTileY: remote.tileY,
+          targetPlayerId: remote.id,
+        });
+        return true;
+      }
+    }
+
+    const dummy = this.findDummyAtWorldPoint(pointer.worldX, pointer.worldY);
+    if (dummy?.alive) {
+      const hitTile = this.getDummyHitTile(dummy);
+      this.combatController.tryRangedAttackAtTarget({
+        targetTileX: hitTile.x,
+        targetTileY: hitTile.y,
+        targetMobId: dummy.id,
+      });
+      return true;
+    }
+
+    const remote = this.multiplayer
+      ?.getRemotePlayers()
+      ?.findRemoteAtWorldPoint(pointer.worldX, pointer.worldY);
+    if (remote && !remote.isGhost && remote.hp > 0) {
+      this.combatController.tryRangedAttackAtTarget({
+        targetTileX: remote.tileX,
+        targetTileY: remote.tileY,
+        targetPlayerId: remote.id,
+      });
+      return true;
+    }
+
+    if (this.gameUi.isPointerOverSidebar(pointer.x, pointer.y)) {
+      return true;
+    }
+
+    this.combatController.cancelRangedTargeting("No hay objetivo para disparar.");
+    return true;
+  }
+
   private setupWorldPointerHandlers() {
     this.game.canvas.addEventListener("contextmenu", (event) => {
       event.preventDefault();
@@ -4703,6 +4910,11 @@ export class GameScene extends Phaser.Scene {
           const tileY = legacyDoorTile?.tileY ?? Math.floor(pointer.worldY / TILE_SIZE);
           this.multiplayer?.sendInteractMap(tileX, tileY);
           
+          return;
+        }
+
+        if (this.combatController.hasPendingRangedAttack()) {
+          this.tryRangedAttackFromPointer(pointer, currentlyOver);
           return;
         }
 
@@ -4811,6 +5023,11 @@ export class GameScene extends Phaser.Scene {
 
         for (const gameObject of currentlyOver) {
           if (gameObject === this.player) {
+            return;
+          }
+          const npc = this.npcManager?.findNpcByGameObject(gameObject);
+          if (npc) {
+            this.multiplayer?.sendInteractMap(npc.tileX, npc.tileY);
             return;
           }
           const dummy = this.dummies.find((entry) => entry.sprite === gameObject);

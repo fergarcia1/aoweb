@@ -60,6 +60,9 @@ export type MobModelId =
   | "hombre_lagarto"
   | "demonio_abisal"
   | "lobo_invernal"
+  | "medusa"
+  | "medusaM"
+  | "tigre"
   | "wisp"
   | "ogro"
   | "ogro_esclavo"
@@ -108,6 +111,9 @@ export type MobId =
   | "hombre_lagarto"
   | "demonio_abisal"
   | "lobo_invernal"
+  | "medusa"
+  | "medusaM"
+  | "tigre"
   | "wisp"
   | "ogro"
   | "ogro_esclavo"
@@ -156,6 +162,9 @@ const MOB_IDS: MobId[] = [
   "hombre_lagarto",
   "demonio_abisal",
   "lobo_invernal",
+  "medusa",
+  "medusaM",
+  "tigre",
   "wisp",
   "ogro",
   "ogro_esclavo",
@@ -205,6 +214,9 @@ const MOB_MODEL_IDS: MobModelId[] = [
   "hombre_lagarto",
   "demonio_abisal",
   "lobo_invernal",
+  "medusa",
+  "medusaM",
+  "tigre",
   "wisp",
   "ogro",
   "ogro_esclavo",
@@ -244,6 +256,7 @@ export type MobSpawnConfig = {
   leashRangeTiles: number;
   minHit: number;
   maxHit: number;
+  missChance?: number;
   attackCooldownMs: number;
   respawnMs: number;
   expReward: number;
@@ -271,6 +284,7 @@ export type MobDefinitionConfig = {
   leashRangeTiles: number;
   minHit: number;
   maxHit: number;
+  missChance?: number;
   attackCooldownMs: number;
   respawnMs: number;
   expReward: number;

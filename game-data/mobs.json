@@ -873,6 +873,46 @@
       "gold": 150
     },
     {
+      "mobId": "medusa",
+      "name": "Medusa",
+      "behavior": "aggressive",
+      "hitboxOffsetY": -32,
+      "hitboxHeightTiles": 2,
+      "hitboxWidthTiles": 1,
+      "sizeTiles": 1,
+      "modelId": "medusa",
+      "npcId": 553,
+      "maxHp": 6000,
+      "detectionRangeTiles": 7,
+      "leashRangeTiles": 15,
+      "respawnMs": 30000,
+      "expReward": 20000,
+      "drops": [],
+      "minHit": 95,
+      "maxHit": 140,
+      "gold": 6500
+    },
+    {
+      "mobId": "medusaM",
+      "name": "Medusa Matriarch",
+      "behavior": "aggressive",
+      "hitboxOffsetY": -32,
+      "hitboxHeightTiles": 2,
+      "hitboxWidthTiles": 1,
+      "sizeTiles": 1,
+      "modelId": "medusaM",
+      "npcId": 578,
+      "maxHp": 21000,
+      "detectionRangeTiles": 7,
+      "leashRangeTiles": 15,
+      "respawnMs": 45000,
+      "expReward": 56000,
+      "drops": [],
+      "minHit": 110,
+      "maxHit": 160,
+      "gold": 14000
+    },
+    {
       "mobId": "wisp",
       "name": "Fuego Fatuo",
       "behavior": "aggressive",
@@ -1181,6 +1221,11 @@
       "mapId": "mapa139",
       "mobId": "sirena",
       "count": 35
+    },
+    {
+      "mapId": "mapa256",
+      "mobId": "medusaM",
+      "count": 1
     }
 
   ]

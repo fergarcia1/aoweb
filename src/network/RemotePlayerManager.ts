@@ -29,6 +29,7 @@ import {
   tileToFeetWorld,
   type PlayerArmorVisualOptions,
 } from "../player/playerSprites";
+import { formatPlayerWorldName } from "../player/playerNameLabel";
 import { faceTextureKey, getFaceFrame } from "../player/raceFaces";
 import { getRaceFaceLayout } from "../player/raceFaceLayout";
 import {
@@ -113,6 +114,7 @@ export type RemoteEntry = {
   meditationConfig?: MeditationVisualConfig;
   label: Phaser.GameObjects.Text;
   playerName: string;
+  clanName: string | null;
   classId: string;
   factionId: string;
   level: number;
@@ -514,7 +516,7 @@ export class RemotePlayerManager {
       state.role
     );
     const label = this.scene.add
-      .text(feet.x, feet.y + 2, state.name, {
+      .text(feet.x, feet.y + 2, formatPlayerWorldName(state.name, state.clanName), {
         fontFamily: GAME_FONT,
         fontSize: `${WORLD_NAME_FONT_SIZE}px`,
         color: colors.fill,
@@ -522,6 +524,7 @@ export class RemotePlayerManager {
         stroke: colors.stroke,
         strokeThickness: WORLD_NAME_STROKE,
         resolution: GAME_TEXT_RESOLUTION,
+        align: "center",
       })
       .setOrigin(0.5, 0);
 
@@ -550,6 +553,7 @@ export class RemotePlayerManager {
       meditationConfig,
       label,
       playerName: state.name,
+      clanName: state.clanName?.trim() || null,
       classId: state.classId ?? "paladin",
       factionId: state.factionId,
       level: state.level,
@@ -589,14 +593,16 @@ export class RemotePlayerManager {
       entry.invisibleUntilMs = 0;
     }
     entry.playerName = state.name;
+    entry.clanName = state.clanName?.trim() || null;
     entry.classId = state.classId;
     entry.factionId = state.factionId;
     entry.level = state.level;
     entry.role = state.role;
     entry.faceIndex = state.faceIndex;
     entry.isNavigating = state.isNavigating === true;
-    if (entry.label.text !== state.name) {
-      entry.label.setText(state.name);
+    const worldName = formatPlayerWorldName(state.name, entry.clanName);
+    if (entry.label.text !== worldName) {
+      entry.label.setText(worldName);
       const colors = getPlayerNameColors(
         normalizeFactionId(state.factionId) as CharacterFactionId,
         state.role
@@ -893,7 +899,7 @@ export class RemotePlayerManager {
     entry.body.setAlpha(GHOST_PLAYER_ALPHA);
     entry.body.anims.stop();
     entry.face.setTexture(ghostFaceKey);
-    entry.face.setFrame(getFaceFrame(GHOST_RACE_ID, "male", entry.faceIndex, entry.facing));
+    entry.face.setFrame(getFaceFrame(GHOST_RACE_ID, "male", 0, entry.facing));
     entry.face.setScale(getRaceFaceLayout(GHOST_RACE_ID, "male").scale);
     entry.face.setAlpha(GHOST_PLAYER_ALPHA);
     entry.weaponSprite.setVisible(false);

@@ -66,7 +66,22 @@ export interface WorldContext {
   setGlobalPvpEnabled(enabled: boolean): void;
   cancelResurrectForPlayer(playerId: string): void;
   tryBecomeRenegade(session: PlayerSession): void;
+  tryEnlistArmada(session: PlayerSession): void;
+  tryStartClanCreation(session: PlayerSession): void;
+  submitClanCreation(session: PlayerSession, name: string, description: string): void;
   onUserKill(killer: PlayerSession, victim: PlayerSession): void;
+  canArenaPlayersFight(attackerId: string, defenderId: string): boolean;
+  canArenaPlayerMove(session: PlayerSession, tileX: number, tileY: number): boolean;
+  handleArenaPlayerDefeated(
+    attacker: PlayerSession,
+    victim: PlayerSession,
+    damage: number
+  ): boolean;
+  teleportPlayerToArena(
+    session: PlayerSession,
+    mapId: string,
+    destination: { tileX: number; tileY: number; facing?: import("../../../shared/types").Facing }
+  ): void;
   handlePartyAction(session: PlayerSession, message: import("../../../shared/protocol").ClientPartyActionMessage): void;
   /** Overrides de tipo de tile (puertas abiertas/cerradas) por mapa. */
   getMapTileOverrides(mapId: string): ReadonlyMap<string, number> | undefined;
@@ -77,6 +92,7 @@ export interface WorldContext {
   setDynamicMapObjs(mapId: string, objs: { tileX: number; tileY: number; objIndex: number; isOpen: boolean }[]): void;
   setDoorTileOverride(mapId: string, tileX: number, tileY: number, isOpen: boolean): void;
   getAuctionRepo(): import("../persistence/repository").AuctionRepository;
+  getClanRepo(): import("../persistence/repository").ClanRepository;
   addToBankSlots(session: PlayerSession, itemId: string, amount: number): { added: number; remaining: number };
   removeFromBankSlot(session: PlayerSession, slotIndex: number, amount: number): { removed: number; itemId: string | null };
   areInSameParty(playerIdA: string, playerIdB: string): boolean;

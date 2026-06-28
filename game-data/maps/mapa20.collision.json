@@ -1,0 +1,23 @@
+{
+  "mapId": "mapa20",
+  "description": "Overrides de techos para Rinkel (mapa 20)",
+  "allow": [
+    "37,10"
+  ],
+  "deny": [
+    "41,50", "42,50", "43,50", "44,50",
+    "76,32", "77,32", "78,32", "79,32"
+  ],
+  "denyRects": [],
+  "roofTriggerRects": [
+    { "x0": 74, "y0": 17, "x1": 82, "y1": 25, "label": "templo" },
+    { "x0": 59, "y0": 41, "x1": 66, "y1": 43, "label": "rectangulo" },
+    { "x0": 37, "y0": 43, "x1": 48, "y1": 46, "label": "banco" },
+    { "x0": 59, "y0": 38, "x1": 66, "y1": 44, "label": "sastre" },
+    { "x0": 73, "y0": 21, "x1": 73, "y1": 28, "label": "templo_extra_1" },
+    { "x0": 74, "y0": 26, "x1": 82, "y1": 28, "label": "templo_extra_2" },
+    { "x0": 58, "y0": 45, "x1": 66, "y1": 48, "label": "techo_extra_3" },
+    { "x0": 67, "y0": 45, "x1": 67, "y1": 46, "label": "sastre_puerta" },
+    { "x0": 41, "y0": 48, "x1": 44, "y1": 50, "label": "banco_entrada" }
+  ]
+}

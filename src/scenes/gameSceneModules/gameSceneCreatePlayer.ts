@@ -97,6 +97,10 @@ export function createGameScenePlayer(params: CreateGameScenePlayerParams): Game
           selectedRace,
           selectedGender
         );
+  const isGhostVisual = useGhostAppearance && deathPhase !== "alive";
+  const visualFaceRace = isGhostVisual ? GHOST_RACE_ID : selectedRace;
+  const visualFaceGender = isGhostVisual ? "male" : selectedGender;
+  const visualFaceIndex = isGhostVisual ? 0 : selectedFaceIndex;
 
   const player = scene.add.sprite(feetX, feetY, bodyTexture, 0);
   applyPlayerOrigin(player);
@@ -105,8 +109,8 @@ export function createGameScenePlayer(params: CreateGameScenePlayerParams): Game
   const playerFace = scene.add.sprite(
     feetX,
     feetY,
-    faceTextureKey(selectedRace, selectedGender),
-    getFaceFrame(selectedRace, selectedGender, selectedFaceIndex, facing)
+    faceTextureKey(visualFaceRace, visualFaceGender),
+    getFaceFrame(visualFaceRace, visualFaceGender, visualFaceIndex, facing)
   );
   playerFace.setOrigin(0.5, 1);
   playerFace.setScale(faceLayoutScale);
@@ -126,6 +130,7 @@ export function createGameScenePlayer(params: CreateGameScenePlayerParams): Game
       stroke: nameColors.stroke,
       strokeThickness: WORLD_NAME_STROKE,
       resolution: GAME_TEXT_RESOLUTION,
+      align: "center",
     })
     .setOrigin(0.5, 0)
     .setDepth(player.depth + 2);

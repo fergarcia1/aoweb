@@ -8,11 +8,19 @@ const TEMP_BAN_MS = parseInt(process.env.RATE_LIMIT_TEMP_BAN_MS ?? "300000", 10)
 const connectionsByIp = new Map<string, number>();
 const bannedIps = new Map<string, number>(); // ip -> ban expiration timestamp ms
 
+function isLoopbackIp(ip: string): boolean {
+  return ip === "127.0.0.1" || ip === "::1" || ip === "localhost" || ip === "::ffff:127.0.0.1";
+}
+
 /**
  * Registra una conexión entrante de una IP y verifica si está baneada o excede el límite.
  * Retorna true si se permite la conexión, o false si debe ser rechazada.
  */
 export function registerConnection(ip: string): boolean {
+  if (isLoopbackIp(ip)) {
+    return true;
+  }
+
   const now = Date.now();
   const banExpiration = bannedIps.get(ip);
   if (banExpiration) {
@@ -51,6 +59,10 @@ export function unregisterConnection(ip: string) {
  * Banea temporalmente una IP por exceder el límite de spam (DDoS/Bots).
  */
 export function tempBanIp(ip: string) {
+  if (isLoopbackIp(ip)) {
+    logger.warn("networksecurity", `[AntiSpam] IP local ${ip} excedio el limite; no se aplica ban temporal en desarrollo.`);
+    return;
+  }
   const expiration = Date.now() + TEMP_BAN_MS;
   bannedIps.set(ip, expiration);
   logger.warn("networksecurity", `[AntiSpam] IP ${ip} ha sido baneada temporalmente hasta ${new Date(expiration).toISOString()}.`);

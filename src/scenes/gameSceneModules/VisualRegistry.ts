@@ -28,7 +28,7 @@ export function registerAllGameVisuals(scene: Phaser.Scene): void {
 
   const treeTexture = scene.textures.get(TREE_TEXTURE_KEY);
   if (treeTexture.key !== "__MISSING") {
-    treeTexture.setFilter(Phaser.Textures.FilterMode.NEAREST);
+    treeTexture.setFilter(Phaser.Textures.FilterMode.LINEAR);
   }
 
   // 2. Registro de animaciones

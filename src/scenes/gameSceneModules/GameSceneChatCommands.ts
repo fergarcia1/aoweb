@@ -112,6 +112,22 @@ export class GameSceneChatCommands {
       );
       return true;
     }
+    if (normalized === "/alistar") {
+      if (!this.deps.isMultiplayerConnected()) {
+        this.deps.addChatLine("Debes estar conectado al servidor para alistarte.");
+        return true;
+      }
+      this.deps.sendChat(message.trim());
+      return true;
+    }
+    if (normalized === "/crearclan") {
+      if (!this.deps.isMultiplayerConnected()) {
+        this.deps.addChatLine("Debes estar conectado al servidor para crear un clan.");
+        return true;
+      }
+      this.deps.sendChat(message.trim());
+      return true;
+    }
     if (normalized === "/salir") {
       this.deps.requestLogout();
       return true;
@@ -331,6 +347,8 @@ export class GameSceneChatCommands {
     this.deps.addChatLine("/marcarhogar — marcar ciudad actual como hogar");
     this.deps.addChatLine("/morir — morir al instante");
     this.deps.addChatLine("/renegar — abandonar el imperio (solo ciudadano)");
+    this.deps.addChatLine("/alistar — enlistarse en la Armada Real tras hablar con Elessar");
+    this.deps.addChatLine("/crearclan — fundar un clan tras hablar con Thrandil");
     this.deps.addChatLine("/salir — volver a selección de personajes");
     this.deps.addChatLine("/reset — reiniciar progreso del personaje");
     this.deps.addChatLine("/gold <cantidad> — sumar oro");

@@ -8,7 +8,7 @@ const L4 = [[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
 
 export const MAP_MAPA90: GameMap = {
   id: "mapa90",
-  name: "Rmo Otoren                                                      ",
+  name: "Oceano Abierto",
   width: 100,
   height: 100,
   backgroundColor: '#000000',

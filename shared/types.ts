@@ -26,6 +26,7 @@ export type NetPlayerEquipment = {
 export type NetPlayerState = {
   id: string;
   name: string;
+  clanName?: string;
   mapId: string;
   tileX: number;
   tileY: number;
@@ -51,6 +52,8 @@ export type NetPlayerState = {
   buffExpiresAtMs?: number;
   /** Epoch ms; 0 = sin invisibilidad. */
   invisibleUntilMs?: number;
+  /** Epoch ms; 0 = sin inmovilizar/paralizar. */
+  immobilizedUntilMs?: number;
 };
 
 export type NetMobState = {
@@ -170,6 +173,10 @@ export function normalizeNetPlayerState(
   return {
     id: raw.id,
     name: typeof raw.name === "string" ? raw.name : "Viajero",
+    clanName:
+      typeof raw.clanName === "string" && raw.clanName.trim()
+        ? raw.clanName.trim().slice(0, 24)
+        : undefined,
     mapId: typeof raw.mapId === "string" ? raw.mapId : "mapa1",
     tileX: typeof raw.tileX === "number" ? Math.floor(raw.tileX) : 0,
     tileY: typeof raw.tileY === "number" ? Math.floor(raw.tileY) : 0,
@@ -203,6 +210,10 @@ export function normalizeNetPlayerState(
     invisibleUntilMs:
       typeof raw.invisibleUntilMs === "number" && Number.isFinite(raw.invisibleUntilMs)
         ? Math.max(0, Math.floor(raw.invisibleUntilMs))
+        : 0,
+    immobilizedUntilMs:
+      typeof raw.immobilizedUntilMs === "number" && Number.isFinite(raw.immobilizedUntilMs)
+        ? Math.max(0, Math.floor(raw.immobilizedUntilMs))
         : 0,
     ...(typeof raw.attributeBuffs === "object" &&
     raw.attributeBuffs &&
@@ -275,11 +286,21 @@ export type DamageEvent = {
   tileX: number;
   tileY: number;
   critical?: boolean;
+  attackKind?: "melee" | "ranged" | "spell";
+  shieldBlocked?: boolean;
   /** Tile del origen del ruido (jugador atacante o mob). */
   sourceTileX?: number;
   sourceTileY?: number;
   /** Jugador que generó el sonido (golpe/hechizo); ausente si fue un mob. */
   sourcePlayerId?: string;
+};
+
+export type MissEvent = {
+  kind: "miss";
+  sourcePlayerId: string;
+  tileX: number;
+  tileY: number;
+  attackKind?: "melee" | "ranged";
 };
 
 export type HealEvent = {
@@ -302,6 +323,7 @@ export type SpellFxEvent = {
   tileY: number;
   sourcePlayerId?: string;
   targetPlayerId?: string;
+  targetMobId?: string;
   sourceTileX?: number;
   sourceTileY?: number;
 };
@@ -358,6 +380,7 @@ export type NetAuctionState = {
 
 export type GameEvent =
   | DamageEvent
+  | MissEvent
   | HealEvent
   | SpellFxEvent
   | ResurrectChannelEvent

@@ -1,6 +1,7 @@
 import type { GameMap } from "./mapTypes";
 import { resolveMapTile, type MapTileOverrides } from "./mapTileOverrides";
 import { TILE } from "./tileTypes";
+import { isMapCollisionAllowTile } from "../game-data/maps/mapCollision";
 
 export const BOAT_ITEM_IDS = new Set<string>(["barca"]);
 
@@ -28,6 +29,25 @@ function getLegacyGroundGrh(map: GameMap, tileX: number, tileY: number): number 
   return map.legacyCsmData?.L1[tileY]?.[tileX] ?? 0;
 }
 
+export function isLegacyBridgeGrh(grhId: number): boolean {
+  if (grhId >= 7307 && grhId <= 7322) return true;
+  if (grhId >= 8994 && grhId <= 8997) return true;
+  return false;
+}
+
+export function isLegacyBridgeTile(map: GameMap, tileX: number, tileY: number): boolean {
+  if (!map.legacyCsmData) return false;
+  
+  if (!isLegacyWaterGrh(getLegacyGroundGrh(map, tileX, tileY))) {
+    return false;
+  }
+
+  const l2 = map.legacyCsmData.L2[tileY]?.[tileX] ?? 0;
+  const l3 = map.legacyCsmData.L3[tileY]?.[tileX] ?? 0;
+
+  return isLegacyBridgeGrh(l2) || isLegacyBridgeGrh(l3);
+}
+
 export function isLegacyWaterTile(map: GameMap, tileX: number, tileY: number): boolean {
   return isLegacyWaterGrh(getLegacyGroundGrh(map, tileX, tileY));
 }
@@ -49,6 +69,9 @@ export function isWaterTile(
   overrides?: MapTileOverrides
 ): boolean {
   if (tileX < 0 || tileY < 0 || tileX >= map.width || tileY >= map.height) {
+    return false;
+  }
+  if (isMapCollisionAllowTile(map.id, tileX, tileY)) {
     return false;
   }
   if (resolveMapTile(map.tiles, tileX, tileY, overrides) === TILE.WATER) {

@@ -25,6 +25,7 @@ async function postAuth(path: string, body: unknown): Promise<AuthResult> {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
+      credentials: "include",
     });
     const data = (await response.json()) as AuthServerResponse;
     if (!response.ok || !data.token || !data.account) {
@@ -37,12 +38,62 @@ async function postAuth(path: string, body: unknown): Promise<AuthResult> {
   }
 }
 
+export async function refreshAuthToken(): Promise<boolean> {
+  try {
+    const response = await fetch(`${getMultiplayerHttpBaseUrl()}/auth/refresh`, {
+      method: "POST",
+      credentials: "include",
+    });
+    if (!response.ok) {
+      clearAuthSession();
+      return false;
+    }
+    const data = (await response.json()) as { token: string };
+    if (data.token) {
+      localStorage.setItem(TOKEN_KEY, data.token);
+      return true;
+    }
+    return false;
+  } catch {
+    return false;
+  }
+}
+
+export async function getValidToken(): Promise<string | null> {
+  const token = getAuthToken();
+  if (!token) return null;
+  
+  try {
+    const payloadPart = token.split('.')[1];
+    if (payloadPart) {
+      const payload = JSON.parse(atob(payloadPart.replace(/-/g, "+").replace(/_/g, "/")));
+      const exp = payload.exp;
+      // If token expires in less than 2 minutes, refresh it
+      if (exp && (exp - Date.now() < 2 * 60 * 1000)) {
+        const refreshed = await refreshAuthToken();
+        if (refreshed) {
+          return getAuthToken();
+        }
+      }
+    }
+  } catch (e) {
+    // Ignore parse errors, just return token
+  }
+  
+  return token;
+}
+
 export function saveAuthSession(token: string, account: AuthAccount): void {
   localStorage.setItem(TOKEN_KEY, token);
   localStorage.setItem(ACCOUNT_KEY, JSON.stringify(account));
 }
 
 export function clearAuthSession(): void {
+  fetch(`${getMultiplayerHttpBaseUrl()}/auth/logout`, {
+    method: "POST",
+    credentials: "include",
+  }).catch(() => {});
+  
   localStorage.removeItem(TOKEN_KEY);
   localStorage.removeItem(ACCOUNT_KEY);
 }
@@ -70,6 +121,16 @@ export function isAuthenticated(): boolean {
 export function buildAuthenticatedWsUrl(): string {
   const base = getMultiplayerWsUrl();
   const token = getAuthToken();
+  if (!token) {
+    return base;
+  }
+  const separator = base.includes("?") ? "&" : "?";
+  return `${base}${separator}token=${encodeURIComponent(token)}`;
+}
+
+export async function buildAuthenticatedWsUrlAsync(): Promise<string> {
+  const base = getMultiplayerWsUrl();
+  const token = await getValidToken();
   if (!token) {
     return base;
   }

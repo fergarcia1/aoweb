@@ -96,6 +96,50 @@ export class GameSceneSoundController {
     playNamedWav(this.deps.scene, "golpeAire", 0.45);
   }
 
+  public playMeleeMissSound(): void {
+    playNamedWav(this.deps.scene, "golpeAim", 0.46);
+  }
+
+  public playWeaponEquipSound(): void {
+    playNamedWav(this.deps.scene, "weaponEquip", 0.5);
+  }
+
+  public playArmorEquipSound(): void {
+    playNamedWav(this.deps.scene, "equiparArmor", 0.5);
+  }
+
+  public playCriticalHitSound(): void {
+    playNamedWav(this.deps.scene, "apu", 0.55);
+  }
+
+  public playArrowHitSound(): void {
+    playNamedWav(this.deps.scene, "arrowHit", 0.5);
+  }
+
+  public playArrowMissSound(): void {
+    playNamedWav(this.deps.scene, "arrowMiss", 0.48);
+  }
+
+  public playClanCreatedSound(): void {
+    playNamedWav(this.deps.scene, "creacionClan", 0.58);
+  }
+
+  public playDropSound(): void {
+    playNamedWav(this.deps.scene, "drop", 0.5);
+  }
+
+  public playDoorSound(): void {
+    playNamedWav(this.deps.scene, "openingDoor", 0.5);
+  }
+
+  public playShieldBlockSound(): void {
+    playNamedWav(this.deps.scene, "shieldBlock", 0.52);
+  }
+
+  public playPlayerDeathSound(): void {
+    playNamedWav(this.deps.scene, "muerte", 0.58);
+  }
+
   public playHeavyMobFootstepSound(): void {
     playAlternatingNamedWavs(
       this.deps.scene,

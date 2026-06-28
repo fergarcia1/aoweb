@@ -2,6 +2,9 @@ import type {
   ClientMessage,
   NetInventorySlotState,
   ServerMessage,
+  ServerArenaReadyCheckMessage,
+  ServerArenaRoundMessage,
+  ServerArenaStateMessage,
   ServerPartyInviteRequestMessage,
   ServerPartyUpdateMessage,
   ServerUseItemAckMessage,
@@ -34,7 +37,12 @@ export type NetworkClientHandlers = {
   onPlayerUpdated?: (player: NetPlayerState) => void;
   onMobUpdated?: (mob: NetMobState) => void;
   onMobLeft?: (mobId: string) => void;
-  onChat?: (from: string, text: string, fromPlayerId?: string) => void;
+  onChat?: (
+    from: string,
+    text: string,
+    fromPlayerId?: string,
+    channel?: "general" | "global"
+  ) => void;
   onCombatLog?: (text: string) => void;
   onGameEvent?: (event: GameEvent) => void;
   onPlayerDied?: (playerId: string, killerId: string, killerName: string) => void;
@@ -52,6 +60,11 @@ export type NetworkClientHandlers = {
   onPartyUpdate?: (message: ServerPartyUpdateMessage) => void;
   onPartyInviteRequest?: (message: ServerPartyInviteRequestMessage) => void;
   onAuctionCatalog?: (auctions: import("../../shared/types").NetAuctionState[]) => void;
+  onArenaState?: (message: ServerArenaStateMessage) => void;
+  onArenaReadyCheck?: (message: ServerArenaReadyCheckMessage) => void;
+  onArenaRound?: (message: ServerArenaRoundMessage) => void;
+  onClanCreationStarted?: () => void;
+  onClanCreated?: (clan: Extract<ServerMessage, { type: "clan_created" }>["clan"]) => void;
   onWorldItemSpawned?: (mapId: string, item: NetWorldItemState) => void;
 
   onWorldItemUpdated?: (mapId: string, item: NetWorldItemState) => void;
@@ -235,12 +248,31 @@ export class NetworkClient {
     this.send({ type: "chat", text });
   }
 
+  sendClanCreate(name: string, description: string) {
+    this.send({ type: "clan_create", name, description });
+  }
+
   sendBecomeRenegade() {
     this.send({ type: "become_renegade" });
   }
 
   sendAttack(facing?: Facing) {
     this.send(facing ? { type: "attack", facing } : { type: "attack" });
+  }
+
+  sendRangedAttack(payload: {
+    targetTileX: number;
+    targetTileY: number;
+    targetMobId?: string;
+    targetPlayerId?: string;
+  }) {
+    this.send({
+      type: "ranged_attack",
+      targetTileX: Math.floor(payload.targetTileX),
+      targetTileY: Math.floor(payload.targetTileY),
+      ...(payload.targetMobId ? { targetMobId: payload.targetMobId } : {}),
+      ...(payload.targetPlayerId ? { targetPlayerId: payload.targetPlayerId } : {}),
+    });
   }
 
   sendCastSpell(
@@ -382,6 +414,13 @@ export class NetworkClient {
     this.send({ type: "auction_cancel", auctionId });
   }
 
+  sendArenaAction(
+    action: Extract<ClientMessage, { type: "arena_action" }>["action"],
+    mode?: Extract<ClientMessage, { type: "arena_action" }>["mode"]
+  ) {
+    this.send({ type: "arena_action", action, mode });
+  }
+
   sendRequestLogout() {
     this.send({ type: "request_logout" });
   }
@@ -457,7 +496,15 @@ export class NetworkClient {
       return;
     }
     if (message.type === "chat") {
-      this.handlers.onChat?.(message.from, message.text, message.fromPlayerId);
+      this.handlers.onChat?.(message.from, message.text, message.fromPlayerId, message.channel);
+      return;
+    }
+    if (message.type === "clan_creation_started") {
+      this.handlers.onClanCreationStarted?.();
+      return;
+    }
+    if (message.type === "clan_created") {
+      this.handlers.onClanCreated?.(message.clan);
       return;
     }
     if (message.type === "combat_log") {
@@ -534,6 +581,18 @@ export class NetworkClient {
     }
     if (message.type === "auction_catalog") {
       this.handlers.onAuctionCatalog?.(message.auctions);
+      return;
+    }
+    if (message.type === "arena_state") {
+      this.handlers.onArenaState?.(message);
+      return;
+    }
+    if (message.type === "arena_ready_check") {
+      this.handlers.onArenaReadyCheck?.(message);
+      return;
+    }
+    if (message.type === "arena_round") {
+      this.handlers.onArenaRound?.(message);
       return;
     }
     if (message.type === "error") {

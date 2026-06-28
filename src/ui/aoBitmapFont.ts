@@ -68,7 +68,7 @@ export function applyAoFont2TransparentBackground(scene: Phaser.Scene): void {
   if (!updated) {
     return;
   }
-  updated.setFilter(Phaser.Textures.FilterMode.NEAREST);
+  updated.setFilter(Phaser.Textures.FilterMode.LINEAR);
   aoFont2BackgroundStripped = true;
 }
 

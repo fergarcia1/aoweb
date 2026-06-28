@@ -12,6 +12,7 @@ import { isPlayerUnderLegacyRoof } from "../../../shared/mapWalkability";
 import { syncMapSceneryOcclusion } from "./mapSceneryOcclusion";
 import { getTileDefinition, TILE } from "../../maps/tileDefinitions";
 import { spawnMapObjectImage } from "../../maps/mapObjects";
+import { ARENA_1V1_SLOTS } from "../../../shared/arena";
 import {
   collectLegacyObjGrhFileNums,
   getLegacyObjGrhId,
@@ -71,6 +72,7 @@ export class GameSceneMapController {
   readonly mapTiles: Phaser.GameObjects.Container;
   readonly mapOverlay: Phaser.GameObjects.Graphics;
   readonly worldLayer: Phaser.GameObjects.Container;
+  public arenaBorderTiles = new Set<string>();
 
   private uiCamera?: Phaser.Cameras.Scene2D.Camera;
   private readonly mapTrees: Phaser.GameObjects.Image[] = [];
@@ -250,7 +252,7 @@ export class GameSceneMapController {
     for (const overlay of map.groundOverlays ?? []) {
       const texture = scene.textures.get(overlay.textureKey);
       if (texture.key === "__MISSING") continue;
-      texture.setFilter(Phaser.Textures.FilterMode.NEAREST);
+      texture.setFilter(Phaser.Textures.FilterMode.LINEAR);
       const img = scene.add
         .image(overlay.tileX * TILE_SIZE, overlay.tileY * TILE_SIZE, overlay.textureKey)
         .setOrigin(0, 0)
@@ -289,7 +291,27 @@ export class GameSceneMapController {
     this.mapPortalSprites.push(...portalSprites);
     this.addToWorld(portalSprites);
 
+    this.drawArenaSlotBorders(map);
+
     this.refreshSceneryUiCameraIgnore();
+  }
+
+  private drawArenaSlotBorders(map: GameMap): void {
+    const slots = ARENA_1V1_SLOTS.filter((slot) => slot.mapId === map.id);
+    if (slots.length === 0) {
+      return;
+    }
+
+    for (const slot of slots) {
+      for (let x = slot.minTileX; x <= slot.maxTileX; x += 1) {
+        this.arenaBorderTiles.add(`${x},${slot.minTileY}`);
+        this.arenaBorderTiles.add(`${x},${slot.maxTileY}`);
+      }
+      for (let y = slot.minTileY + 1; y < slot.maxTileY; y += 1) {
+        this.arenaBorderTiles.add(`${slot.minTileX},${y}`);
+        this.arenaBorderTiles.add(`${slot.maxTileX},${y}`);
+      }
+    }
   }
 
   /** Mantiene árboles/edificios en la cámara del mundo (no en la UI). */
@@ -499,7 +521,7 @@ export class GameSceneMapController {
 
     const worldCam = scene.cameras.main;
     this.updateCameraBounds();
-    worldCam.roundPixels = true;
+    worldCam.roundPixels = false;
     worldCam.startFollow(this.deps.getPlayer(), true, 1, 1);
     worldCam.setZoom(1);
 
@@ -708,8 +730,17 @@ export class GameSceneMapController {
     const h = scene.scale.height;
     this.worldMapOverlay.removeAll(true);
 
+    const COLOR_BACKDROP = 0x070101;
+    const COLOR_PANEL = 0x170604;
+    const COLOR_PANEL_INNER = 0x24100b;
+    const COLOR_BORDER_DARK = 0x4f130d;
+    const COLOR_BORDER_HOT = 0xd16a2d;
+    const COLOR_BORDER_GOLD = 0xf0b45b;
+    const COLOR_TEXT = "#f6dfb4";
+    const COLOR_TEXT_SOFT = "#d7ad74";
+
     const backdrop = scene.add
-      .rectangle(0, 0, w, h, 0x000000, 0.72)
+      .rectangle(0, 0, w, h, COLOR_BACKDROP, 0.78)
       .setOrigin(0, 0)
       .setScrollFactor(0);
     const panelW = Math.min(720, Math.floor(w * 0.88));
@@ -719,22 +750,34 @@ export class GameSceneMapController {
     this.worldMapPanelGeom = { x: panelX, y: panelY, w: panelW, h: panelH };
 
     const panel = scene.add
-      .rectangle(panelX, panelY, panelW, panelH, 0x0e1524, 0.96)
+      .rectangle(panelX, panelY, panelW, panelH, COLOR_PANEL, 0.97)
       .setOrigin(0, 0)
-      .setStrokeStyle(2, 0x7ba7d9, 0.95)
+      .setStrokeStyle(3, COLOR_BORDER_DARK, 1)
+      .setScrollFactor(0);
+    const panelInner = scene.add
+      .rectangle(panelX + 5, panelY + 5, panelW - 10, panelH - 10, COLOR_PANEL_INNER, 0.72)
+      .setOrigin(0, 0)
+      .setStrokeStyle(1, COLOR_BORDER_HOT, 0.85)
+      .setScrollFactor(0);
+    const titleBand = scene.add
+      .rectangle(panelX + 8, panelY + 8, panelW - 16, 32, 0x320b08, 0.92)
+      .setOrigin(0, 0)
+      .setStrokeStyle(1, COLOR_BORDER_GOLD, 0.5)
       .setScrollFactor(0);
     const title = scene.add
       .text(panelX + Math.floor(panelW / 2), panelY + 12, "Mapa Mundial (M)", {
         fontFamily: GAME_FONT,
         fontSize: "18px",
-        color: "#dbe9ff",
+        color: COLOR_TEXT,
         fontStyle: "bold",
         resolution: GAME_TEXT_RESOLUTION,
+        stroke: "#1f0503",
+        strokeThickness: 2,
       })
       .setOrigin(0.5, 0)
       .setScrollFactor(0);
 
-    this.worldMapOverlay.add([backdrop, panel, title]);
+    this.worldMapOverlay.add([backdrop, panel, panelInner, titleBand, title]);
 
     const topPadding = 44;
     const sidePadding = 20;
@@ -747,23 +790,23 @@ export class GameSceneMapController {
 
     // Sidebar panel for descriptions
     const sidebar = scene.add
-      .rectangle(panelX + sidePadding, mapAreaY, sidebarW - 10, mapAreaH, 0x16223d, 0.5)
+      .rectangle(panelX + sidePadding, mapAreaY, sidebarW - 10, mapAreaH, 0x220c08, 0.82)
       .setOrigin(0, 0)
-      .setStrokeStyle(1, 0x3d5a80, 0.8)
+      .setStrokeStyle(1, COLOR_BORDER_HOT, 0.7)
       .setScrollFactor(0);
     
     const descTitle = scene.add
       .text(panelX + sidePadding + 10, mapAreaY + 10, "Información", {
         fontFamily: GAME_FONT,
         fontSize: "14px",
-        color: "#7ba7d9",
+        color: COLOR_TEXT_SOFT,
         fontStyle: "bold",
         resolution: GAME_TEXT_RESOLUTION,
       })
       .setScrollFactor(0);
     
     const descSeparator = scene.add
-      .rectangle(panelX + sidePadding + 10, mapAreaY + 30, sidebarW - 30, 1, 0x3d5a80, 1)
+      .rectangle(panelX + sidePadding + 10, mapAreaY + 30, sidebarW - 30, 1, COLOR_BORDER_HOT, 0.8)
       .setOrigin(0, 0)
       .setScrollFactor(0);
 
@@ -771,7 +814,7 @@ export class GameSceneMapController {
       .text(panelX + sidePadding + 10, mapAreaY + 40, "Selecciona un mapa", {
         fontFamily: GAME_FONT,
         fontSize: "12px",
-        color: "#ffffff",
+        color: COLOR_TEXT,
         fontStyle: "bold",
         wordWrap: { width: sidebarW - 30 },
         resolution: GAME_TEXT_RESOLUTION,
@@ -782,7 +825,7 @@ export class GameSceneMapController {
       .text(panelX + sidePadding + 10, mapAreaY + 65, "", {
         fontFamily: GAME_FONT,
         fontSize: "11px",
-        color: "#dbe9ff",
+        color: COLOR_TEXT_SOFT,
         wordWrap: { width: sidebarW - 30 },
         resolution: GAME_TEXT_RESOLUTION,
       })
@@ -809,8 +852,9 @@ export class GameSceneMapController {
     this.worldMapGridParams = { gridStartX, gridStartY, cellSize, bounds };
 
     const ocean = scene.add
-      .rectangle(gridStartX, gridStartY, gridW, gridH, getWorldMapBiomeColor("water"), 1)
+      .rectangle(gridStartX, gridStartY, gridW, gridH, 0x111111, 1)
       .setOrigin(0, 0)
+      .setStrokeStyle(2, COLOR_BORDER_DARK, 0.9)
       .setScrollFactor(0);
     this.worldMapOverlay.add(ocean);
 
@@ -831,12 +875,16 @@ export class GameSceneMapController {
       const x = gridStartX + col * cellSize;
       const y = gridStartY + row * cellSize;
       
-      const isCity = cell.biome === "city";
+      const isCity =
+        cell.biome === "city" ||
+        cell.biome === "imperialCity" ||
+        cell.biome === "chaosCity" ||
+        cell.biome === "neutralCity";
 
       const land = scene.add
         .rectangle(x + 1, y + 1, cellSize - 2, cellSize - 2, getWorldMapBiomeColor(cell.biome), 1)
         .setOrigin(0, 0)
-        .setStrokeStyle(1, 0x9fc4ef, 0.55)
+        .setStrokeStyle(1, COLOR_BORDER_GOLD, isCity ? 0.78 : 0.42)
         .setScrollFactor(0)
         .setInteractive({ useHandCursor: true });
       
@@ -850,9 +898,9 @@ export class GameSceneMapController {
       this.worldMapOverlay.add(land);
 
       if (showLabels) {
-        const label = cell.label ?? cell.mapId;
+        const label = cell.displayLabel ?? cell.label ?? cell.mapId;
         const fontSize = isCity ? "10px" : "9px";
-        const fontColor = isCity ? "#ffffff" : "#e8f4ff";
+        const fontColor = isCity ? "#fff2cf" : "#f2d79a";
         const fontStyle = isCity ? "bold" : "normal";
 
         const mapName = scene.add
@@ -863,7 +911,7 @@ export class GameSceneMapController {
             fontStyle: fontStyle,
             align: "center",
             resolution: GAME_TEXT_RESOLUTION,
-            stroke: "#000000",
+            stroke: "#180403",
             strokeThickness: 1.5,
           })
           .setOrigin(0.5, 0.5)
@@ -878,10 +926,10 @@ export class GameSceneMapController {
         markerPos?.x ?? panelX + panelW / 2,
         markerPos?.y ?? panelY + panelH / 2,
         5,
-        0xff2a2a,
+        0xfff0a8,
         1
       )
-      .setStrokeStyle(2, 0xffcccc, 0.9)
+      .setStrokeStyle(2, 0x9b1f16, 0.95)
       .setScrollFactor(0);
     this.worldMapOverlay.add(this.worldMapCurrentMarker);
     this.worldMapOverlay.setVisible(this.worldMapOpen);

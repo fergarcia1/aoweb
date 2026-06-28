@@ -40,6 +40,7 @@ import {
 import { GAME_FONT, GAME_TEXT_RESOLUTION } from "../ui/fonts";
 import { START_MAP_ID } from "../maps";
 import { playMenuMusic, preloadMenuMusic } from "../audio/menuMusic";
+import { isMultiplayerEnabled, getMultiplayerHttpBaseUrl } from "../network/multiplayerConfig";
 
 const UI = {
   bg: 0x080607,
@@ -819,7 +820,7 @@ export class CharacterCreationScene extends Phaser.Scene {
     this.scene.start("CharacterSelectScene", { returnMode: this.returnMode });
   }
 
-  private createCharacter() {
+  private async createCharacter() {
     const trimmed = (this.nameInputEl?.value ?? this.name).trim();
     const normalizedName = trimmed.toLocaleLowerCase("es-AR");
     if (trimmed.length < 3) {
@@ -830,7 +831,7 @@ export class CharacterCreationScene extends Phaser.Scene {
       this.setStatus("El nombre no puede superar 18 caracteres.");
       return;
     }
-    if (!/^[a-zA-ZáéíóúÁÉÍÓÚñÑ ]+$/.test(trimmed)) {
+    if (!/^[a-zA-ZáéíóúÁÉÍÓÚñÑ' ]+$/.test(trimmed)) {
       this.setStatus("Usá solo letras y espacios en el nombre.");
       return;
     }
@@ -844,6 +845,23 @@ export class CharacterCreationScene extends Phaser.Scene {
     if (nameAlreadyUsed) {
       this.setStatus("Ese nombre ya existe.");
       return;
+    }
+
+    if (isMultiplayerEnabled()) {
+      this.setStatus("Verificando disponibilidad del nombre...");
+      try {
+        const response = await fetch(`${getMultiplayerHttpBaseUrl()}/api/check-name/${encodeURIComponent(trimmed)}`);
+        if (response.ok) {
+          const data = await response.json();
+          if (!data.available) {
+            this.setStatus("Ese nombre ya está en uso.");
+            return;
+          }
+        }
+      } catch (err) {
+        this.setStatus("Error conectando con el servidor.");
+        return;
+      }
     }
 
     const character: SavedCharacter = {

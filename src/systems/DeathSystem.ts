@@ -325,6 +325,9 @@ export class DeathSystem {
 
   acceptPriestRevival() {
     if (this.deathPhase === "alive") return;
+    if (this.requestServerPriestRevive()) {
+      return;
+    }
     this.teleportToNearestPriest();
     this.reviveAtPriest();
   }
@@ -334,8 +337,23 @@ export class DeathSystem {
       this.cb.addChatLine("Solo podés usar /hogar cuando estás muerto o en forma fantasma.");
       return;
     }
+    if (this.requestServerPriestRevive()) {
+      return;
+    }
     this.teleportToNearestPriest();
     this.reviveAtPriest();
+  }
+
+  private requestServerPriestRevive(): boolean {
+    if (!(this.cb.isServerAuthoritativeLoot?.() ?? false) || !this.cb.notifyServerRevive) {
+      return false;
+    }
+    const tile = this.cb.getPlayerTile();
+    this.cb.setServerReviveSyncPending?.(true);
+    this.cb.getDeathOverlay()?.hideDialog();
+    this.cb.notifyServerRevive("priest", tile.x, tile.y, this.cb.getCurrentMapId());
+    this.cb.addCombatLine("Solicitando resurreccion al sacerdote...");
+    return true;
   }
 
   private isNearHomePriest(): boolean {

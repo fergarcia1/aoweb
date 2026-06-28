@@ -27,6 +27,14 @@ Thumbs.db
 # Local clones / scratch (no versionar)
 tmp/
 scratch/
+add_*.cjs
+fix*.cjs
+fix.js
+inspect.*
+patch*.cjs
+scratch.txt
+ts_errors.txt
+update_spawns.cjs
 server/restore*.js
 server/restore*.cjs
 scripts/replace_logger.*

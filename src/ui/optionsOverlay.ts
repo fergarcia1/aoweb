@@ -124,7 +124,9 @@ export class OptionsOverlay {
   private render() {
     this.container.innerHTML = `
       <style>
-        .ao-options-title { margin: 0 0 12px; text-align: center; font-size: 20px; color: #ffd9a6; }
+        .ao-options-title { margin: 0 0 6px; text-align: center; font-size: 20px; color: #ffd9a6; }
+        .ao-options-hint { margin: 0 0 10px; text-align: center; font-size: 12px; color: #b89a78; }
+        .ao-options-hint kbd { background: #3d1d18; border: 1px solid #8f4737; border-radius: 3px; padding: 1px 5px; font-family: monospace; color: #ffe6c8; }
         .ao-options-section { border-top: 1px solid rgba(196, 92, 72, 0.45); padding-top: 12px; margin-top: 12px; }
         .ao-options-section-title { margin: 0 0 8px; font-size: 12px; color: #d8a475; text-transform: uppercase; }
         .ao-options-row { display: flex; align-items: center; justify-content: space-between; min-height: 32px; gap: 10px; }
@@ -140,6 +142,7 @@ export class OptionsOverlay {
         .ao-options-volume-value { min-width: 38px; text-align: right; color: #ffe6c8; }
       </style>
       <h2 class="ao-options-title">Opciones</h2>
+      <p class="ao-options-hint">Para mostrar/ocultar los FPS y el ping: <kbd>*</kbd></p>
       <section class="ao-options-section">
         <h3 class="ao-options-section-title">Audio</h3>
         <div class="ao-options-row">

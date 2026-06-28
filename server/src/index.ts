@@ -66,16 +66,16 @@ function wait(ms: number): Promise<void> {
 }
 
 function getClientIp(req: IncomingMessage): string {
-  const ipHeader =
-    req.headers["cf-connecting-ip"] ??
-    req.headers["x-forwarded-for"] ??
-    req.socket.remoteAddress ??
-    "unknown";
+  const forwardedIpHeader = TRUST_PROXY
+    ? req.headers["cf-connecting-ip"] ?? req.headers["x-forwarded-for"]
+    : undefined;
+  const ipHeader = forwardedIpHeader ?? req.socket.remoteAddress ?? "unknown";
   return (Array.isArray(ipHeader) ? ipHeader[0] : ipHeader.split(",")[0]).trim();
 }
 
 const PORT = parsePort(process.env.PORT);
 const AUTH_REQUIRED = parseBoolean(process.env.AUTH_REQUIRED);
+const TRUST_PROXY = parseBoolean(process.env.TRUST_PROXY);
 const persistenceMode = process.env.DATABASE_URL?.trim() ? "postgres" : "memory";
 
 const characterRepository = createCharacterRepositoryFromEnv();
@@ -100,6 +100,10 @@ function healthPayload() {
 const httpServer = createServer(async (req, res) => {
   const path = getRequestPath(req);
 
+  if (await authRouter(req, res)) {
+    return;
+  }
+
   if (req.method === "OPTIONS") {
     res.writeHead(204, corsHeaders());
     res.end();
@@ -111,7 +115,14 @@ const httpServer = createServer(async (req, res) => {
     return;
   }
 
-  if (await authRouter(req, res)) {
+  if (req.method === "GET" && path.startsWith("/api/check-name/")) {
+    const name = decodeURIComponent(path.slice("/api/check-name/".length)).trim();
+    if (!name) {
+      sendJson(res, 400, { error: "Name is required" });
+      return;
+    }
+    const exists = await characterRepository.getByName(name);
+    sendJson(res, 200, { available: !exists });
     return;
   }
 

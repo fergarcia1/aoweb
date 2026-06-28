@@ -175,7 +175,7 @@ const PLAYER_SHEET_PATHS: Record<Exclude<Outfit, "base">, string> = {
   cueroBajos: "/assets/ao/armors/cueroBajos_std.png",
   placasAzulesFem: "/assets/ao/armors/placasAzulesFem_std.png",
   placasVerdes: "/assets/ao/armors/placasVerdes_std.png",
-  tunicaMagoBajos: "/assets/ao/armors/tunicaMagoBajos.png",
+  tunicaMagoBajos: "/assets/ao/armors/tunicaMagoBajos_std.png",
   tunicaRoja: "/assets/ao/armors/tunicaRoja_std.png",
   tunicaRojaBajos: "/assets/ao/armors/tunicaRojaBajos_std.png",
   tunicaClerigoBajos: "/assets/ao/armors/tunicaClerigoBajos_std.png",
@@ -212,13 +212,13 @@ const PLAYER_BAJOS_TEXTURE_KEYS: Record<Exclude<Outfit, "base">, string> = {
   coraza: armorBajosTextureKey(PLAYER_TEXTURE_KEYS.coraza),
   corazaBajos: PLAYER_TEXTURE_KEYS.corazaBajos,
   cueroBajos: PLAYER_TEXTURE_KEYS.cueroBajos,
-  placasAzulesFem: armorBajosTextureKey(PLAYER_TEXTURE_KEYS.placasAzulesFem),
-  placasVerdes: armorBajosTextureKey(PLAYER_TEXTURE_KEYS.placasVerdes),
+  placasAzulesFem: PLAYER_TEXTURE_KEYS.placasAzulesFem,
+  placasVerdes: PLAYER_TEXTURE_KEYS.placasVerdes,
   tunicaMagoBajos: PLAYER_TEXTURE_KEYS.tunicaMagoBajos,
   tunicaRoja: armorBajosTextureKey(PLAYER_TEXTURE_KEYS.tunicaRoja),
   tunicaRojaBajos: PLAYER_TEXTURE_KEYS.tunicaRojaBajos,
   tunicaClerigoBajos: PLAYER_TEXTURE_KEYS.tunicaClerigoBajos,
-  tunicaDruida: armorBajosTextureKey(PLAYER_TEXTURE_KEYS.tunicaDruida),
+  tunicaDruida: PLAYER_TEXTURE_KEYS.tunicaDruidaBajos,
 };
 
 const PLAYER_BAJOS_SHEET_PATHS: Record<Exclude<Outfit, "base">, string> = {
@@ -251,13 +251,13 @@ const PLAYER_BAJOS_SHEET_PATHS: Record<Exclude<Outfit, "base">, string> = {
   coraza: inferBajosSpritesheetPath(PLAYER_SHEET_PATHS.coraza),
   corazaBajos: PLAYER_SHEET_PATHS.corazaBajos,
   cueroBajos: PLAYER_SHEET_PATHS.cueroBajos,
-  placasAzulesFem: inferBajosSpritesheetPath(PLAYER_SHEET_PATHS.placasAzulesFem),
-  placasVerdes: inferBajosSpritesheetPath(PLAYER_SHEET_PATHS.placasVerdes),
+  placasAzulesFem: PLAYER_SHEET_PATHS.placasAzulesFem,
+  placasVerdes: PLAYER_SHEET_PATHS.placasVerdes,
   tunicaMagoBajos: PLAYER_SHEET_PATHS.tunicaMagoBajos,
   tunicaRoja: inferBajosSpritesheetPath(PLAYER_SHEET_PATHS.tunicaRoja),
   tunicaRojaBajos: PLAYER_SHEET_PATHS.tunicaRojaBajos,
   tunicaClerigoBajos: PLAYER_SHEET_PATHS.tunicaClerigoBajos,
-  tunicaDruida: inferBajosSpritesheetPath(PLAYER_SHEET_PATHS.tunicaDruida),
+  tunicaDruida: PLAYER_SHEET_PATHS.tunicaDruidaBajos,
 };
 
 /** Spritesheet de orcos para ropa de ciudadano (mismo ítem, visual distinto). */
@@ -445,12 +445,12 @@ export function setupPlayerTexture(scene: Phaser.Scene): void {
   for (const key of Object.keys(RACE_BODY_PATHS)) {
     const texture = scene.textures.get(key);
     if (texture.key !== "__MISSING") {
-      texture.setFilter(Phaser.Textures.FilterMode.NEAREST);
+      texture.setFilter(Phaser.Textures.FilterMode.LINEAR);
     }
   }
   const boatTexture = scene.textures.get(BOAT_BODY_TEXTURE_KEY);
   if (boatTexture.key !== "__MISSING") {
-    boatTexture.setFilter(Phaser.Textures.FilterMode.NEAREST);
+    boatTexture.setFilter(Phaser.Textures.FilterMode.LINEAR);
   }
 
   for (const outfit of Object.keys(PLAYER_TEXTURE_KEYS) as Array<Exclude<Outfit, "base">>) {
@@ -460,7 +460,7 @@ export function setupPlayerTexture(scene: Phaser.Scene): void {
     ]) {
       const texture = scene.textures.get(textureKey);
       if (texture.key !== "__MISSING") {
-        texture.setFilter(Phaser.Textures.FilterMode.NEAREST);
+        texture.setFilter(Phaser.Textures.FilterMode.LINEAR);
       }
     }
   }
@@ -468,7 +468,7 @@ export function setupPlayerTexture(scene: Phaser.Scene): void {
   for (const textureKey of dynamicArmorTexturePaths.keys()) {
     const texture = scene.textures.get(textureKey);
     if (texture.key !== "__MISSING") {
-      texture.setFilter(Phaser.Textures.FilterMode.NEAREST);
+      texture.setFilter(Phaser.Textures.FilterMode.LINEAR);
     }
   }
 }
@@ -682,12 +682,17 @@ function resolveEquippedArmorSheetPath(
     if (!useBajos && genderId === "female" && armorVisual.spritesheetFemalePath) {
       return armorVisual.spritesheetFemalePath;
     }
-    return useBajos
-      ? armorVisual.spritesheetBajosPath ??
-          inferBajosSpritesheetPath(
-            armorVisual.spritesheetStdPath ?? PLAYER_SHEET_PATHS[outfit]
-          )
-      : armorVisual.spritesheetStdPath ?? PLAYER_SHEET_PATHS[outfit];
+    if (useBajos) {
+      if (armorVisual.spritesheetBajosPath) {
+        return armorVisual.spritesheetBajosPath;
+      }
+      return (
+        PLAYER_BAJOS_SHEET_PATHS[outfit] ??
+        armorVisual.spritesheetStdPath ??
+        PLAYER_SHEET_PATHS[outfit]
+      );
+    }
+    return armorVisual.spritesheetStdPath ?? PLAYER_SHEET_PATHS[outfit];
   }
   return useBajos ? PLAYER_BAJOS_SHEET_PATHS[outfit] : PLAYER_SHEET_PATHS[outfit];
 }

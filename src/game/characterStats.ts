@@ -5,6 +5,7 @@ import {
   STAT_MAX,
   STAT_MIN,
 } from "../../game-data/constants";
+import { getUnarmedDamageRange } from "../../game-data/attackDamage";
 import type { CharacterClassId } from "../../game-data/items/catalog";
 import type { CharacterRaceId } from "../data/characters";
 
@@ -16,7 +17,6 @@ export type CoreStats = {
 };
 
 export { ATTRIBUTE_POTION_BUFF_DURATION_MS, ATTRIBUTE_POTION_BUFF_MAX, STAT_MAX, STAT_MIN };
-const BASELINE_STRENGTH = 19;
 
 export const RACE_BASE_STATS: Record<CharacterRaceId, CoreStats> = {
   human: { strength: 19, agility: 18, intelligence: 15, constitution: 19 },
@@ -134,9 +134,7 @@ export function getPreviewModifiers(
   stats: CoreStats,
   classId: CharacterClassId
 ): CharacterPreviewModifiers {
-  const strDelta = stats.strength - BASELINE_STRENGTH;
-  const hitMin = Math.max(1, 8 + strDelta);
-  const hitMax = Math.max(hitMin, 16 + strDelta * 2);
+  const { attackMin: hitMin, attackMax: hitMax } = getUnarmedDamageRange(stats.strength);
   const magicResist = Math.round(8 + stats.intelligence * 1.2 + stats.constitution * 0.3);
 
   return {

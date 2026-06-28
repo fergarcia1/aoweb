@@ -17,14 +17,17 @@ const OVERLAY_COLOR = 0x0a0c10;
 const OVERLAY_ALPHA = 0.6;
 
 const PALETTE = {
-  parchment: 0xeadbb9,
-  border: 0x6f4e37,
-  text: 0x5c4033,
+  panel: 0x120807,
+  panelAlt: 0x1d0b09,
+  border: 0x9b2d24,
+  borderBright: 0xd6a23a,
+  title: 0xffd26a,
+  text: 0xf1dcc7,
   btn: {
-    bg: 0x8a6c5b,
-    bgHover: 0xa48474,
-    border: 0x5c4033,
-    text: 0xfbf0d9,
+    bg: 0x7a261a,
+    bgHover: 0x963124,
+    border: 0xd6a23a,
+    text: 0xffffff,
   },
 };
 
@@ -45,12 +48,15 @@ export class DeathOverlay {
   private readonly container: Phaser.GameObjects.Container;
   private readonly backdrop: Phaser.GameObjects.Rectangle;
   private readonly panel: Phaser.GameObjects.Container;
+  private readonly panelBg: Phaser.GameObjects.Rectangle;
   private readonly panelFrame: Phaser.GameObjects.Rectangle;
   private readonly acceptBtn: DeathButton;
   private readonly cancelBtn: DeathButton;
   private visible = false;
   private viewport: GameViewportRect = { x: 0, y: 0, width: 0, height: 0 };
   private frameSize = { width: 224, height: 154 };
+  private dragState: { offsetX: number; offsetY: number } | null = null;
+  private hasCustomPanelPosition = false;
 
   constructor(
     scene: Phaser.Scene,
@@ -61,22 +67,36 @@ export class DeathOverlay {
     this.backdrop = scene.add
       .rectangle(0, 0, 10, 10, OVERLAY_COLOR, OVERLAY_ALPHA)
       .setOrigin(0, 0)
-      .setScrollFactor(0);
+      .setScrollFactor(0)
+      .setInteractive()
+      .on(
+        "pointerdown",
+        (
+          _pointer: Phaser.Input.Pointer,
+          _localX: number,
+          _localY: number,
+          event: Phaser.Types.Input.EventData
+        ) => {
+          event.stopPropagation();
+        }
+      );
 
-    const background = scene.add
-      .rectangle(0, 0, 10, 10, PALETTE.parchment, 0.95)
-      .setOrigin(0.5, 0.5);
+    this.panelBg = scene.add
+      .rectangle(0, 0, 10, 10, PALETTE.panel, 0.96)
+      .setOrigin(0.5, 0.5)
+      .setStrokeStyle(1, PALETTE.border, 0.9)
+      .setInteractive({ useHandCursor: true });
 
     this.panelFrame = scene.add
       .rectangle(0, 0, 10, 10)
       .setOrigin(0.5, 0.5)
-      .setStrokeStyle(2, PALETTE.border, 0.95);
+      .setStrokeStyle(2, PALETTE.borderBright, 0.95);
 
     const title = scene.add
       .text(0, 0, "Has muerto", {
         fontFamily: GAME_FONT,
         fontSize: "14px",
-        color: `#${PALETTE.text.toString(16)}`,
+        color: `#${PALETTE.title.toString(16)}`,
         fontStyle: "bold",
         resolution: GAME_TEXT_RESOLUTION,
       })
@@ -118,7 +138,7 @@ export class DeathOverlay {
     );
 
     this.panel = scene.add.container(0, 0, [
-      background,
+      this.panelBg,
       this.panelFrame,
       title,
       body,
@@ -130,6 +150,26 @@ export class DeathOverlay {
     this.container.add([this.backdrop, this.panel]);
     this.container.setVisible(false);
 
+    this.panelBg.on(
+      "pointerdown",
+      (
+        pointer: Phaser.Input.Pointer,
+        _localX: number,
+        _localY: number,
+        event: Phaser.Types.Input.EventData
+      ) => {
+        event.stopPropagation();
+        this.dragState = {
+          offsetX: this.panel.x - pointer.x,
+          offsetY: this.panel.y - pointer.y,
+        };
+        this.hasCustomPanelPosition = true;
+        this.container.bringToTop(this.panel);
+      }
+    );
+    scene.input.on("pointermove", this.handlePointerMove, this);
+    scene.input.on("pointerup", this.handlePointerUp, this);
+
     scene.input.keyboard?.on("keydown", (event: KeyboardEvent) => {
       if (!this.visible || !this.panel.visible || event.key !== "Escape") {
         return;
@@ -138,6 +178,27 @@ export class DeathOverlay {
       event.stopPropagation();
       this.handlers.onStayGhost();
     });
+  }
+
+  private handlePointerMove(pointer: Phaser.Input.Pointer) {
+    if (!this.visible || !this.dragState) return;
+    this.setPanelPosition(pointer.x + this.dragState.offsetX, pointer.y + this.dragState.offsetY);
+  }
+
+  private handlePointerUp() {
+    this.dragState = null;
+  }
+
+  private setPanelPosition(x: number, y: number) {
+    const { width: frameW, height: frameH } = this.frameSize;
+    const minX = this.viewport.x + frameW / 2;
+    const maxX = this.viewport.x + this.viewport.width - frameW / 2;
+    const minY = this.viewport.y + frameH / 2;
+    const maxY = this.viewport.y + this.viewport.height - frameH / 2;
+    this.panel.setPosition(
+      Phaser.Math.Clamp(x, minX, Math.max(minX, maxX)),
+      Phaser.Math.Clamp(y, minY, Math.max(minY, maxY))
+    );
   }
 
   private createButton(
@@ -184,14 +245,22 @@ export class DeathOverlay {
   }
 
   show(viewport: GameViewportRect) {
+    const wasVisible = this.visible;
     this.visible = true;
     this.container.setVisible(true);
+    this.container.setDepth(50_000);
+    this.container.scene?.children.bringToTop(this.container);
     this.panel.setVisible(true);
+    if (!wasVisible) {
+      this.hasCustomPanelPosition = false;
+      this.dragState = null;
+    }
     this.layout(viewport);
   }
 
   hide() {
     this.visible = false;
+    this.dragState = null;
     this.container.setVisible(false);
   }
 
@@ -207,14 +276,17 @@ export class DeathOverlay {
     this.backdrop.setPosition(viewport.x, viewport.y);
     this.backdrop.setSize(viewport.width, viewport.height);
 
-    const cx = viewport.x + viewport.width / 2;
-    const cy = viewport.y + viewport.height / 2;
-    this.panel.setPosition(cx, cy);
+    if (this.hasCustomPanelPosition) {
+      this.setPanelPosition(this.panel.x, this.panel.y);
+    } else {
+      const cx = viewport.x + viewport.width / 2;
+      const cy = viewport.y + viewport.height / 2;
+      this.setPanelPosition(cx, cy);
+    }
 
     const { width: frameW, height: frameH } = this.frameSize;
 
-    const background = this.panel.list[0] as Phaser.GameObjects.Rectangle;
-    background.setSize(frameW, frameH);
+    this.panelBg.setSize(frameW, frameH);
     this.panelFrame.setSize(frameW, frameH);
 
     const title = this.panel.list[2] as Phaser.GameObjects.Text;
@@ -241,6 +313,8 @@ export class DeathOverlay {
   }
 
   destroy() {
+    this.container.scene?.input.off("pointermove", this.handlePointerMove, this);
+    this.container.scene?.input.off("pointerup", this.handlePointerUp, this);
     this.container.destroy(true);
   }
 }

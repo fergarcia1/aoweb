@@ -63,7 +63,7 @@ export function spawnMapObjectImage(
 
   const texture = scene.textures.get(def.textureKey);
   if (texture.key !== "__MISSING") {
-    texture.setFilter(Phaser.Textures.FilterMode.NEAREST);
+    texture.setFilter(Phaser.Textures.FilterMode.LINEAR);
   }
 
   return image;

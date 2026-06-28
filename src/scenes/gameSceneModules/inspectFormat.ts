@@ -1,5 +1,6 @@
 import {
   FACTION_LABELS,
+  FACTION_NAME_COLORS,
   formatRaceGenderLabel,
   type CharacterFactionId,
   type CharacterGenderId,
@@ -7,6 +8,12 @@ import {
 } from "../../data/characters";
 import { isMobImmobilizedAt } from "../../../shared/combat";
 import type { ClassId, DummyState, RaceId } from "./types";
+
+/** Color de chat para la línea de inspección según facción/rol. */
+export function getInspectChatColor(factionId: CharacterFactionId, role: PlayerRole = "player"): string {
+  if (role === "admin") return "#00ff00"; // GameMaster en verde
+  return FACTION_NAME_COLORS[factionId]?.fill ?? "#d4c4a8";
+}
 
 export function formatImmobilizeDuration(durationMs: number): string {
   if (durationMs >= 60_000) {

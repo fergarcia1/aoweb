@@ -19,7 +19,7 @@ import { resolveNpcFaceAppearance } from "../game-data/imperium/npcCatalogFaceSe
 import type { ImperiumNpcCatalogEntry } from "../game-data/imperium/npcCatalogTypes";
 
 import { resolveMapTile, getMapTileOverride, type MapTileOverrides } from "./mapTileOverrides";
-import { isLegacyShoreWaterTile, isWaterTile } from "./navigation";
+import { isLegacyShoreWaterTile, isWaterTile, isLegacyBridgeTile } from "./navigation";
 
 
 
@@ -457,16 +457,20 @@ export function isMapTileWalkable(
   }
 
   // Non-aquatic mobs/players:
-  if (!isAquatic && isWater && !isLegacyShoreWaterTile(map, tileX, tileY)) {
-    // Cannot walk on deep water.
-    return false;
+  if (!isAquatic && isWater) {
+    const isBridge = isLegacyBridgeTile(map, tileX, tileY);
+    if (!isBridge && !isLegacyShoreWaterTile(map, tileX, tileY)) {
+      // Cannot walk on deep water.
+      return false;
+    }
   }
 
+  // Un override dinámico de puerta abierta puede superar al deny estático.
   if (isMapCollisionDenyTile(mapId, tileX, tileY)) {
-    return false;
+    if (!isOpenDoorTileOverride(tileOverrides, tileX, tileY)) {
+      return false;
+    }
   }
-
-
 
   if (isMapCollisionAllowTile(mapId, tileX, tileY)) {
 

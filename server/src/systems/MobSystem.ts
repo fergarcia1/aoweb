@@ -15,8 +15,14 @@ import { rollMobHitDamage, mobCanAttack } from "../../../game-data/mobCombat";
 import { createEmptyPvpSpellHitRecords } from "../../../game-data/antiOneshot";
 import { mitigatePhysicalDamage } from "../../../game-data/physicalDamageMitigation";
 import { MOB_MELEE_ENGAGE_DELAY_MS } from "../../../game-data/constants";
+import { getClassEvasionChance, rollChance } from "../../../game-data/evasion";
 import { findFirstChaseStep } from "../../../shared/gridPathfinding";
-import { rollInt, isAdjacent } from "../../../shared/combat";
+import {
+  getImmobilizePlayerDurationMs,
+  isAdjacent,
+  isImmobilizeSpell,
+  rollInt,
+} from "../../../shared/combat";
 
 function getMobStepDurationMs(modelId: string): number {
   const model = MOB_MODELS[modelId as keyof typeof MOB_MODELS];
@@ -80,6 +86,7 @@ export class MobSystem {
         leashRangeTiles: spawn.leashRangeTiles,
         minHit: spawn.minHit,
         maxHit: spawn.maxHit,
+        missChance: spawn.missChance,
         maxHp: placement.maxHp,
         npcId: placement.npcId,
         attackCooldownMs: spawn.attackCooldownMs,
@@ -371,6 +378,15 @@ export class MobSystem {
 
   private applyMobDamageToPlayer(mob: MobEntity, victim: PlayerSession, rawDamage: number) {
     if (victim.hp <= 0) return;
+    if (rollChance(getClassEvasionChance(victim.classId))) {
+      this.world.broadcastCombatLog(
+        victim.mapId,
+        victim.tileX,
+        victim.tileY,
+        `${victim.name} esquiva el golpe de ${mob.name}.`
+      );
+      return;
+    }
 
     const physical = mitigatePhysicalDamage(rawDamage, {
       damageReductionPercent: victim.damageReductionPercent,
@@ -389,6 +405,8 @@ export class MobSystem {
       tileY: victim.tileY,
       sourceTileX: mob.tileX,
       sourceTileY: mob.tileY,
+      attackKind: "melee",
+      shieldBlocked: physical.blocked,
     });
 
     this.world.broadcastToAoi(victim.mapId, victim.tileX, victim.tileY, {
@@ -425,23 +443,34 @@ export class MobSystem {
       sourceTileY: mob.tileY,
     });
 
-    const rawDamage = rollInt(caster.minDamage, caster.maxDamage);
-    const mitigated = Math.max(
-      1,
-      Math.floor(rawDamage * (1 - target.magicResistancePercent))
-    );
-    target.hp = Math.max(0, target.hp - mitigated);
+    const appliesImmobilize = isImmobilizeSpell(caster.spellId);
+    const hasDamage = caster.minDamage > 0 || caster.maxDamage > 0;
+    let mitigated = 0;
 
-    this.world.broadcastGameEvent(target.mapId, target.tileX, target.tileY, {
-      kind: "damage",
-      targetKind: "player",
-      targetId: target.id,
-      amount: mitigated,
-      tileX: target.tileX,
-      tileY: target.tileY,
-      sourceTileX: mob.tileX,
-      sourceTileY: mob.tileY,
-    });
+    if (appliesImmobilize) {
+      const durationMs = getImmobilizePlayerDurationMs(caster.spellId);
+      target.immobilizedUntil = Math.max(target.immobilizedUntil, now + durationMs);
+    }
+
+    if (hasDamage) {
+      const rawDamage = rollInt(caster.minDamage, caster.maxDamage);
+      mitigated = Math.max(
+        1,
+        Math.floor(rawDamage * (1 - target.magicResistancePercent))
+      );
+      target.hp = Math.max(0, target.hp - mitigated);
+
+      this.world.broadcastGameEvent(target.mapId, target.tileX, target.tileY, {
+        kind: "damage",
+        targetKind: "player",
+        targetId: target.id,
+        amount: mitigated,
+        tileX: target.tileX,
+        tileY: target.tileY,
+        sourceTileX: mob.tileX,
+        sourceTileY: mob.tileY,
+      });
+    }
 
     this.world.broadcastToAoi(target.mapId, target.tileX, target.tileY, {
       type: "player_updated",
@@ -451,11 +480,13 @@ export class MobSystem {
     this.world.notifyPartyOfHpChange(target.id);
 
     if (target.hp > 0) {
+      const effectText = appliesImmobilize ? " y lo paraliza" : "";
+      const damageText = hasDamage ? ` por ${mitigated}` : "";
       this.world.broadcastCombatLog(
         target.mapId,
         target.tileX,
         target.tileY,
-        `${mob.name} lanza un hechizo a ${target.name} por ${mitigated}.`
+        `${mob.name} lanza un hechizo a ${target.name}${damageText}${effectText}.`
       );
     } else {
       this.handlePlayerKilledByMob(mob, target);

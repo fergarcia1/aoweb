@@ -91,7 +91,7 @@ export function setupPlayerHudTextures(scene: Phaser.Scene): void {
     if (!texture || texture.key === "__MISSING") {
       continue;
     }
-    texture.setFilter(Phaser.Textures.FilterMode.NEAREST);
+    texture.setFilter(Phaser.Textures.FilterMode.LINEAR);
   }
 }
 
